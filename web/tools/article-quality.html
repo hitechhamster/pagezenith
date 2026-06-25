@@ -9,8 +9,8 @@
   .layout{display:grid;grid-template-columns:1fr 260px;gap:16px;align-items:start}
   @media(max-width:760px){.layout{grid-template-columns:1fr}}
   .ed-wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-height:460px}
-  .ed-common{margin:0;border:0;padding:20px 22px;font-family:Georgia,"Songti SC","Microsoft YaHei",serif;
-    font-size:16px;line-height:1.85;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word}
+  .ed-common{margin:0;border:0;padding:22px 24px;font-family:var(--font-read),Georgia,"Songti SC","Microsoft YaHei",serif;
+    font-size:17px;line-height:1.9;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word}
   #backdrop{position:absolute;inset:0;color:var(--text);pointer-events:none;overflow:auto}
   #editor{position:relative;width:100%;height:100%;min-height:460px;background:transparent;color:transparent;
     caret-color:var(--text);resize:vertical;outline:none;display:block}
@@ -19,6 +19,9 @@
   .s-vhard{background:#f7c4bd;border-radius:2px}
   .w-adv{background:#cfe0fb;border-radius:2px}
   .w-pass{background:#cdeccf;border-radius:2px}
+  .w-cplx{background:#e6d8f2;border-radius:2px}
+  .apply{background:transparent;border:1px solid var(--accent);color:var(--accent);font-size:12px;padding:3px 10px;border-radius:7px;cursor:pointer;margin-left:6px}
+  .apply:hover{background:var(--accentsoft)}
   .side{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
   .grade{text-align:center;padding:8px 0 12px;border-bottom:1px solid var(--line);margin-bottom:12px}
   .grade .v{font-size:30px;font-weight:700;line-height:1} .grade .l{font-size:12px;color:var(--muted);margin-top:4px}
@@ -83,6 +86,23 @@ function isZH(t){const cjk=(t.match(/[一-鿿]/g)||[]).length, lat=(t.match(/[A-
 // 英文音节粗估 + FK 年级
 function syllables(w){w=w.toLowerCase().replace(/[^a-z]/g,"");if(!w)return 0;const m=w.match(/[aeiouy]+/g);let n=m?m.length:1;if(w.endsWith("e"))n--;return Math.max(1,n);}
 
+const FILLERS=["其实","基本上","众所周知","总的来说","总而言之","可以说","某种程度上","我们都知道","不言而喻","毫无疑问","在很大程度上"];
+// 句内词级高亮：被动>副词>复杂/填充，取不重叠区间，避免嵌套
+function wordSpans(raw,zh,C){
+  const ranges=[], pr={pass:0,adv:1,cplx:2};
+  if(!zh){
+    for(const m of raw.matchAll(/\b(is|are|was|were|be|been|being)\s+\w+ed\b/gi)) ranges.push([m.index,m.index+m[0].length,"w-pass","pass"]);
+    for(const m of raw.matchAll(/\b\w{3,}ly\b/gi)) ranges.push([m.index,m.index+m[0].length,"w-adv","adv"]);
+    for(const m of raw.matchAll(/\b[A-Za-z]{4,}\b/g)) if(syllables(m[0])>=4) ranges.push([m.index,m.index+m[0].length,"w-cplx","cplx"]);
+  }else{
+    for(const f of FILLERS){let i=0;while((i=raw.indexOf(f,i))!==-1){ranges.push([i,i+f.length,"w-cplx","cplx"]);i+=f.length;}}
+  }
+  ranges.sort((a,b)=>a[0]-b[0]||pr[a[3]]-pr[b[3]]);
+  let html="",cur=0,last=-1;
+  for(const [s,e,cls,k] of ranges){ if(s<last)continue; html+=esc(raw.slice(cur,s))+'<span class="'+cls+'">'+esc(raw.slice(s,e))+'</span>'; cur=e;last=e;C[k]++; }
+  return html+esc(raw.slice(cur));
+}
+
 const ED=$("editor"), BD=$("backdrop");
 ED.addEventListener("input",render);
 ED.addEventListener("scroll",()=>{BD.scrollTop=ED.scrollTop;BD.scrollLeft=ED.scrollLeft;});
@@ -91,7 +111,7 @@ function render(){
   const text=ED.value;
   const zh=isZH(text);
   let html="", cursor=0;
-  let nLong=0,nV=0,nAdv=0,nPass=0,nSent=0,words=0,syl=0;
+  let nLong=0,nV=0,nSent=0,words=0,syl=0; const C={pass:0,adv:0,cplx:0};
   const sentRe = zh ? /[^。！？；\n]+[。！？；]?/g : /[^.!?]+[.!?]+|\S[^.!?]*(?=\n|$)/g;
   let m;
   while((m=sentRe.exec(text))!==null){
@@ -104,11 +124,7 @@ function render(){
       if(!zh){ trimmed.split(/\s+/).forEach(w=>{if(w){words++;syl+=syllables(w);}}); }
       else { words+=trimmed.length; }
       let cls=""; if(len>(zh?60:30)){cls="s-vhard";nV++;} else if(len>(zh?40:20)){cls="s-hard";nLong++;}
-      let inner=esc(raw);
-      if(!zh){
-        inner=inner.replace(/\b\w{3,}ly\b/gi,x=>{nAdv++;return '<span class="w-adv">'+x+'</span>';});
-        inner=inner.replace(/\b(is|are|was|were|be|been|being)\b(\s+)(\w+ed)\b/gi,(_,a,sp,b)=>{nPass++;return '<span class="w-pass">'+a+sp+b+'</span>';});
-      }
+      const inner=wordSpans(raw,zh,C);
       html += cls ? '<span class="'+cls+'">'+inner+'</span>' : inner;
     } else html+=esc(raw);
     cursor=e;
@@ -128,8 +144,8 @@ function render(){
   $("g-grade").textContent=grade; $("g-verdict").textContent=verdict;
   const counts=$("counts"); counts.innerHTML="";
   const rows = zh
-    ? [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong]]
-    : [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong],["#cdeccf","被动语态",nPass],["#cfe0fb","副词",nAdv]];
+    ? [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong],["#e6d8f2","填充词",C.cplx]]
+    : [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong],["#cdeccf","被动语态",C.pass],["#cfe0fb","副词",C.adv],["#e6d8f2","复杂词",C.cplx]];
   rows.forEach(([c,name,n])=>{const r=E("div","srow");const sw=E("div","sw");sw.style.background=c;r.append(sw,E("span",null,name),E("span","n",String(n)));counts.append(r);});
 }
 render();
@@ -155,8 +171,20 @@ function setS(m,err){const s=$("ai-status");s.textContent=m||"";s.style.color=er
 function panel(){return E("div","panel sec");}
 function scoreColor(v){return v>=75?"#15a06b":v>=50?"#c9820a":"#dc4b4b";}
 
+function applyText(orig, repl){
+  let v=ED.value, i=v.indexOf(orig);
+  if(i===-1){ const t=orig.trim(); i=v.indexOf(t); if(i===-1){ setS("没找到原句（可能已编辑过）",true); return; } ED.value=v.slice(0,i)+repl+v.slice(i+t.length); }
+  else ED.value=v.slice(0,i)+repl+v.slice(i+orig.length);
+  render(); setS("已应用到左侧编辑器 ✓");
+}
+function applyTitle(newTitle){
+  const dt=window.__DT||"";
+  if(dt && ED.value.indexOf(dt)!==-1) ED.value=ED.value.replace(dt,newTitle);
+  else ED.value="# "+newTitle+"\n"+ED.value;
+  render(); setS("标题已应用 ✓");
+}
 function renderAI(r){
-  const root=$("ai-report"); root.innerHTML="";
+  const root=$("ai-report"); root.innerHTML=""; window.__DT=r.detected_title||"";
   // 综合
   const ov=panel(); const top=E("div");top.style.display="flex";top.style.gap="16px";top.style.alignItems="center";
   const ring=E("div","ring");ring.style.background=scoreColor(r.overall_score);ring.append(E("div","nv",String(r.overall_score)),E("div","nl","综合"));
@@ -169,7 +197,7 @@ function renderAI(r){
   const t=r.title; const s1=panel(); const h1=E("h2");h1.append(E("span","n","T"),E("span",null,"标题吸引力"));s1.append(h1);
   s1.append(E("div","meta",(t.detected?"识别到标题：":"未识别到明确标题：")+(r.detected_title||"（无）")+" · 评分 "+t.score));
   (t.dims||[]).forEach(d=>{const row=E("div","dim");row.append(E("div","dn",d.name));const tr=E("div","tr");const fl=E("div","fl");fl.style.width=Math.max(3,d.score)+"%";fl.style.background=scoreColor(d.score);tr.append(fl);row.append(tr,E("div","dv",String(d.score)));s1.append(row);if(d.note)s1.append(E("div","meta",d.note));});
-  if((t.suggestions||[]).length){s1.append(E("div","meta","改写建议："));t.suggestions.forEach(su=>{const b=E("div","tsug");const cp=E("button","copy","复制");cp.onclick=()=>{navigator.clipboard.writeText(su.title);cp.textContent="已复制";};b.append(cp,E("div","t",su.title));if(su.why)b.append(E("div","w",su.why));s1.append(b);});}
+  if((t.suggestions||[]).length){s1.append(E("div","meta","改写建议（点「应用」直接换到编辑器）："));t.suggestions.forEach(su=>{const b=E("div","tsug");const bar=E("div");bar.style.cssText="float:right;display:flex;gap:6px";const ap=E("button","apply","应用");ap.onclick=()=>applyTitle(su.title);const cp=E("button","copy","复制");cp.onclick=()=>{navigator.clipboard.writeText(su.title);cp.textContent="已复制";};bar.append(ap,cp);b.append(bar,E("div","t",su.title));if(su.why)b.append(E("div","w",su.why));s1.append(b);});}
   root.append(s1);
 
   // 信息密度
@@ -181,7 +209,7 @@ function renderAI(r){
 
   // 难句改写
   if((r.rewrites||[]).length){const s3=panel();const h3=E("h2");h3.append(E("span","n","R"),E("span",null,"难句改写"));s3.append(h3);
-    r.rewrites.forEach(x=>{const b=E("div","rw");b.append(E("div","o",x.original),E("div","n2","→ "+x.rewrite));s3.append(b);});root.append(s3);}
+    r.rewrites.forEach(x=>{const b=E("div","rw");const ap=E("button","apply","应用");ap.style.float="right";ap.onclick=()=>applyText(x.original,x.rewrite);b.append(ap,E("div","o",x.original),E("div","n2","→ "+x.rewrite));s3.append(b);});root.append(s3);}
 }
 </script>
 </body>
