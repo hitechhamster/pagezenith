@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # LLM (OpenRouter, OpenAI 兼容)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    llm_model: str = "anthropic/claude-sonnet-4"
+    llm_model: str = "google/gemini-3.1-flash-lite"
     writer_model: str = ""  # 增补段落写作模型；留空=同 llm_model
 
     # Embedding（语义去重粗判用）。统一走 OpenRouter /embeddings，多语言模型。
