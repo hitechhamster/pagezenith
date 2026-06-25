@@ -25,7 +25,7 @@ from tools.seo_gap.router import router as seo_gap_router
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 
-app = FastAPI(title="SEO 工具站")
+app = FastAPI(title="PageZenith — AI 跨境营销工具")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
