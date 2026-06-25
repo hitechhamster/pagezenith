@@ -37,19 +37,22 @@ VISION_PROMPT = """\
 判断要点：满屏商品图片+缩略图网格、正文很少 → product_list；大段文字+配图 → article。"""
 
 
-# 三 · LSI 覆盖判定 --------------------------------------------------------- #
+# 三 · LSI 覆盖 + 相关性判定 ------------------------------------------------- #
 LSI_SYSTEM = """\
-你判断目标页面是否实质性覆盖了每个语义词/问题（讲到了它的意思即算覆盖，不要求字面一致）。
+你对每个语义词/问题做两件事：
+1) relevant：它是否与「目标页面的主题」相关。关键词常有歧义（如 D Prime 既是外汇券商，
+   又是 D.Prime 牛排店），与本页主题无关的（如券商页里的 steakhouse/menu/restaurant）判 relevant=false。
+2) covered：页面是否实质性覆盖了它的意思（不要求字面一致）。
 只输出 JSON 数组，不要前言、不要 markdown。"""
 
 
 def build_lsi_user(page_text: str, terms: list[str]) -> str:
     return f"""\
-目标页面正文（节选）：
+目标页面正文（节选，据此判断本页主题）：
 {page_text[:8000]}
 
-判断页面是否覆盖了下列每个语义词/问题。输出 JSON 数组：
-[{{"term": "原词", "covered": true 或 false}}]
+对下列每个词判断 relevant 与 covered。输出 JSON 数组：
+[{{"term": "原词", "relevant": true 或 false, "covered": true 或 false}}]
 
 待判定：
 {json.dumps(terms, ensure_ascii=False)}"""
@@ -130,20 +133,25 @@ _LANG_ZH = {"zh": "简体中文", "en": "英文", "other": "页面所用语言"}
 def build_supplement_user(
     keyword: str, user_wants: list[str], missing_points: list[str],
     missing_lsi: list[str], our_main: list[str], page_lang: str = "zh",
+    page_sample: str = "",
 ) -> str:
     lang_name = _LANG_ZH.get(page_lang, "页面所用语言")
     return f"""\
+【最重要】heading 与 body 必须与下面「目标页面原文摘录」**同一种语言**（页面是英文就写英文、
+中文就写中文）；以页面原文为准（约为 {lang_name}）。reason 始终用简体中文。
+
+目标页面原文摘录：
+\"\"\"{page_sample[:1200]}\"\"\"
+
 关键词：{keyword}
-目标页面语言：{lang_name}（heading 与 body 必须用此语言撰写）
 用户期望内容：{json.dumps(user_wants, ensure_ascii=False)}
 竞品有、我们缺的要点：{json.dumps(missing_points[:25], ensure_ascii=False)}
 缺失的语义词/问题(LSI)：{json.dumps(missing_lsi[:20], ensure_ascii=False)}
-我们页面已有的主要内容：{json.dumps(our_main[:20], ensure_ascii=False)}
 
-针对最重要的缺口，生成 3-6 个建议新增的小节，每节写好可直接粘贴的正文（用{lang_name}）。
+针对最重要的缺口，生成 3-6 个建议新增的小节，每节写好可直接粘贴的正文。
 输出 JSON 数组：
 [{{
-  "heading": "建议新增的小标题（用{lang_name}）",
-  "body": "写好的正文段落（80-160字/词，用{lang_name}）",
-  "reason": "为什么要补这段（用简体中文，综合用户期望/竞品缺口/LSI缺失的依据）"
+  "heading": "建议新增的小标题（与页面同语言）",
+  "body": "写好的正文段落（80-160字/词，与页面同语言）",
+  "reason": "为什么要补这段（用简体中文）"
 }}]"""

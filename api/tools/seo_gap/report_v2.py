@@ -11,7 +11,7 @@ import logging
 import re
 
 from .clients.browser_fetch import BrowserFetcher
-from .clients.fetch import PageFetcher
+from .clients.fetch import PageFetcher, looks_blocked
 from .clients.llm import LLMClient
 from .clients.serpapi import SerpApiClient
 from .config import Settings, get_settings
@@ -152,8 +152,8 @@ class ReportV2Builder:
         async def analyze(it):
             try:
                 pg = await fetcher.fetch(it.url)
-                if _word_count(pg.text) < 50:  # 拦截页/空壳，正文太少 → 视为失败
-                    raise ValueError("正文过少（疑似拦截/空页）")
+                if _word_count(pg.text) < 50 or looks_blocked(pg.text):  # 拦截页/空壳 → 失败
+                    raise ValueError("正文过少或被反爬拦截")
                 pr = await self.extractor.extract_content(pg, use_cache=True)
             except Exception as exc:
                 logger.warning("竞品失败 %s: %s", it.url, exc)
@@ -191,7 +191,8 @@ class ReportV2Builder:
         missing_lsi = [t.term for t in lsi.terms if not t.covered]
         our_main = target_profile.subtopics or [c.text for c in target_profile.claims[:10]]
         supplements = await self._supplements(
-            req.keyword, semantics.user_wants, missing_pool, missing_lsi, our_main, page_lang
+            req.keyword, semantics.user_wants, missing_pool, missing_lsi, our_main,
+            page_lang, target_page.text,
         )
         for sp in supplements:
             yield {"type": "supplement", "data": sp.model_dump()}
@@ -216,9 +217,12 @@ class ReportV2Builder:
         if req.target_text and req.target_text.strip():
             return PageContent(url=req.target_url, title=req.target_title, text=req.target_text), None
         try:
-            return await fetcher.capture(req.target_url)
+            page, png = await fetcher.capture(req.target_url)
         except Exception as exc:
             raise RuntimeError(f"目标页抓取失败（{exc}）。可勾选浏览器抓取或确认网址可访问。") from exc
+        if looks_blocked(page.text) or _word_count(page.text) < 30:
+            raise RuntimeError("目标页被反爬拦截或正文为空。试试勾选浏览器抓取，或换个能正常打开的网址。")
+        return page, png
 
     async def _vision(self, png) -> dict:
         """截图 → 多模态判页面类型/视觉主体/文字是否充足。无截图或失败则返回空。"""
@@ -289,15 +293,21 @@ class ReportV2Builder:
                     terms.append(LSITerm(term=t.strip(), source=src))
         if not terms:
             return LSIAnalysis()
-        mock = [{"term": t.term, "covered": i % 2 == 0} for i, t in enumerate(terms)]
+        mock = [{"term": t.term, "relevant": True, "covered": i % 2 == 0} for i, t in enumerate(terms)]
         cov = await self.llm.complete_json(
             LSI_SYSTEM, build_lsi_user(page_text, [t.term for t in terms]), mock=mock
         )
-        cov_map = {c.get("term"): bool(c.get("covered")) for c in cov} if isinstance(cov, list) else {}
+        info = {c.get("term"): c for c in cov} if isinstance(cov, list) else {}
+        # 只保留与本页主题相关的词，过滤掉歧义带来的无关词（如券商页里的 steakhouse）
+        kept = []
         for t in terms:
-            t.covered = cov_map.get(t.term, False)
-        covered = sum(1 for t in terms if t.covered)
-        return LSIAnalysis(terms=terms, covered_count=covered, missing_count=len(terms) - covered)
+            c = info.get(t.term, {})
+            if c and c.get("relevant") is False:
+                continue
+            t.covered = bool(c.get("covered"))
+            kept.append(t)
+        covered = sum(1 for t in kept if t.covered)
+        return LSIAnalysis(terms=kept, covered_count=covered, missing_count=len(kept) - covered)
 
     async def _geo(self, keyword, target_page, target_profile):
         from .extraction.prompts_v2 import GEO_SYSTEM, build_geo_user
@@ -332,12 +342,14 @@ class ReportV2Builder:
         )
         return AISummary(**raw) if isinstance(raw, dict) else AISummary()
 
-    async def _supplements(self, keyword, user_wants, missing_points, missing_lsi, our_main, page_lang="zh"):
+    async def _supplements(self, keyword, user_wants, missing_points, missing_lsi, our_main,
+                           page_lang="zh", page_sample=""):
         mock = [{"heading": "如何核验监管牌照", "body": "在 FCA/ASIC/NFA 官网输入牌照号即可核验……",
                  "reason": "竞品覆盖+LSI缺失"}]
         raw = await self.llm.complete_json(
             SUPPLEMENT_SYSTEM,
-            build_supplement_user(keyword, user_wants, missing_points, missing_lsi, our_main, page_lang),
+            build_supplement_user(keyword, user_wants, missing_points, missing_lsi, our_main,
+                                  page_lang, page_sample),
             mock=mock,
             model=self.s.writer_model or None,  # 可单独用更强的写作模型
         )

@@ -15,6 +15,20 @@ from ..security import assert_safe_url
 
 _DROP_TAGS = ("script", "style", "noscript", "nav", "footer", "header", "aside", "form")
 
+# 反爬/拦截页特征短语：正文很短 + 命中任一 → 判抓取失败（别把拦截页当内容）
+_BLOCK_PHRASES = (
+    "just a moment", "attention required", "cloudflare", "access denied",
+    "access to this page is forbidden", "verify you are human", "are you a robot",
+    "checking your browser", "enable javascript", "unusual traffic", "403 forbidden",
+    "请稍候", "网站访问限制", "触发了安全规则", "访问被拒绝", "人机验证",
+)
+
+
+def looks_blocked(text: str) -> bool:
+    """短文本里命中拦截特征短语 → 视为被反爬拦截。"""
+    t = text.lower()
+    return len(text) < 700 and any(p in t for p in _BLOCK_PHRASES)
+
 # 较完整的浏览器头，降低被 bot 管理器拦截的概率（生产可用）
 _BROWSER_HEADERS = {
     "User-Agent": (

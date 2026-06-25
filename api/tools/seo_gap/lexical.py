@@ -36,13 +36,14 @@ for _x, _y in _ANTONYMS:
 
 
 def detect_lang(text: str) -> str:
-    """轻量语言判定（zh/en/other）。本工具单次分析同语言，仅需粗判区分中英。
-    含 CJK 字符判 zh；否则若有 latin 字母判 en；都没有判 other。"""
-    if _CJK.search(text):
-        return "zh"
-    if re.search(r"[a-zA-Z]", text):
-        return "en"
-    return "other"
+    """按主语言判定（zh/en/other）。用 CJK 占比，避免英文页里夹带少量中文
+    （语言切换、页脚等）就被误判成中文。CJK 占比 ≥ 20% 才算中文页。"""
+    cjk = len(_CJK.findall(text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    total = cjk + latin
+    if total == 0:
+        return "other"
+    return "zh" if cjk / total >= 0.20 else "en"
 
 
 def multi_tokens(text: str) -> list[str]:
