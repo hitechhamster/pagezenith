@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>文章质量检测 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .layout{display:grid;grid-template-columns:1fr 260px;gap:16px;align-items:start}
+  @media(max-width:760px){.layout{grid-template-columns:1fr}}
+  .ed-wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-height:460px}
+  .ed-common{margin:0;border:0;padding:20px 22px;font-family:Georgia,"Songti SC","Microsoft YaHei",serif;
+    font-size:16px;line-height:1.85;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word}
+  #backdrop{position:absolute;inset:0;color:var(--text);pointer-events:none;overflow:auto}
+  #editor{position:relative;width:100%;height:100%;min-height:460px;background:transparent;color:transparent;
+    caret-color:var(--text);resize:vertical;outline:none;display:block}
+  #editor::placeholder{color:var(--faint)}
+  .s-hard{background:#fdeca6;border-radius:2px}
+  .s-vhard{background:#f7c4bd;border-radius:2px}
+  .w-adv{background:#cfe0fb;border-radius:2px}
+  .w-pass{background:#cdeccf;border-radius:2px}
+  .side{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+  .grade{text-align:center;padding:8px 0 12px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .grade .v{font-size:30px;font-weight:700;line-height:1} .grade .l{font-size:12px;color:var(--muted);margin-top:4px}
+  .srow{display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0}
+  .srow .sw{width:13px;height:13px;border-radius:3px;flex-shrink:0}
+  .srow .n{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+  .meta{font-size:12px;color:var(--muted);margin:4px 0}
+  .aibtn{margin-top:14px;width:100%}
+  .sec{margin-top:16px;padding:16px 18px}
+  .sec h2{font-size:15px;margin:0 0 12px;font-weight:620;display:flex;align-items:center;gap:9px}
+  .sec h2 .n{background:var(--accentsoft);color:var(--accent);width:24px;height:24px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .ring{width:64px;height:64px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-weight:700;flex-shrink:0}
+  .ring .nv{font-size:22px;line-height:1}.ring .nl{font-size:9px}
+  .rw{border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px}
+  .rw .o{color:var(--muted);font-size:13px;text-decoration:line-through}
+  .rw .n2{font-size:14px;margin-top:4px}
+  .wat{border-left:3px solid var(--amber);background:var(--amberbg);border-radius:0 8px 8px 0;padding:8px 11px;margin-bottom:7px;font-size:13px}
+  .wat .q{color:var(--amber)} .wat .sg{color:var(--muted);font-size:12px;margin-top:3px}
+  .tsug{border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin-bottom:7px}
+  .tsug .t{font-weight:600} .tsug .copy{float:right;background:#fff;border:1px solid var(--line);color:var(--muted);font-size:12px;padding:3px 9px;border-radius:7px;cursor:pointer}
+  .tsug .w{color:var(--muted);font-size:12px;margin-top:3px}
+  .dim{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+  .dim .dn{width:96px;flex-shrink:0} .dim .tr{flex:1;height:6px;background:var(--soft);border-radius:4px;overflow:hidden}
+  .dim .fl{height:100%;border-radius:4px} .dim .dv{width:28px;text-align:right;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+</div>
+<div class="wrap" style="max-width:980px">
+  <h1 style="font-size:22px;margin:0 0 4px">文章质量检测</h1>
+  <div class="sub">粘贴文章（首行/<code># 标题</code>会自动识别为标题）。可读性高亮实时显示；点「AI 深度分析」获取信息密度、标题改写与难句改写。</div>
+
+  <div class="layout">
+    <div class="ed-wrap">
+      <div id="backdrop" class="ed-common" aria-hidden="true"></div>
+      <textarea id="editor" class="ed-common" placeholder="在此粘贴你的文章…（第一行可作为标题，或用 # 标题）" spellcheck="false"></textarea>
+    </div>
+    <div class="side">
+      <div class="grade"><div class="v" id="g-grade">—</div><div class="l" id="g-verdict">可读性</div></div>
+      <div class="meta">阅读 <b id="g-min">0</b> 分钟 · <b id="g-wc">0</b> 字/词 · <b id="g-sent">0</b> 句</div>
+      <div id="counts"></div>
+      <button class="aibtn" id="ai">AI 深度分析</button>
+      <div id="ai-status" class="meta"></div>
+    </div>
+  </div>
+
+  <div id="ai-report"></div>
+</div>
+
+<script src="/shared/keys.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function isZH(t){const cjk=(t.match(/[一-鿿]/g)||[]).length, lat=(t.match(/[A-Za-z]/g)||[]).length; return (cjk+lat)>0 && cjk/(cjk+lat)>=0.2;}
+
+// 英文音节粗估 + FK 年级
+function syllables(w){w=w.toLowerCase().replace(/[^a-z]/g,"");if(!w)return 0;const m=w.match(/[aeiouy]+/g);let n=m?m.length:1;if(w.endsWith("e"))n--;return Math.max(1,n);}
+
+const ED=$("editor"), BD=$("backdrop");
+ED.addEventListener("input",render);
+ED.addEventListener("scroll",()=>{BD.scrollTop=ED.scrollTop;BD.scrollLeft=ED.scrollLeft;});
+
+function render(){
+  const text=ED.value;
+  const zh=isZH(text);
+  let html="", cursor=0;
+  let nLong=0,nV=0,nAdv=0,nPass=0,nSent=0,words=0,syl=0;
+  const sentRe = zh ? /[^。！？；\n]+[。！？；]?/g : /[^.!?]+[.!?]+|\S[^.!?]*(?=\n|$)/g;
+  let m;
+  while((m=sentRe.exec(text))!==null){
+    const s=m.index, e=s+m[0].length;
+    if(s>cursor) html+=esc(text.slice(cursor,s));
+    const raw=m[0]; const trimmed=raw.trim();
+    if(trimmed){
+      nSent++;
+      const len = zh ? trimmed.length : trimmed.split(/\s+/).filter(Boolean).length;
+      if(!zh){ trimmed.split(/\s+/).forEach(w=>{if(w){words++;syl+=syllables(w);}}); }
+      else { words+=trimmed.length; }
+      let cls=""; if(len>(zh?60:30)){cls="s-vhard";nV++;} else if(len>(zh?40:20)){cls="s-hard";nLong++;}
+      let inner=esc(raw);
+      if(!zh){
+        inner=inner.replace(/\b\w{3,}ly\b/gi,x=>{nAdv++;return '<span class="w-adv">'+x+'</span>';});
+        inner=inner.replace(/\b(is|are|was|were|be|been|being)\b(\s+)(\w+ed)\b/gi,(_,a,sp,b)=>{nPass++;return '<span class="w-pass">'+a+sp+b+'</span>';});
+      }
+      html += cls ? '<span class="'+cls+'">'+inner+'</span>' : inner;
+    } else html+=esc(raw);
+    cursor=e;
+  }
+  if(cursor<text.length) html+=esc(text.slice(cursor));
+  BD.innerHTML=html+"\n";
+  BD.scrollTop=ED.scrollTop;
+
+  // 侧栏
+  $("g-wc").textContent=words;
+  $("g-sent").textContent=nSent;
+  $("g-min").textContent=(zh?Math.max(1,Math.round(words/300)):Math.max(1,Math.round(words/200)));
+  let grade="—", verdict="";
+  if(words<5){grade="—";verdict="可读性";}
+  else if(zh){const avg=nSent?words/nSent:0; verdict=(nV||avg>45)?"偏难":(nLong?"适中":"易读"); grade=verdict;}
+  else{const fk=0.39*(words/Math.max(nSent,1))+11.8*(syl/Math.max(words,1))-15.59; const g=Math.max(1,Math.round(fk)); grade="年级 "+g; verdict=g>=12?"偏难":g>=9?"适中":"易读";}
+  $("g-grade").textContent=grade; $("g-verdict").textContent=verdict;
+  const counts=$("counts"); counts.innerHTML="";
+  const rows = zh
+    ? [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong]]
+    : [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong],["#cdeccf","被动语态",nPass],["#cfe0fb","副词",nAdv]];
+  rows.forEach(([c,name,n])=>{const r=E("div","srow");const sw=E("div","sw");sw.style.background=c;r.append(sw,E("span",null,name),E("span","n",String(n)));counts.append(r);});
+}
+render();
+
+// ---- AI 深度分析 ----
+function syncKeyBtn(){const b=$("keybtn");if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";}}
+syncKeyBtn(); window.addEventListener("seo-keys-updated",syncKeyBtn);
+
+$("ai").addEventListener("click",async()=>{
+  const text=ED.value.trim();
+  if(text.length<40) return setS("正文太短。",true);
+  if(!SEOKEYS.hasKeys()){ setS("请先在右上角设置 API Key。",true); SEOKEYS.open(); return; }
+  $("ai").disabled=true; $("ai-report").innerHTML=""; setS("分析中…约 10–20 秒",false);
+  try{
+    const resp=await fetch("/api/article-quality/check",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text,...SEOKEYS.get()})});
+    if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
+    renderAI(await resp.json()); setS("");
+  }catch(e){ setS(String(e),true); }
+  finally{ $("ai").disabled=false; }
+});
+function setS(m,err){const s=$("ai-status");s.textContent=m||"";s.style.color=err?"var(--red)":"var(--muted)";}
+function panel(){return E("div","panel sec");}
+function scoreColor(v){return v>=75?"#15a06b":v>=50?"#c9820a":"#dc4b4b";}
+
+function renderAI(r){
+  const root=$("ai-report"); root.innerHTML="";
+  // 综合
+  const ov=panel(); const top=E("div");top.style.display="flex";top.style.gap="16px";top.style.alignItems="center";
+  const ring=E("div","ring");ring.style.background=scoreColor(r.overall_score);ring.append(E("div","nv",String(r.overall_score)),E("div","nl","综合"));
+  const info=E("div");info.append(E("div",null,"AI 综合评价 · "+r.grade));if(r.verdict)info.append(E("div","meta",r.verdict));
+  top.append(ring,info);ov.append(top);
+  if(r.priority_actions&&r.priority_actions.length){const ul=E("ul");r.priority_actions.forEach(a=>ul.append(E("li",null,a)));ov.append(ul);}
+  root.append(ov);
+
+  // 标题
+  const t=r.title; const s1=panel(); const h1=E("h2");h1.append(E("span","n","T"),E("span",null,"标题吸引力"));s1.append(h1);
+  s1.append(E("div","meta",(t.detected?"识别到标题：":"未识别到明确标题：")+(r.detected_title||"（无）")+" · 评分 "+t.score));
+  (t.dims||[]).forEach(d=>{const row=E("div","dim");row.append(E("div","dn",d.name));const tr=E("div","tr");const fl=E("div","fl");fl.style.width=Math.max(3,d.score)+"%";fl.style.background=scoreColor(d.score);tr.append(fl);row.append(tr,E("div","dv",String(d.score)));s1.append(row);if(d.note)s1.append(E("div","meta",d.note));});
+  if((t.suggestions||[]).length){s1.append(E("div","meta","改写建议："));t.suggestions.forEach(su=>{const b=E("div","tsug");const cp=E("button","copy","复制");cp.onclick=()=>{navigator.clipboard.writeText(su.title);cp.textContent="已复制";};b.append(cp,E("div","t",su.title));if(su.why)b.append(E("div","w",su.why));s1.append(b);});}
+  root.append(s1);
+
+  // 信息密度
+  const d=r.density; const s2=panel();const h2=E("h2");h2.append(E("span","n","D"),E("span",null,"信息密度"));s2.append(h2);
+  s2.append(E("div","meta","密度分 "+d.score+" · 实质信息点 "+d.info_points+" · 每百词 "+d.per_100w));
+  if(d.summary)s2.append(E("div",null,d.summary));
+  if((d.watery||[]).length){s2.append(E("div","meta","注水/可精简："));d.watery.forEach(w=>{const b=E("div","wat");b.append(E("div","q","“"+w.quote+"”"));b.append(E("div",null,w.issue));if(w.suggestion)b.append(E("div","sg","建议："+w.suggestion));s2.append(b);});}
+  root.append(s2);
+
+  // 难句改写
+  if((r.rewrites||[]).length){const s3=panel();const h3=E("h2");h3.append(E("span","n","R"),E("span",null,"难句改写"));s3.append(h3);
+    r.rewrites.forEach(x=>{const b=E("div","rw");b.append(E("div","o",x.original),E("div","n2","→ "+x.rewrite));s3.append(b);});root.append(s3);}
+}
+</script>
+</body>
+</html>

@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from tools.article_quality.router import router as article_quality_router
 from tools.seo_gap.router import router as seo_gap_router
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -32,6 +33,7 @@ app.add_middleware(
 
 # ---- 工具 API ----
 app.include_router(seo_gap_router)
+app.include_router(article_quality_router)
 # app.include_router(other_tool_router)   # 以后加工具在这里
 
 
