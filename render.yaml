@@ -1,0 +1,23 @@
+# Render Blueprint。在 Render 上 New + → Blueprint，连这个仓库即可。
+# Chromium 吃内存，用 standard（≥2GB）；free/starter 会 OOM。
+services:
+  - type: web
+    name: seo-tools
+    runtime: docker
+    plan: standard
+    healthCheckPath: /api/seo-gap/health
+    envVars:
+      - key: USE_MOCKS
+        value: "false"
+      - key: SERP_PROVIDER
+        value: serpapi
+      - key: BROWSER_CHANNEL          # 容器内用 Playwright 自带 Chromium
+        value: ""
+      - key: FETCH_MODE               # 服务器 IP 干净，浏览器抓取过反爬最稳
+        value: browser
+      - key: LLM_MODEL
+        value: google/gemini-3.1-flash-lite
+      - key: MAX_CONCURRENT_RUNS
+        value: "2"
+      # 用户自带 key（前端传入），服务器无需配 OpenRouter/SerpApi key。
+      # 如需服务器兜底 key 做演示，在 Render 控制台把它们设为 Secret，别写进本文件。

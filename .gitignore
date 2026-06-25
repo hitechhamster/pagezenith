@@ -1,0 +1,20 @@
+# 绝不提交密钥！
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 运行产物
+reports/
+deliverables/*.json
+*.xlsx
+
+# 系统
+.DS_Store
+Thumbs.db

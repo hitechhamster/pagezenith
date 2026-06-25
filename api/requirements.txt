@@ -1,0 +1,12 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+pydantic-settings>=2.2
+httpx[socks]>=0.27
+textstat>=0.7.3
+selectolax>=0.3.21
+numpy>=1.26
+openpyxl>=3.1
+json-repair>=0.25
+playwright==1.48.0
+python-dotenv>=1.0

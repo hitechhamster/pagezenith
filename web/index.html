@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI SEO 工具站</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .hero{text-align:center;padding:36px 0 20px}
+  .hero h1{font-size:30px;font-weight:700;margin:0 0 8px}
+  .hero p{color:var(--muted);font-size:15px;margin:0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:8px}
+  .tool{display:block;padding:20px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);transition:transform .1s,box-shadow .15s}
+  .tool:hover{transform:translateY(-2px);box-shadow:0 4px 24px rgba(20,24,40,.1)}
+  .tool .ic{width:40px;height:40px;border-radius:11px;background:var(--accentsoft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:12px}
+  .tool .tt{font-weight:650;font-size:16px;color:var(--text);margin-bottom:5px}
+  .tool .td{color:var(--muted);font-size:13px}
+  .tool.soon{opacity:.55;pointer-events:none}
+  .tool.soon .tt:after{content:"即将上线";font-size:11px;color:var(--amber);background:var(--amberbg);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">AI</div><div class="brand">AI SEO 工具站</div>
+  <div class="grow"></div>
+  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>AI 驱动的 SEO 工具集</h1>
+    <p>自带 API Key，浏览器里直接用。结果不存服务器。</p>
+  </div>
+
+  <div class="grid">
+    <a class="tool" href="/tools/seo-gap">
+      <div class="ic">◎</div>
+      <div class="tt">内容差距分析</div>
+      <div class="td">对比前 10：页面类型匹配、语义意图、逐页差距、LSI 覆盖、GEO，并给出可粘贴的增补段落。</div>
+    </a>
+    <div class="tool soon">
+      <div class="ic">✎</div>
+      <div class="tt">更多工具</div>
+      <div class="td">敬请期待。</div>
+    </div>
+  </div>
+</div>
+
+<script src="/shared/keys.js"></script>
+<script>
+  function syncKeyBtn(){ const b=document.getElementById("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
+  syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+</script>
+</body>
+</html>

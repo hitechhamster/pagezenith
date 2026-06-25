@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>内容差距分析 · AI SEO 工具站</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#ffffff; --soft:#f0f2f7; --line:#e7e9f0;
+    --text:#1b2030; --muted:#717789; --faint:#9aa0b0;
+    --accent:#4f46e5; --accent2:#6366f1; --accentsoft:#eef0fe;
+    --green:#15a06b; --greenbg:#e9f9f1; --greenline:#bce8d4;
+    --red:#dc4b4b; --redbg:#fdedee; --redline:#f5c9cc;
+    --amber:#c9820a; --amberbg:#fff6e6; --amberline:#f3dcab;
+    --radius:14px; --shadow:0 1px 2px rgba(20,24,40,.04),0 4px 16px rgba(20,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Inter",-apple-system,"Segoe UI","Microsoft YaHei",Roboto,sans-serif;
+    font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 20px 100px}
+  .head{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px}
+  h1{font-size:20px;font-weight:650;margin:0}
+  .sub{color:var(--muted);font-size:13px;margin:6px 0 20px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .bar{padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .f{display:flex;flex-direction:column;gap:5px}
+  .f label{font-size:11px;color:var(--muted);font-weight:550;letter-spacing:.02em}
+  input,select{background:#fff;border:1px solid var(--line);border-radius:9px;color:var(--text);
+    padding:9px 11px;font-size:13px;outline:none;transition:border .15s,box-shadow .15s}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accentsoft)}
+  #url{width:330px} #keyword{width:190px}
+  .check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);user-select:none;padding-bottom:9px}
+  .check input{width:auto;accent-color:var(--accent)}
+  button{background:var(--accent);border:none;border-radius:9px;color:#fff;font-weight:600;
+    padding:10px 20px;font-size:14px;cursor:pointer;transition:background .15s,transform .05s}
+  button:hover{background:#4338ca} button:active{transform:scale(.98)} button:disabled{opacity:.55;cursor:default}
+  .status{display:flex;align-items:center;gap:9px;margin:16px 2px;color:var(--muted);font-size:13px;min-height:20px}
+  .status.err{color:var(--red)}
+  .spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .sec{margin-top:16px;padding:18px 20px}
+  .sec h2{font-size:15px;margin:0 0 14px;font-weight:620;display:flex;align-items:center;gap:9px}
+  .sec h2 .n{background:var(--accentsoft);color:var(--accent);width:24px;height:24px;border-radius:7px;
+    display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:4px 11px;font-size:12px;color:var(--text)}
+  .chip.green{background:var(--greenbg);border-color:var(--greenline);color:var(--green)}
+  .chip.red{background:var(--redbg);border-color:var(--redline);color:var(--red)}
+  .pill{display:inline-block;border-radius:20px;padding:2px 11px;font-size:11px;font-weight:600}
+  .pill.kind{background:var(--accentsoft);color:var(--accent)}
+  .pill.warn{background:var(--amberbg);color:var(--amber);border:1px solid var(--amberline)}
+  .pill.ok{background:var(--greenbg);color:var(--green);border:1px solid var(--greenline)}
+  .badge{background:var(--accentsoft);color:var(--accent);border-radius:7px;padding:4px 11px;font-size:12px;font-weight:600}
+  ul{margin:8px 0;padding-left:20px} li{margin:4px 0}
+  .muted{color:var(--muted)} .small{font-size:12px}
+  .callout{margin-top:16px;padding:16px 18px;border-radius:var(--radius);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--card)}
+  .callout.warn{background:var(--amberbg);border-color:var(--amberline)}
+  .callout.ok{background:var(--greenbg);border-color:var(--greenline)}
+  .callout .h{font-weight:650;font-size:14px;margin-bottom:6px;display:flex;gap:8px;align-items:center}
+  .callout .body{font-size:13px;line-height:1.75}
+  .comp{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:9px;background:#fff}
+  .comp .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .comp .t{font-weight:600;font-size:13px}
+  .comp a{color:var(--accent);text-decoration:none;font-size:12px;word-break:break-all}
+  .comp .meta{color:var(--faint);font-size:12px;margin-top:3px}
+  .comp .lack{color:var(--red)}
+  .metrics{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .metric{background:var(--soft);border-radius:10px;padding:10px 14px;min-width:96px}
+  .metric .k{font-size:11px;color:var(--muted)} .metric .v{font-size:19px;font-weight:680;margin-top:2px}
+  .supp{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 11px 11px 0;padding:13px 15px;margin-bottom:11px;background:#fff}
+  .supp .h{font-weight:650;margin-bottom:8px}
+  .supp .body{background:var(--soft);border-radius:9px;padding:12px;line-height:1.85;white-space:pre-wrap}
+  .supp .why{color:var(--muted);font-size:12px;margin-top:8px}
+  .supp .copy{background:#fff;border:1px solid var(--line);color:var(--muted);font-weight:500;padding:5px 12px;font-size:12px;float:right;border-radius:8px}
+  .supp .copy:hover{background:var(--soft)}
+  .ph{color:var(--faint);font-size:12px}
+  .summary{padding:20px;margin-top:16px;background:linear-gradient(180deg,#fbfbff,#fff)}
+  .sumtop{display:flex;align-items:center;gap:18px}
+  .ring{width:74px;height:74px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    flex-shrink:0;color:#fff;font-weight:700}
+  .ring .nv{font-size:24px;line-height:1} .ring .nl{font-size:10px;opacity:.9}
+  .sumtop .grade{font-size:16px;font-weight:680;margin-bottom:3px}
+  .sumtop .q{font-size:13px;color:var(--muted);line-height:1.6}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:620px){.twocol{grid-template-columns:1fr}}
+  .blk .bt{font-size:12px;font-weight:650;margin-bottom:6px;color:var(--muted)}
+  .verdict{margin-top:14px;padding:12px 14px;background:var(--accentsoft);border-radius:10px;font-size:13px;line-height:1.7}
+  .geobar{display:flex;align-items:center;gap:10px;margin:7px 0}
+  .geobar .gl{width:120px;font-size:12px;color:var(--text);flex-shrink:0}
+  .geobar .track{flex:1;height:7px;background:var(--soft);border-radius:5px;overflow:hidden}
+  .geobar .fill{height:100%;background:var(--accent);border-radius:5px}
+  .geobar .gv{width:30px;text-align:right;font-size:12px;color:var(--muted)}
+  .geobar .gn{flex-basis:100%;font-size:11px;color:var(--faint);margin-left:130px;margin-top:-2px}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">AI</div><a class="brand" href="/" style="color:var(--text)">AI SEO 工具站</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+</div>
+<div class="wrap">
+  <div class="head">
+    <h1 style="font-size:22px;margin:0">内容差距分析</h1>
+  </div>
+  <div class="sub">输入目标网址 + 关键词，AI 对比前 10：页面类型匹配、语义意图、逐页差距、LSI 覆盖、GEO，并给出可直接粘贴的增补段落。</div>
+
+  <div class="panel bar">
+    <div class="f"><label>目标网址</label><input id="url" placeholder="https://..." /></div>
+    <div class="f"><label>关键词</label><input id="keyword" placeholder="如 bathroom feng shui" /></div>
+    <div class="f"><label>地区 / 语言</label>
+      <select id="region">
+        <option value="us-en">美国 / English</option>
+        <option value="cn-zh">中国 / 中文</option>
+        <option value="hk-zh">香港 / 中文</option>
+        <option value="uk-en">英国 / English</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="browser" checked />本地浏览器抓取</label>
+    <button id="run">开始分析</button>
+  </div>
+
+  <div id="status" class="status"></div>
+  <div id="report"></div>
+</div>
+
+<script>
+const REGION={"us-en":[2840,"en"],"cn-zh":[2156,"zh"],"hk-zh":[2344,"zh"],"uk-en":[2826,"en"]};
+const KIND={article:"信息型文章",product_list:"商品集合页",product_detail:"产品详情页",category:"分类页",homepage:"首页",forum:"论坛/问答",review:"测评页",tool:"工具页",other:"其它"};
+const $=id=>document.getElementById(id);
+const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const clr=n=>{n.innerHTML="";};
+function setStatus(m,err,busy){const s=$("status");clr(s);s.className="status"+(err?" err":"");if(busy)s.append(E("div","spin"));if(m)s.append(E("span",null,m));}
+
+let SEC={}, suppCleared=false;
+function panel(){const d=E("div","panel sec");return d;}
+function secBox(n,title){const s=panel();const h=E("h2");h.append(E("span","n",String(n)),E("span",null,title));s.append(h);const body=E("div");s.append(body);return [s,body];}
+function metric(k,v){const m=E("div","metric");m.append(E("div","k",k),E("div","v",String(v)));return m;}
+
+function skeleton(){
+  const root=$("report"); root.innerHTML=""; SEC={}; suppCleared=false;
+  SEC.overview=panel(); SEC.overview.append(E("div","ph","准备中…")); root.append(SEC.overview);
+  SEC.summary=E("div"); root.append(SEC.summary);                      // AI 总结（置顶，最后填）
+  SEC.match=E("div"); root.append(SEC.match);                          // 页面类型 callout 占位
+  let s,b;
+  [s,b]=secBox(1,"关键词语义分析"); SEC.sem=b; b.append(E("div","ph","分析中…")); root.append(s);
+  [s,b]=secBox(2,"前10分析（每页主要内容 + 我们缺的）"); SEC.comp=b; b.append(E("div","ph","逐页抓取中，完成一个显示一个…")); root.append(s);
+  SEC.targetWrap=panel(); SEC.targetWrap.append(E("h2",null,"我们的页面")); SEC.target=E("div"); SEC.target.append(E("div","ph","抓取中…")); SEC.targetWrap.append(SEC.target); root.append(SEC.targetWrap);
+  [s,b]=secBox(3,"LSI 语义词分析（覆盖检测）"); SEC.lsi=b; b.append(E("div","ph","等待中…")); root.append(s);
+  [s,b]=secBox("AI","GEO 分析（面向 AI 生成式搜索引擎）"); SEC.geo=b; b.append(E("div","ph","等待中…")); root.append(s);
+  [s,b]=secBox(4,"增补段落（可直接粘贴，跟随页面语言）"); SEC.supp=b; b.append(E("div","ph","等待中…")); root.append(s);
+}
+
+$("run").addEventListener("click", run);
+
+async function run(){
+  const target_url=$("url").value.trim();
+  const keyword=$("keyword").value.trim();
+  const [location_code,language_code]=REGION[$("region").value];
+  const fetch_mode=$("browser").checked?"browser":"httpx";
+  if(!/^https?:/.test(target_url)) return setStatus("目标网址需为 http/https。",true);
+  if(!keyword) return setStatus("请填写关键词。",true);
+  if(!SEOKEYS.hasKeys()){ setStatus("请先在右上角「API Key 设置」填写 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+
+  $("run").disabled=true; skeleton();
+  setStatus("分析中…结果会逐块出现，请勿关闭本页。",false,true);
+  let total=0, got=0;
+  try{
+    const resp=await fetch("/api/seo-gap/report_stream",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,...SEOKEYS.get()})});
+    if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf("\n\n"))>=0){
+        const line=buf.slice(0,i).trim(); buf=buf.slice(i+2);
+        if(!line.startsWith("data:")) continue;
+        const ev=JSON.parse(line.slice(5).trim());
+        if(ev.type==="meta"){ total=ev.total_competitors; handleMeta(ev); }
+        else if(ev.type==="semantics") handleSem(ev.data);
+        else if(ev.type==="target") handleTarget(ev.data);
+        else if(ev.type==="competitor"){ got++; handleComp(ev.data); setStatus(`分析中…竞品 ${got}/${total} 已完成`,false,true); }
+        else if(ev.type==="page_match") handleMatch(ev.data);
+        else if(ev.type==="geo") handleGeo(ev.data);
+        else if(ev.type==="summary") handleSummary(ev.data);
+        else if(ev.type==="lsi") handleLsi(ev.data);
+        else if(ev.type==="supplement") handleSupp(ev.data);
+        else if(ev.type==="done") setStatus("分析完成 ✓");
+        else if(ev.type==="error") setStatus("错误："+ev.message,true);
+      }
+    }
+  }catch(e){ setStatus(String(e),true); }
+  finally{ $("run").disabled=false; }
+}
+
+function handleMeta(m){
+  clr(SEC.overview);
+  SEC.overview.append(E("div",null,`关键词「${m.keyword}」`));
+  const u=E("div","muted small"); u.style.wordBreak="break-all"; u.textContent="目标："+m.target_url; SEC.overview.append(u);
+  SEC.overview.append(E("div","muted small",(m.in_top_10?`本页排名 #${m.rank}`:"本页未进前10")+` · 待分析竞品 ${m.total_competitors}`));
+}
+function handleSem(ks){
+  clr(SEC.sem);
+  const row=E("div","chips"); row.append(E("span","badge","意图："+ks.intent_type));
+  if(ks.expected_format) row.append(E("span","chip","期望格式："+ks.expected_format));
+  SEC.sem.append(row);
+  if(ks.summary) SEC.sem.append(E("div","muted small",ks.summary));
+  const ul=E("ul"); (ks.user_wants||[]).forEach(w=>ul.append(E("li",null,w))); SEC.sem.append(ul);
+}
+function handleTarget(st){
+  clr(SEC.target);
+  const row=E("div","chips"); row.style.marginBottom="6px";
+  if(st.page_kind) row.append(E("span","pill kind",KIND[st.page_kind]||st.page_kind));
+  if(st.lang) row.append(E("span","chip","页面语言："+(st.lang==="zh"?"中文":st.lang==="en"?"英文":st.lang)));
+  if(st.text_adequacy) row.append(E("span","chip","正文："+st.text_adequacy));
+  SEC.target.append(row);
+  if(st.visual_summary) SEC.target.append(E("div","muted small","视觉：" + st.visual_summary));
+  const mt=E("div","metrics"); mt.append(metric("字数",st.word_count),metric("图片",st.image_count),metric("论点数",st.claim_count)); SEC.target.append(mt);
+  if((st.main_content||[]).length){const m=E("div","small muted");m.textContent="主要内容："+st.main_content.join(" / ");SEC.target.append(m);}
+}
+function handleComp(c){
+  if(SEC.comp.firstChild && SEC.comp.firstChild.classList && SEC.comp.firstChild.classList.contains("ph")) clr(SEC.comp);
+  const box=E("div","comp");
+  const top=E("div","top");
+  top.append(E("span","t",`#${c.rank} ${c.title||c.url}`));
+  if(c.fetched && c.page_kind) top.append(E("span","pill kind",KIND[c.page_kind]||c.page_kind));
+  box.append(top);
+  const a=E("a",null,c.url); a.href=c.url; a.target="_blank"; box.append(a);
+  if(!c.fetched){ box.append(E("div","meta","（抓取失败 / 被反爬，已跳过）")); SEC.comp.append(box); return; }
+  box.append(E("div","meta",`字数 ${c.word_count} · 图片 ${c.image_count}`));
+  if((c.main_content||[]).length){const m=E("div","small");m.append(E("span","muted","主要内容："));m.append(document.createTextNode(c.main_content.join(" / ")));box.append(m);}
+  if((c.we_lack||[]).length){box.append(E("div","small lack","我们缺："));const ul=E("ul");c.we_lack.forEach(x=>ul.append(E("li","lack",x)));box.append(ul);}
+  SEC.comp.append(box);
+}
+function handleMatch(pm){
+  clr(SEC.match);
+  const box=E("div","callout "+(pm.mismatch?"warn":(pm.target_kind===pm.dominant_kind?"ok":"")));
+  box.append(E("div","h",(pm.mismatch?"⚠ ":"")+"页面类型匹配"));
+  box.append(E("div","body",pm.verdict));
+  const counts=Object.entries(pm.competitor_kinds||{}).map(([k,v])=>`${k}×${v}`).join("　");
+  if(counts) box.append(E("div","muted small","前10构成："+counts));
+  SEC.match.append(box);
+}
+function scoreColor(v){ return v>=75?"#15a06b":v>=50?"#c9820a":"#dc4b4b"; }
+function handleSummary(s){
+  clr(SEC.summary);
+  const box=E("div","panel summary");
+  const top=E("div","sumtop");
+  const ring=E("div","ring"); ring.style.background=scoreColor(s.score);
+  ring.append(E("div","nv",String(s.score)),E("div","nl","质量分")); top.append(ring);
+  const info=E("div");
+  info.append(E("div","grade","AI 总结 · "+(s.grade||"")));
+  if(s.quality) info.append(E("div","q",s.quality));
+  top.append(info); box.append(top);
+  const cols=E("div","twocol");
+  const sb=E("div","blk"); sb.append(E("div","bt","亮点")); const su=E("ul");(s.strengths||[]).forEach(x=>su.append(E("li",null,x)));sb.append(su);
+  const gb=E("div","blk"); gb.append(E("div","bt","与前10的主要差异")); const gu=E("ul");(s.gaps||[]).forEach(x=>gu.append(E("li",null,x)));gb.append(gu);
+  cols.append(sb,gb); box.append(cols);
+  if(s.verdict) box.append(E("div","verdict",s.verdict));
+  SEC.summary.append(box);
+}
+function handleGeo(g){
+  clr(SEC.geo);
+  const head=E("div"); head.style.display="flex"; head.style.alignItems="center"; head.style.gap="10px"; head.style.marginBottom="6px";
+  const pill=E("span","pill"); pill.style.background=scoreColor(g.score)+"22"; pill.style.color=scoreColor(g.score); pill.textContent="GEO 得分 "+g.score;
+  head.append(pill); if(g.summary) head.append(E("span","muted small",g.summary));
+  SEC.geo.append(head);
+  (g.dimensions||[]).forEach(d=>{
+    const row=E("div","geobar");
+    row.append(E("div","gl",d.name));
+    const tr=E("div","track"); const fl=E("div","fill"); fl.style.width=Math.max(3,d.score)+"%"; fl.style.background=scoreColor(d.score); tr.append(fl); row.append(tr);
+    row.append(E("div","gv",String(d.score)));
+    if(d.note) row.append(E("div","gn",d.note));
+    SEC.geo.append(row);
+  });
+  if((g.recommendations||[]).length){ SEC.geo.append(E("div","bt","优化建议（面向 AI 答案引擎）")); const ul=E("ul"); g.recommendations.forEach(x=>ul.append(E("li",null,x))); SEC.geo.append(ul); }
+}
+function handleLsi(lsi){
+  clr(SEC.lsi);
+  SEC.lsi.append(E("div","muted small",`覆盖 ${lsi.covered_count} · 缺失 ${lsi.missing_count} · 来源：下拉 / PAA / 相关搜索`));
+  const chips=E("div","chips"); chips.style.marginTop="9px";
+  (lsi.terms||[]).forEach(t=>{const c=E("span","chip "+(t.covered?"green":"red"),(t.covered?"✓ ":"✗ ")+t.term);c.title="来源："+t.source;chips.append(c);});
+  SEC.lsi.append(chips);
+}
+function handleSupp(sp){
+  if(!suppCleared){ clr(SEC.supp); suppCleared=true; }
+  const box=E("div","supp");
+  const cp=E("button","copy","复制"); cp.onclick=()=>{navigator.clipboard.writeText(sp.heading+"\n"+sp.body);cp.textContent="已复制";}; box.append(cp);
+  box.append(E("div","h","＋ "+sp.heading));
+  box.append(E("div","body",sp.body));
+  if(sp.reason) box.append(E("div","why","补这段的理由："+sp.reason));
+  SEC.supp.append(box);
+}
+</script>
+<script src="/shared/keys.js"></script>
+<script>
+  function syncKeyBtn(){ const b=document.getElementById("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
+  syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+</script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app">
+    <h1>SEO 质量分析</h1>
+
+    <label class="field">
+      <span>目标 URL（默认当前页，可改成任意网址）</span>
+      <input id="url" type="text" />
+    </label>
+
+    <label class="field">
+      <span>关键词（选填 · 填了=对比前10竞品，留空=只评本页）</span>
+      <input id="keyword" type="text" placeholder="留空则单页直接分析" />
+    </label>
+
+    <div class="row">
+      <label class="field grow">
+        <span>地区/语言</span>
+        <select id="region">
+          <option value="us-en">美国 / English</option>
+          <option value="cn-zh">中国 / 中文</option>
+          <option value="hk-zh">香港 / 中文</option>
+          <option value="uk-en">英国 / English</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>后端</span>
+        <input id="backend" type="text" value="http://localhost:8000" />
+      </label>
+    </div>
+
+    <label class="check">
+      <input id="browser" type="checkbox" />
+      <span>本地浏览器抓取（过反爬，较慢；目标若是当前页则仍读已打开内容）</span>
+    </label>
+
+    <button id="run">分析</button>
+
+    <div id="status" class="status"></div>
+    <div id="report" class="report"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

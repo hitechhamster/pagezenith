@@ -1,0 +1,48 @@
+:root{
+  --bg:#f5f6fa; --card:#ffffff; --soft:#f0f2f7; --line:#e7e9f0;
+  --text:#1b2030; --muted:#717789; --faint:#9aa0b0;
+  --accent:#4f46e5; --accent2:#6366f1; --accentsoft:#eef0fe;
+  --green:#15a06b; --greenbg:#e9f9f1; --greenline:#bce8d4;
+  --red:#dc4b4b; --redbg:#fdedee; --redline:#f5c9cc;
+  --amber:#c9820a; --amberbg:#fff6e6; --amberline:#f3dcab;
+  --radius:14px; --shadow:0 1px 2px rgba(20,24,40,.04),0 4px 16px rgba(20,24,40,.06);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Inter",-apple-system,"Segoe UI","Microsoft YaHei",Roboto,sans-serif;
+  font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+.wrap{max-width:880px;margin:0 auto;padding:24px 20px 100px}
+
+/* 顶部导航 */
+.nav{display:flex;align-items:center;gap:12px;max-width:880px;margin:0 auto;padding:16px 20px}
+.nav .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.nav .brand{font-weight:650;font-size:15px}
+.nav .grow{flex:1}
+.nav a.navlink{color:var(--muted);font-size:13px;padding:6px 10px;border-radius:8px}
+.nav a.navlink:hover{background:var(--soft);color:var(--text)}
+.nav .keybtn{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 13px;font-size:13px;cursor:pointer;color:var(--text)}
+.nav .keybtn.warn{border-color:var(--amberline);background:var(--amberbg);color:var(--amber)}
+
+button{background:var(--accent);border:none;border-radius:9px;color:#fff;font-weight:600;
+  padding:10px 20px;font-size:14px;cursor:pointer;transition:background .15s,transform .05s}
+button:hover{background:#4338ca} button:active{transform:scale(.98)} button:disabled{opacity:.55;cursor:default}
+input,select{background:#fff;border:1px solid var(--line);border-radius:9px;color:var(--text);
+  padding:9px 11px;font-size:13px;outline:none;transition:border .15s,box-shadow .15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accentsoft)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.muted{color:var(--muted)} .small{font-size:12px}
+
+/* key 设置弹窗 */
+#keys-modal{display:none;position:fixed;inset:0;z-index:50}
+#keys-modal .km-bg{position:absolute;inset:0;background:rgba(20,24,40,.4)}
+#keys-modal .km-card{position:relative;max-width:440px;margin:12vh auto;background:#fff;border-radius:16px;
+  padding:22px;box-shadow:0 20px 60px rgba(20,24,40,.25)}
+#keys-modal .km-h{font-size:17px;font-weight:680;margin-bottom:6px}
+#keys-modal .km-sub{color:var(--muted);font-size:12px;margin:0 0 16px;line-height:1.6}
+#keys-modal label{display:block;font-size:12px;font-weight:600;margin:12px 0 5px}
+#keys-modal label a{font-weight:400;font-size:11px}
+#keys-modal input{width:100%}
+#keys-modal .km-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+#keys-modal .km-ghost{background:#fff;border:1px solid var(--line);color:var(--muted)}
