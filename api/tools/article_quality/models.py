@@ -7,6 +7,11 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class FetchRequest(BaseModel):
+    url: str
+    fetch_mode: Optional[str] = None
+
+
 class CheckRequest(BaseModel):
     text: str = ""                      # 粘贴的正文（可含首行/# 标题）
     title: Optional[str] = None         # 可选：手动指定/确认的标题

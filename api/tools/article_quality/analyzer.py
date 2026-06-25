@@ -107,6 +107,18 @@ def _readability_score(stat: ReadabilityStat) -> int:
 # --------------------------------------------------------------------------- #
 # 编排
 # --------------------------------------------------------------------------- #
+async def fetch_article(url: str, fetch_mode: str | None, s: Settings) -> tuple[str, str]:
+    """抓取网址正文，返回 (title, text)。供「粘贴链接」用。"""
+    fetcher = BrowserFetcher(s) if (fetch_mode or "browser") == "browser" else PageFetcher(s)
+    try:
+        page = await fetcher.fetch(url)
+    finally:
+        await fetcher.aclose()
+    if looks_blocked(page.text) or len(page.text) < 50:
+        raise RuntimeError("该网址被反爬拦截或正文为空，请直接粘贴正文。")
+    return (page.title or ""), page.text
+
+
 class ArticleAnalyzer:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()

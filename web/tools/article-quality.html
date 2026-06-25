@@ -8,12 +8,17 @@
 <style>
   .layout{display:grid;grid-template-columns:1fr 260px;gap:16px;align-items:start}
   @media(max-width:760px){.layout{grid-template-columns:1fr}}
-  .ed-wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-height:460px}
-  .ed-common{margin:0;border:0;padding:22px 24px;font-family:var(--font-read),Georgia,"Songti SC","Microsoft YaHei",serif;
-    font-size:17px;line-height:1.9;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word}
+  .ed-wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);min-height:64vh}
+  .ed-common{margin:0;border:0;padding:32px 40px;font-family:var(--font-read),Georgia,"Songti SC","Microsoft YaHei",serif;
+    font-size:18px;line-height:1.95;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word}
   #backdrop{position:absolute;inset:0;color:var(--text);pointer-events:none;overflow:auto}
-  #editor{position:relative;width:100%;height:100%;min-height:460px;background:transparent;color:transparent;
-    caret-color:var(--text);resize:vertical;outline:none;display:block}
+  #editor{position:relative;width:100%;height:100%;min-height:64vh;background:transparent;color:transparent;
+    caret-color:var(--accent);resize:vertical;outline:none;display:block}
+  .toolbar{display:flex;gap:8px;align-items:center;margin:10px 0 16px;flex-wrap:wrap}
+  .toolbar input{flex:1;min-width:200px;max-width:420px}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  .btn-ghost:hover{background:var(--soft);border-color:var(--line)}
+  .toolbar .hint{font-size:12px;color:var(--faint)}
   #editor::placeholder{color:var(--faint)}
   .s-hard{background:#fdeca6;border-radius:2px}
   .s-vhard{background:#f7c4bd;border-radius:2px}
@@ -55,14 +60,18 @@
   <div class="grow"></div>
   <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
 </div>
-<div class="wrap" style="max-width:980px">
-  <h1 style="font-size:22px;margin:0 0 4px">文章质量检测</h1>
-  <div class="sub">粘贴文章（首行/<code># 标题</code>会自动识别为标题）。可读性高亮实时显示；点「AI 深度分析」获取信息密度、标题改写与难句改写。</div>
+<div class="wrap" style="max-width:1000px">
+  <div class="toolbar">
+    <input id="url" placeholder="粘贴文章网址自动抓取（可选）…" />
+    <button id="fetch" class="btn-ghost">抓取</button>
+    <button id="clear" class="btn-ghost">清空</button>
+    <span class="hint">或直接在下方编辑 · 首行或 <code># 标题</code> 自动识别为标题</span>
+  </div>
 
   <div class="layout">
     <div class="ed-wrap">
       <div id="backdrop" class="ed-common" aria-hidden="true"></div>
-      <textarea id="editor" class="ed-common" placeholder="在此粘贴你的文章…（第一行可作为标题，或用 # 标题）" spellcheck="false"></textarea>
+      <textarea id="editor" class="ed-common" spellcheck="false"></textarea>
     </div>
     <div class="side">
       <div class="grade"><div class="v" id="g-grade">—</div><div class="l" id="g-verdict">可读性</div></div>
@@ -148,7 +157,27 @@ function render(){
     : [["#f7c4bd","超长句",nV],["#fdeca6","长句",nLong],["#cdeccf","被动语态",C.pass],["#cfe0fb","副词",C.adv],["#e6d8f2","复杂词",C.cplx]];
   rows.forEach(([c,name,n])=>{const r=E("div","srow");const sw=E("div","sw");sw.style.background=c;r.append(sw,E("span",null,name),E("span","n",String(n)));counts.append(r);});
 }
-render();
+// 进来即编辑器：预填示例文（立刻看到高亮效果），可清空重写
+const SAMPLE=`# Forex Trading for Beginners
+
+Forex trading is basically a thing that, as everyone knows, can be extraordinarily complicated for those individuals who are just getting started and do not really have a lot of prior experience with the international financial markets in general. The spread is the difference between the bid and the ask price. Leverage can be as high as 500 to 1. Your funds should always be protected by a properly regulated broker.`;
+ED.value=SAMPLE; render();
+
+// 清空
+$("clear").addEventListener("click",()=>{ED.value="";render();ED.focus();});
+
+// 抓取链接
+$("fetch").addEventListener("click",async()=>{
+  const u=$("url").value.trim();
+  if(!/^https?:/.test(u)) return setS("请输入 http/https 网址。",true);
+  $("fetch").disabled=true; setS("抓取中…（本地浏览器过反爬，约 10–20 秒）");
+  try{
+    const resp=await fetch("/api/article-quality/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:u,fetch_mode:"browser"})});
+    if(!resp.ok) throw new Error((await resp.json()).detail||("后端 "+resp.status));
+    const d=await resp.json(); ED.value=d.text||""; render(); setS("已载入正文，可编辑或点「AI 深度分析」");
+  }catch(e){ setS(String(e.message||e),true); }
+  finally{ $("fetch").disabled=false; }
+});
 
 // ---- AI 深度分析 ----
 function syncKeyBtn(){const b=$("keybtn");if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";}}
