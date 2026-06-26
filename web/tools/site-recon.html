@@ -49,6 +49,20 @@ function panel(title){const p=E("div","panel sec");if(title)p.append(E("h2",null
 function kv(rows){const d=E("div","kv");rows.forEach(([k,v])=>{if(v==null||v==="")return;d.append(E("div","k",k));const vv=E("div");vv.textContent=v;d.append(vv);});return d;}
 function metric(k,v){const m=E("div","metric");m.append(E("div","k",k),E("div","v",String(v)));return m;}
 function chips(parent,items,acc){const c=E("div","chips");items.forEach(x=>c.append(E("span","chip"+(acc?" acc":""),x)));parent.append(c);}
+function exportCSV(products,name){
+  const cols=["title","price","variants","vendor","type","created_at","url"];
+  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const csv="﻿"+[cols.join(",")].concat(products.map(p=>cols.map(c=>esc(p[c])).join(","))).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download=(name||"products")+".csv";a.click();
+}
+function freqChart(monthly){
+  const box=E("div");box.style.cssText="display:flex;align-items:flex-end;gap:3px;height:72px;margin:8px 0 2px";
+  const max=Math.max(1,...monthly.map(m=>m.count));
+  monthly.forEach(m=>{const b=E("div");b.title=m.month+"："+m.count+" 个新品";
+    b.style.cssText="flex:1;min-width:4px;background:var(--accent);border-radius:2px 2px 0 0;height:"+Math.max(3,Math.round(m.count/max*72))+"px";box.append(b);});
+  return box;
+}
 
 $("run").addEventListener("click",run);
 $("url").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
@@ -92,6 +106,18 @@ function render(r){
       if(r.shopify.latest_product) m.append(metric("最近上新",r.shopify.latest_product));
       s.append(m);
     }
+    if((r.shopify.monthly_new||[]).length){
+      s.append(E("div","muted small","上新频率（按月，近 24 月）："));
+      s.append(freqChart(r.shopify.monthly_new));
+      const lbl=E("div","muted small");lbl.style.cssText="display:flex;justify-content:space-between";
+      lbl.append(E("span",null,r.shopify.monthly_new[0].month),E("span",null,r.shopify.monthly_new[r.shopify.monthly_new.length-1].month));
+      s.append(lbl);
+    }
+    if((r.shopify.products||[]).length){
+      const btn=E("button",null,"导出全店产品 CSV（"+r.shopify.products.length+" 条）");btn.style.marginTop="12px";
+      btn.onclick=()=>exportCSV(r.shopify.products, new URL(r.final_url).hostname.replace(/^www\./,""));
+      s.append(btn);
+    }
     if((r.shopify.vendors||[]).length){s.append(E("div","muted small","品牌/供应商：")); chips(s,r.shopify.vendors);}
     if((r.shopify.product_types||[]).length){s.append(E("div","muted small","产品类目：")); chips(s,r.shopify.product_types);}
     root.append(s);
@@ -113,6 +139,21 @@ function render(r){
     const pk=Object.entries(r.pixels||{});
     if(pk.length) mk.append(kv(pk.map(([k,v])=>[k,v])));
     root.append(mk);
+  }
+
+  // 支付 / 政策
+  if((r.payments||[]).length||(r.policies||[]).length){
+    const p=panel("支付 / 政策");
+    if(r.payments.length){p.append(E("div","muted small","支付方式：")); chips(p,r.payments,true);}
+    if(r.policies.length){p.append(E("div","muted small","政策页：")); chips(p,r.policies);}
+    root.append(p);
+  }
+
+  // 服务器 / 托管
+  if(r.hosting&&r.hosting.ip){
+    const h=panel("服务器 / 托管");
+    h.append(kv([["IP", r.hosting.ip],["托管商/网络", r.hosting.org]]));
+    root.append(h);
   }
 
   // 联系 / 社媒

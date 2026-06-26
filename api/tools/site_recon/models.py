@@ -26,6 +26,8 @@ class ShopifyInfo(BaseModel):
     price_max: Optional[float] = None
     vendors: list[str] = Field(default_factory=list)
     product_types: list[str] = Field(default_factory=list)
+    products: list[dict] = Field(default_factory=list)        # 全店产品（供导出 CSV，封顶 1000）
+    monthly_new: list[dict] = Field(default_factory=list)     # [{month, count}] 上新频率
 
 
 class AgeInfo(BaseModel):
@@ -47,5 +49,8 @@ class ReconReport(BaseModel):
     pixels: dict = Field(default_factory=dict)               # 具体 ID（GA4/FB/TikTok…）
     emails: list[str] = Field(default_factory=list)
     socials: list[str] = Field(default_factory=list)
+    payments: list[str] = Field(default_factory=list)        # 支付方式
+    policies: list[str] = Field(default_factory=list)        # 退货/物流等政策
+    hosting: dict = Field(default_factory=dict)              # ip / 托管商
     seo: dict = Field(default_factory=dict)                  # title/desc/sitemap页数/语言
     notes: list[str] = Field(default_factory=list)

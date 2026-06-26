@@ -129,35 +129,58 @@ async def shopify_info(html: str, base: str, s: Settings) -> ShopifyInfo:
     if "shopify_plus" in html.lower() or "plus.shopify" in html.lower():
         info.is_plus_hint = True
 
-    # 公开的 /products.json（很多 Shopify 店开放）→ 上新/规模/价格情报
+    # 公开的 /products.json（很多 Shopify 店开放）→ 分页拉全 → 选品/上新/价格情报
+    prods = []
     async with httpx.AsyncClient(timeout=s.fetch_timeout, follow_redirects=True,
                                  headers={"User-Agent": _UA}) as c:
-        r = await _get(c, base.rstrip("/") + "/products.json?limit=250")
-    if r is not None and r.status_code == 200:
-        try:
-            prods = r.json().get("products", [])
-        except Exception:
-            prods = []
-        if prods:
-            info.products_count = len(prods)
-            info.products_capped = len(prods) >= 250
-            dates = [p.get("created_at", "") for p in prods if p.get("created_at")]
-            upd = [p.get("updated_at", "") or p.get("published_at", "") for p in prods]
-            if dates:
-                info.earliest_product = min(dates)[:10]
-            if upd:
-                info.latest_product = max([u for u in upd if u])[:10]
-            prices = []
-            for p in prods:
-                for v in p.get("variants", []):
-                    try:
-                        prices.append(float(v.get("price", 0)))
-                    except Exception:
-                        pass
-            if prices:
-                info.price_min, info.price_max = round(min(prices), 2), round(max(prices), 2)
-            info.vendors = sorted({p.get("vendor", "") for p in prods if p.get("vendor")})[:10]
-            info.product_types = sorted({p.get("product_type", "") for p in prods if p.get("product_type")})[:10]
+        for page in range(1, 21):  # 最多 20 页 = 5000 产品
+            r = await _get(c, base.rstrip("/") + f"/products.json?limit=250&page={page}")
+            if r is None or r.status_code != 200:
+                break
+            try:
+                batch = r.json().get("products", [])
+            except Exception:
+                break
+            if not batch:
+                break
+            prods.extend(batch)
+            if len(batch) < 250:
+                break
+    if prods:
+        info.products_count = len(prods)
+        info.products_capped = len(prods) >= 5000
+        dates = [p.get("created_at", "") for p in prods if p.get("created_at")]
+        upd = [p.get("updated_at", "") or p.get("published_at", "") for p in prods]
+        if dates:
+            info.earliest_product = min(dates)[:10]
+        if upd:
+            info.latest_product = max([u for u in upd if u])[:10]
+        prices = []
+        for p in prods:
+            for v in p.get("variants", []):
+                try:
+                    prices.append(float(v.get("price", 0)))
+                except Exception:
+                    pass
+        if prices:
+            info.price_min, info.price_max = round(min(prices), 2), round(max(prices), 2)
+        info.vendors = sorted({p.get("vendor", "") for p in prods if p.get("vendor")})[:15]
+        info.product_types = sorted({p.get("product_type", "") for p in prods if p.get("product_type")})[:15]
+        # 上新频率（按月）
+        from collections import Counter
+        months = Counter(p.get("created_at", "")[:7] for p in prods if p.get("created_at"))
+        info.monthly_new = [{"month": m, "count": n} for m, n in sorted(months.items()) if m][-24:]
+        # 产品明细（供导出 CSV，封顶 1000）
+        for p in prods[:1000]:
+            vs = p.get("variants", [])
+            pr = [float(v.get("price", 0)) for v in vs if v.get("price")]
+            info.products.append({
+                "title": p.get("title", ""), "handle": p.get("handle", ""),
+                "vendor": p.get("vendor", ""), "type": p.get("product_type", ""),
+                "price": round(min(pr), 2) if pr else "", "variants": len(vs),
+                "created_at": p.get("created_at", "")[:10],
+                "url": base.rstrip("/") + "/products/" + p.get("handle", ""),
+            })
     return info
 
 
@@ -222,14 +245,76 @@ def marketing(html: str):
     tt = grab(r"ttq\.load\(\s*['\"]([A-Z0-9]+)")
     if tt: pix["TikTok Pixel"] = tt; stack.append("TikTok Pixel")
     elif "analytics.tiktok.com" in html: stack.append("TikTok Pixel")
-    for name, sub in [("Pinterest", "pintrk"), ("Klaviyo 邮件营销", "klaviyo"),
-                      ("Judge.me 评价", "judge.me"), ("Loox 评价", "loox.io"),
-                      ("Yotpo 评价", "yotpo"), ("Stamped 评价", "stamped.io"),
-                      ("Recharge 订阅", "rechargecdn"), ("Hotjar", "hotjar"),
-                      ("Microsoft Clarity", "clarity.ms"), ("Gorgias 客服", "gorgias"),
-                      ("Tidio 客服", "tidio"), ("PageFly 落地页", "pagefly")]:
-        if sub in html.lower(): stack.append(name)
+    apps = [
+        ("Pinterest", "pintrk"), ("Snapchat Pixel", "sc-static.net"),
+        ("Klaviyo 邮件营销", "klaviyo"), ("Omnisend 邮件", "omnisend"),
+        ("Mailchimp", "mailchimp"), ("Privy 弹窗", "privy"),
+        ("Judge.me 评价", "judge.me"), ("Loox 图片评价", "loox.io"),
+        ("Yotpo 评价/忠诚", "yotpo"), ("Stamped 评价", "stamped.io"),
+        ("Okendo 评价", "okendo"), ("Reviews.io", "reviews.io"),
+        ("Recharge 订阅", "rechargecdn"), ("Bold 订阅/定价", "boldapps"),
+        ("Hotjar", "hotjar"), ("Microsoft Clarity", "clarity.ms"),
+        ("Gorgias 客服", "gorgias"), ("Tidio 客服", "tidio"),
+        ("Zendesk 客服", "zdassets"), ("Re:amaze 客服", "reamaze"),
+        ("PageFly 落地页", "pagefly"), ("GemPages 落地页", "gempages"),
+        ("Shogun 落地页", "shogun"), ("Vitals 多合一", "vitals"),
+        ("ReConvert 加购", "reconvert"), ("Zipify 漏斗", "zipify"),
+        ("Frequently Bought", "bundler"), ("Rebuy 推荐", "rebuy"),
+        ("Smile.io 忠诚", "smile.io"), ("LoyaltyLion", "loyaltylion"),
+        ("Wishlist", "wishlistking"), ("Tolstoy 视频", "gotolstoy"),
+        ("Sezzle 分期", "sezzle"), ("Afterpay 分期", "afterpay"),
+        ("Klarna 分期", "klarna"), ("Affirm 分期", "affirm"),
+        ("Tapcart App", "tapcart"), ("Searchanise 搜索", "searchanise"),
+        ("Algolia 搜索", "algolia"), ("Weglot 多语言", "weglot"),
+        ("Langify 多语言", "langify"), ("Trustpilot", "trustpilot"),
+        ("Intercom 客服", "intercom"), ("Attentive 短信", "attentive"),
+        ("Postscript 短信", "postscript"),
+    ]
+    low = html.lower()
+    for name, sub in apps:
+        if sub in low: stack.append(name)
     return sorted(set(stack)), pix
+
+
+def payments_policies(html: str):
+    low = html.lower()
+    pays = []
+    for name, sub in [("PayPal", "paypal"), ("Stripe", "stripe"), ("Shop Pay", "shop pay"),
+                      ("Apple Pay", "apple pay"), ("Google Pay", "google pay"),
+                      ("Amazon Pay", "amazon pay"), ("Klarna", "klarna"),
+                      ("Afterpay", "afterpay"), ("Sezzle", "sezzle"), ("Affirm", "affirm"),
+                      ("American Express", "amex"), ("Visa", '"visa"'), ("Mastercard", "mastercard"),
+                      ("Alipay", "alipay"), ("WeChat Pay", "wechat")]:
+        if sub in low: pays.append(name)
+    pols = []
+    for name, sub in [("退款政策", "refund-policy"), ("物流政策", "shipping-policy"),
+                      ("隐私政策", "privacy-policy"), ("服务条款", "terms-of-service"),
+                      ("退货页", "/pages/returns"), ("配送页", "/pages/shipping")]:
+        if sub in low: pols.append(name)
+    return sorted(set(pays)), sorted(set(pols))
+
+
+async def hosting_info(domain: str, s):
+    import socket
+    info = {}
+    try:
+        ip = socket.gethostbyname(domain)
+        info["ip"] = ip
+    except Exception:
+        return info
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": _UA}) as c:
+        r = await _get(c, f"https://rdap.org/ip/{ip}")
+    if r is not None and r.status_code == 200:
+        try:
+            d = r.json()
+            info["org"] = d.get("name", "")
+            for ent in d.get("entities", []):
+                for v in (ent.get("vcardArray", [None, []])[1] or []):
+                    if v and v[0] == "fn":
+                        info["org"] = info.get("org") or v[3]
+        except Exception:
+            pass
+    return info
 
 
 def contacts(html: str):
@@ -272,8 +357,9 @@ async def recon(url: str, settings: Settings | None = None) -> ReconReport:
     platform, ev, other = detect_platform(html, headers)
     stack, pix = marketing(html)
     emails, socials = contacts(html)
+    pays, pols = payments_policies(html)
 
-    tasks = {"age": age_info(domain, s), "seo": seo_info(html, base, s)}
+    tasks = {"age": age_info(domain, s), "seo": seo_info(html, base, s), "host": hosting_info(domain, s)}
     if platform == "Shopify":
         tasks["shop"] = shopify_info(html, base, s)
     results = dict(zip(tasks.keys(), await asyncio.gather(*tasks.values())))
@@ -281,7 +367,8 @@ async def recon(url: str, settings: Settings | None = None) -> ReconReport:
     rep = ReconReport(
         url=url, final_url=final_url, platform=platform, platform_evidence=ev,
         other_tech=other, age=results["age"], marketing_stack=stack, pixels=pix,
-        emails=emails, socials=socials, seo=results["seo"],
+        emails=emails, socials=socials, payments=pays, policies=pols,
+        hosting=results["host"], seo=results["seo"],
     )
     if "shop" in results:
         rep.shopify = results["shop"]
