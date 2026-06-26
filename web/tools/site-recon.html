@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>站点情报侦察 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .bar{display:flex;gap:8px;align-items:center;margin:8px 0 16px;flex-wrap:wrap}
+  .bar input{flex:1;min-width:240px;max-width:520px}
+  #status{margin:10px 2px;color:var(--muted);font-size:13px}
+  #status.err{color:var(--red)}
+  .sec{margin-top:14px;padding:16px 18px}
+  .sec h2{font-size:15px;margin:0 0 12px;font-weight:620;font-family:var(--font-display)}
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:6px 14px;font-size:14px}
+  .kv .k{color:var(--muted)}
+  .badge{display:inline-block;background:var(--accentsoft);color:var(--accent);border-radius:8px;padding:4px 12px;font-weight:600;font-size:14px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+  .chip{background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:3px 10px;font-size:12px}
+  .chip.acc{background:var(--accentsoft);color:var(--accent);border-color:transparent}
+  .metrics{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .metric{background:var(--soft);border-radius:10px;padding:10px 14px;min-width:110px}
+  .metric .k{font-size:11px;color:var(--muted)} .metric .v{font-size:18px;font-weight:680;margin-top:2px}
+  .muted{color:var(--muted)} .small{font-size:12px}
+  a.lk{color:var(--accent);word-break:break-all}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+</div>
+<div class="wrap">
+  <h1 style="font-size:22px;margin:0 0 4px">站点情报侦察</h1>
+  <div class="sub">输入任意网址，检测建站平台、是否 Shopify（含主题/产品/价格情报）、域名年龄与首次上线、营销技术栈、联系方式。无需 API Key。</div>
+  <div class="bar">
+    <input id="url" placeholder="https://example.com" />
+    <button id="run">检测</button>
+  </div>
+  <div id="status"></div>
+  <div id="report"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+function setS(m,err){const s=$("status");s.textContent=m||"";s.className=err?"err":"";}
+function panel(title){const p=E("div","panel sec");if(title)p.append(E("h2",null,title));return p;}
+function kv(rows){const d=E("div","kv");rows.forEach(([k,v])=>{if(v==null||v==="")return;d.append(E("div","k",k));const vv=E("div");vv.textContent=v;d.append(vv);});return d;}
+function metric(k,v){const m=E("div","metric");m.append(E("div","k",k),E("div","v",String(v)));return m;}
+function chips(parent,items,acc){const c=E("div","chips");items.forEach(x=>c.append(E("span","chip"+(acc?" acc":""),x)));parent.append(c);}
+
+$("run").addEventListener("click",run);
+$("url").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
+
+async function run(){
+  const url=$("url").value.trim();
+  if(!/^https?:/.test(url)) return setS("请输入 http/https 网址。",true);
+  $("run").disabled=true; $("report").innerHTML=""; setS("检测中…约 10–20 秒（抓取 + RDAP + Wayback + products.json）");
+  try{
+    const resp=await fetch("/api/site-recon/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+    if(!resp.ok) throw new Error((await resp.json()).detail||("后端 "+resp.status));
+    render(await resp.json()); setS("");
+  }catch(e){ setS(String(e.message||e),true); }
+  finally{ $("run").disabled=false; }
+}
+
+function render(r){
+  const root=$("report"); root.innerHTML="";
+
+  // 概览
+  const ov=panel("概览");
+  const top=E("div");top.append(E("span","badge","建站平台："+r.platform));ov.append(top);
+  if(r.platform_evidence.length){const e=E("div","muted small");e.style.marginTop="6px";e.textContent="依据："+r.platform_evidence.join("；");ov.append(e);}
+  if(r.other_tech.length) chips(ov,r.other_tech);
+  const a=E("a","lk",r.final_url);a.href=r.final_url;a.target="_blank";const w=E("div");w.style.marginTop="8px";w.append(a);ov.append(w);
+  root.append(ov);
+
+  // Shopify 专项
+  if(r.shopify && r.shopify.is_shopify){
+    const s=panel("Shopify 专项");
+    s.append(kv([
+      ["主题", r.shopify.theme_name||"（未暴露，疑似无头/Plus）"],
+      ["官方主题", r.shopify.theme_known],
+      ["Plus/无头线索", r.shopify.is_plus_hint?"是":""],
+    ]));
+    if(r.shopify.products_count!=null){
+      const m=E("div","metrics");
+      m.append(metric("产品数",(r.shopify.products_capped?"≥":"")+r.shopify.products_count));
+      if(r.shopify.price_min!=null) m.append(metric("价格区间",r.shopify.price_min+"–"+r.shopify.price_max));
+      if(r.shopify.earliest_product) m.append(metric("最早产品",r.shopify.earliest_product));
+      if(r.shopify.latest_product) m.append(metric("最近上新",r.shopify.latest_product));
+      s.append(m);
+    }
+    if((r.shopify.vendors||[]).length){s.append(E("div","muted small","品牌/供应商：")); chips(s,r.shopify.vendors);}
+    if((r.shopify.product_types||[]).length){s.append(E("div","muted small","产品类目：")); chips(s,r.shopify.product_types);}
+    root.append(s);
+  }
+
+  // 站龄
+  const ag=panel("站点年龄");
+  ag.append(kv([
+    ["域名注册", r.age.domain_created? (r.age.domain_created+"（约 "+r.age.domain_age_years+" 年）") : "未取到"],
+    ["首次存档", r.age.first_archived? (r.age.first_archived+"（约 "+r.age.first_seen_years+" 年前首次被收录）") : "未取到"],
+  ]));
+  ag.append(E("div","muted small","注：域名注册=域名年龄；首次存档(Wayback)≈站点公开上线时间。"));
+  root.append(ag);
+
+  // 营销技术栈
+  if(r.marketing_stack.length||Object.keys(r.pixels||{}).length){
+    const mk=panel("营销 / 技术栈");
+    if(r.marketing_stack.length) chips(mk,r.marketing_stack,true);
+    const pk=Object.entries(r.pixels||{});
+    if(pk.length) mk.append(kv(pk.map(([k,v])=>[k,v])));
+    root.append(mk);
+  }
+
+  // 联系 / 社媒
+  if((r.emails||[]).length||(r.socials||[]).length){
+    const c=panel("联系方式 / 社媒");
+    if(r.emails.length){c.append(E("div","muted small","邮箱：")); chips(c,r.emails);}
+    if(r.socials.length){c.append(E("div","muted small","社媒："));const d=E("div","chips");r.socials.forEach(u=>{const a=E("a","chip");a.href=u;a.target="_blank";a.textContent=u.replace(/^https?:\/\/(www\.)?/,"");d.append(a);});c.append(d);}
+    root.append(c);
+  }
+
+  // SEO 基础
+  const seo=r.seo||{};
+  if(seo.title||seo.sitemap_locs!=null){
+    const sp=panel("SEO 基础");
+    sp.append(kv([
+      ["标题", seo.title],
+      ["描述", seo.description],
+      ["sitemap 条目", seo.sitemap_locs!=null? (seo.sitemap_locs+(seo.sitemap_locs<20?"（可能是 sitemap 索引）":"")) : ""],
+      ["多语言市场", (seo.languages||[]).join("  ")],
+    ]));
+    root.append(sp);
+  }
+
+  if((r.notes||[]).length){const n=panel();(r.notes).forEach(x=>n.append(E("div","muted small",x)));root.append(n);}
+}
+</script>
+</body>
+</html>

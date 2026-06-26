@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from tools.article_quality.router import router as article_quality_router
 from tools.seo_gap.router import router as seo_gap_router
+from tools.site_recon.router import router as site_recon_router
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 
@@ -34,6 +35,7 @@ app.add_middleware(
 # ---- 工具 API ----
 app.include_router(seo_gap_router)
 app.include_router(article_quality_router)
+app.include_router(site_recon_router)
 # app.include_router(other_tool_router)   # 以后加工具在这里
 
 
