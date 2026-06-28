@@ -1,0 +1,55 @@
+{
+  "date": "2026-06-28",
+  "overview": "本期重点关注Google 2026年6月垃圾内容更新对AI搜索结果的影响，以及AI Agent在SEO自动化与内容维护中的前沿应用。",
+  "items": [
+    {
+      "title": "Google 6月垃圾内容更新完成，AI搜索结果成为重点治理对象",
+      "summary": "Google已完成6月垃圾内容更新，此次更新明确将AI生成内容的操纵行为纳入治理范围。SEO从业者需警惕针对AI答案的恶意优化手段，以防触发惩罚。",
+      "category": "算法更新",
+      "source": "Search Engine Journal",
+      "url": "https://www.searchenginejournal.com/googles-spam-update-now-reaches-ai-answers-enforcement-is-hard/580535/"
+    },
+    {
+      "title": "Google Search Console推出生成式AI性能报告",
+      "summary": "Google在Search Console中新增了针对生成式AI功能的性能报告，帮助站长监测网站在AI搜索与Discover中的可见度表现。",
+      "category": "工具",
+      "source": "Google Search Central",
+      "url": "https://developers.google.com/search/blog/2026/06/gen-ai-performance-reports"
+    },
+    {
+      "title": "研究显示：三分之一的金融科技网站对AI Agent不可见",
+      "summary": "针对274个金融科技主页的研究发现，许多网站因渲染问题导致AI Agent无法抓取内容。优化网站的渲染能力已成为提升AI可见度的关键。",
+      "category": "研究",
+      "source": "Search Engine Journal",
+      "url": "https://www.searchenginejournal.com/a-third-of-fintech-is-invisible-to-ai-agents/576193/"
+    },
+    {
+      "title": "利用AI Agent实现SEO自动化：11种实战策略",
+      "summary": "文章探讨了如何通过AI Agent自动执行SEO任务，包括定期检查、数据监控和内容维护，从而减少人工干预并提高工作效率。",
+      "category": "AI",
+      "source": "Ahrefs Blog",
+      "url": "https://ahrefs.com/blog/agent-a-for-seo/"
+    },
+    {
+      "title": "2026年SEO趋势：搜索流量碎片化与AI Agent崛起",
+      "summary": "随着Google搜索流量波动，用户研究和购买行为正向社交媒体、YouTube及AI Agent平台转移。SEO策略需从单一搜索优化转向多渠道布局。",
+      "category": "研究",
+      "source": "Ahrefs Blog",
+      "url": "https://ahrefs.com/blog/seo-trends/"
+    },
+    {
+      "title": "Claude内容审计工作流：构建可复用的SEO技能",
+      "summary": "通过在Claude中构建审计工作流，SEO人员可以快速识别内容缺口、过时信息及品牌语调不一致问题，提升网站整体内容质量。",
+      "category": "工具",
+      "source": "Search Engine Land",
+      "url": "https://searchengineland.com/content-audit-workflows-claude-481099/"
+    },
+    {
+      "title": "Google Search Central Live上海站将于2026年5月举办",
+      "summary": "Google宣布在上海举办线下活动，重点关注面向海外用户的独立站优化策略，为中国跨境电商提供专业指导。",
+      "category": "SEO",
+      "source": "Google Search Central",
+      "url": "https://developers.google.com/search/blog/2026/04/scl-shanghai-2026"
+    }
+  ]
+}

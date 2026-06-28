@@ -24,6 +24,20 @@
   .about .roadmap span{font-size:12px;color:var(--accent);background:var(--accentsoft);border-radius:7px;padding:3px 11px}
   .about .contact{color:var(--text)}
   .about .contact b{color:var(--accent)}
+  .home-layout{display:grid;grid-template-columns:1fr 280px;gap:36px;align-items:start}
+  @media(max-width:840px){.home-layout{grid-template-columns:1fr}}
+  .newsbar{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);margin-top:48px}
+  @media(max-width:840px){.newsbar{margin-top:0}}
+  .newsbar .nb-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .newsbar .nb-head span{font-family:var(--font-display);font-weight:600;font-size:14px}
+  .newsbar .nb-head a{font-size:12px;color:var(--accent)}
+  .newsbar .nb-loading{color:var(--faint);font-size:13px}
+  .newsbar .nb-ov{font-size:12px;color:var(--muted);line-height:1.65;margin-bottom:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .newsbar .nb-item{display:block;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.5;color:var(--text)}
+  .newsbar .nb-item:last-of-type{border-bottom:0}
+  .newsbar .nb-item:hover{color:var(--accent)}
+  .newsbar .nb-item .c{color:var(--accent);font-size:11px;margin-right:6px}
+  .newsbar .nb-date{font-size:11px;color:var(--faint);margin-top:10px}
 </style>
 </head>
 <body>
@@ -33,7 +47,9 @@
   <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
 </div>
 
-<div class="wrap">
+<div class="wrap home-wrap">
+ <div class="home-layout">
+  <div class="main">
   <div class="hero">
     <h1>AI 跨境营销工具集</h1>
     <p>PageZenith · AI 驱动的跨境营销工具。自带 API Key，浏览器里直接用，结果不存服务器。</p>
@@ -72,12 +88,38 @@
     </div>
     <p class="contact">个人时间有限，不保证更新频率。有反馈，小红书 <b>克拉克聊AI出海</b> 找我。</p>
   </div>
+  </div>
+  <aside class="newsbar" id="newsbar">
+    <div class="nb-head"><span>每日 SEO / GEO 简报</span><a href="/news">全部 →</a></div>
+    <div id="nb-body" class="nb-loading">加载中…</div>
+  </aside>
+ </div>
 </div>
 
 <script src="/shared/keys.js"></script>
 <script>
   function syncKeyBtn(){ const b=document.getElementById("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
   syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+
+  (async()=>{
+    const body=document.getElementById("nb-body");
+    try{
+      const idx=await (await fetch("/data/briefings/index.json",{cache:"no-cache"})).json();
+      const dates=idx.dates||[];
+      if(!dates.length){ body.className=""; body.textContent="暂无简报，明天自动生成后即可查看。"; return; }
+      const date=dates[0];
+      const d=await (await fetch("/data/briefings/"+date+".json",{cache:"no-cache"})).json();
+      body.className=""; body.innerHTML="";
+      if(d.overview){const o=document.createElement("div");o.className="nb-ov";o.textContent=d.overview;body.append(o);}
+      (d.items||[]).slice(0,5).forEach(it=>{
+        const a=document.createElement("a");a.className="nb-item";a.href="/news?d="+date;
+        const c=document.createElement("span");c.className="c";c.textContent=it.category||"";
+        a.append(c, document.createTextNode(it.title||""));
+        body.append(a);
+      });
+      const dd=document.createElement("div");dd.className="nb-date";dd.textContent=date+" · 共 "+dates.length+" 期";body.append(dd);
+    }catch(e){ body.className=""; body.textContent="简报加载失败。"; }
+  })();
 </script>
 </body>
 </html>

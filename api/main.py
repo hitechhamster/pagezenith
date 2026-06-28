@@ -45,6 +45,11 @@ async def home():
     return FileResponse(WEB / "index.html")
 
 
+@app.get("/news")
+async def news():
+    return FileResponse(WEB / "news.html")
+
+
 @app.get("/tools/{name}")
 async def tool_page(name: str):
     f = WEB / "tools" / f"{name}.html"

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>每日 SEO / GEO 简报 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .head{display:flex;align-items:center;gap:14px;margin:6px 0 6px}
+  .head h1{font-size:24px;margin:0;font-family:var(--font-display);font-weight:600}
+  .navbtn{background:transparent;border:1px solid var(--line);color:var(--text);width:38px;height:38px;border-radius:9px;cursor:pointer;font-size:16px;padding:0}
+  .navbtn:hover{background:var(--soft)} .navbtn:disabled{opacity:.4;cursor:default}
+  .date{color:var(--muted);font-size:14px;margin-bottom:18px}
+  .overview{font-family:var(--font-read);font-size:17px;line-height:1.8;border-left:3px solid var(--accent);padding:4px 0 4px 16px;margin:0 0 24px;color:var(--text)}
+  .item{padding:18px 0;border-top:1px solid var(--line)}
+  .item .cat{display:inline-block;background:var(--accentsoft);color:var(--accent);font-size:11px;font-weight:600;border-radius:6px;padding:2px 9px;margin-bottom:7px}
+  .item h2{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 6px;line-height:1.4}
+  .item p{font-family:var(--font-read);font-size:15px;line-height:1.8;color:var(--text);margin:0 0 8px}
+  .item .src{font-size:13px}
+  .item .src a{color:var(--accent)}
+  .empty{color:var(--muted);padding:40px 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+</div>
+<div class="wrap" style="max-width:760px">
+  <div class="head">
+    <button class="navbtn" id="prev" title="前一天">←</button>
+    <h1>每日 SEO / GEO 简报</h1>
+    <button class="navbtn" id="next" title="后一天">→</button>
+  </div>
+  <div class="date" id="date">加载中…</div>
+  <div id="body"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+let DATES=[], cur=0;
+
+async function init(){
+  try{
+    const idx=await (await fetch("/data/briefings/index.json",{cache:"no-cache"})).json();
+    DATES=idx.dates||[];
+  }catch(e){ DATES=[]; }
+  if(!DATES.length){ $("date").textContent=""; $("body").innerHTML='<div class="empty">暂无简报，明天的自动生成后即可查看。</div>'; $("prev").disabled=$("next").disabled=true; return; }
+  // 允许 URL 指定日期 ?d=YYYY-MM-DD
+  const want=new URLSearchParams(location.search).get("d");
+  cur=Math.max(0, want?DATES.indexOf(want):0); if(cur<0)cur=0;
+  show();
+}
+async function show(){
+  $("next").disabled=cur<=0; $("prev").disabled=cur>=DATES.length-1;
+  const date=DATES[cur];
+  $("date").textContent=date+"（第 "+(DATES.length-cur)+" 期，共 "+DATES.length+" 期）";
+  const body=$("body"); body.innerHTML='<div class="empty">加载中…</div>';
+  try{
+    const d=await (await fetch("/data/briefings/"+date+".json",{cache:"no-cache"})).json();
+    body.innerHTML="";
+    if(d.overview) body.append(E("div","overview",d.overview));
+    (d.items||[]).forEach(it=>{
+      const box=E("div","item");
+      if(it.category) box.append(E("span","cat",it.category));
+      box.append(E("h2",null,it.title));
+      if(it.summary) box.append(E("p",null,it.summary));
+      const src=E("div","src");src.append(E("span","muted","来源："));
+      const a=E("a",null,it.source||it.url);a.href=it.url;a.target="_blank";a.rel="noopener";src.append(a);
+      box.append(src);
+      body.append(box);
+    });
+  }catch(e){ body.innerHTML='<div class="empty">该期加载失败。</div>'; }
+}
+$("prev").onclick=()=>{if(cur<DATES.length-1){cur++;show();}};
+$("next").onclick=()=>{if(cur>0){cur--;show();}};
+init();
+</script>
+</body>
+</html>
