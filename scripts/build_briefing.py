@@ -32,9 +32,15 @@ FEEDS = [
 ]
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "data" / "briefings"
-MODEL = os.environ.get("LLM_MODEL", "google/gemini-3.1-flash-lite")
-KEY = os.environ.get("OPENROUTER_API_KEY", "")
-BASE = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+# 优先用原生 Gemini API key（Google AI Studio，免费额度）；没有则回退 OpenRouter。
+if os.environ.get("GEMINI_API_KEY"):
+    KEY = os.environ["GEMINI_API_KEY"]
+    BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+    MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+else:
+    KEY = os.environ.get("OPENROUTER_API_KEY", "")
+    BASE = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    MODEL = os.environ.get("LLM_MODEL", "google/gemini-3.1-flash-lite")
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 _DROP = ("script", "style", "noscript", "nav", "footer", "header", "aside", "form")
 
@@ -104,7 +110,7 @@ def article_text(url: str) -> str:
 
 def main():
     if not KEY:
-        print("ERROR: 缺少 OPENROUTER_API_KEY", file=sys.stderr)
+        print("ERROR: 缺少 GEMINI_API_KEY（或 OPENROUTER_API_KEY）", file=sys.stderr)
         sys.exit(1)
     cands = fetch_items()
     if not cands:
