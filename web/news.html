@@ -15,7 +15,8 @@
   .item{padding:18px 0;border-top:1px solid var(--line)}
   .item .cat{display:inline-block;background:var(--accentsoft);color:var(--accent);font-size:11px;font-weight:600;border-radius:6px;padding:2px 9px;margin-bottom:7px}
   .item h2{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 6px;line-height:1.4}
-  .item p{font-family:var(--font-read);font-size:15px;line-height:1.8;color:var(--text);margin:0 0 8px}
+  .item .lead{font-size:14px;color:var(--muted);margin:0 0 10px;font-family:var(--font-ui)}
+  .item p{font-family:var(--font-read);font-size:15.5px;line-height:1.85;color:var(--text);margin:0 0 10px}
   .item .src{font-size:13px}
   .item .src a{color:var(--accent)}
   .empty{color:var(--muted);padding:40px 0;text-align:center}
@@ -65,7 +66,8 @@ async function show(){
       const box=E("div","item");
       if(it.category) box.append(E("span","cat",it.category));
       box.append(E("h2",null,it.title));
-      if(it.summary) box.append(E("p",null,it.summary));
+      if(it.summary) box.append(E("div","lead",it.summary));
+      if(it.detail) it.detail.split(/\n+/).forEach(p=>{if(p.trim())box.append(E("p",null,p.trim()));});
       const src=E("div","src");src.append(E("span","muted","来源："));
       const a=E("a",null,it.source||it.url);a.href=it.url;a.target="_blank";a.rel="noopener";src.append(a);
       box.append(src);
