@@ -20,7 +20,7 @@ jobs:
       - name: 生成今日简报
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
+          GEMINI_MODEL: gemini-3.1-flash-lite
         run: python scripts/build_briefing.py
       - name: 提交
         run: |

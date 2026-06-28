@@ -36,7 +36,7 @@ OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "data" / "briefings"
 if os.environ.get("GEMINI_API_KEY"):
     KEY = os.environ["GEMINI_API_KEY"]
     BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
-    MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 else:
     KEY = os.environ.get("OPENROUTER_API_KEY", "")
     BASE = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
