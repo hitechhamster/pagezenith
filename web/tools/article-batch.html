@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notion 文章批量评审 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .sub{color:var(--muted);font-size:14px;margin:0 0 18px;max-width:60ch;line-height:1.7}
+  .steps{background:var(--soft);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 18px;margin:0 0 18px;font-size:13.5px;line-height:1.85;color:var(--text)}
+  .steps b{color:var(--accent)}
+  .steps code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px}
+  .drop{border:2px dashed var(--line);border-radius:var(--radius-lg);padding:34px 20px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;background:var(--card)}
+  .drop:hover,.drop.over{border-color:var(--accent);background:var(--accentsoft)}
+  .drop .big{font-size:15px;font-weight:600;margin-bottom:4px}
+  .drop .hint{font-size:12.5px;color:var(--muted)}
+  .drop .file{font-size:14px;color:var(--accent);font-weight:600}
+  .bar{display:flex;gap:10px;align-items:center;margin:16px 0 6px;flex-wrap:wrap}
+  #status{margin:10px 2px;color:var(--muted);font-size:13px}
+  #status.err{color:var(--red)}
+  .prog{height:8px;background:var(--soft);border-radius:6px;overflow:hidden;margin:14px 0 6px;display:none}
+  .prog .fill{height:100%;width:0;background:var(--accent);transition:width .3s}
+  .rows{margin-top:10px}
+  .r{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13.5px}
+  .r .sc{width:42px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+  .r .ti{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .r .gd{font-size:12px;color:var(--muted);flex-shrink:0}
+  .sc.good{background:#e6f4ea;color:#137333} .sc.mid{background:#fef7e0;color:#b06000}
+  .sc.bad{background:#fce8e6;color:#c5221f} .sc.fail{background:var(--soft);color:var(--muted)}
+  .done-box{margin-top:18px;padding:16px 18px;background:var(--accentsoft);border-radius:var(--radius-lg);display:none}
+  .done-box .dt{font-weight:600;margin-bottom:8px}
+  .muted{color:var(--muted)} .small{font-size:12px}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+</div>
+<div class="wrap" style="max-width:760px">
+  <h1 style="font-size:22px;margin:0 0 4px">Notion 文章批量评审</h1>
+  <div class="sub">把 Notion 数据库里的文章一次性导出，批量跑「文章质量检测」，每篇给出综合评分与 AI 意见，汇总成一个 Excel 下载。</div>
+
+  <div class="steps">
+    <b>怎么用：</b><br>
+    1. 在 Notion 打开装文章的<b>数据库</b> → 右上角 <code>···</code> → <code>Export</code>。<br>
+    2. 格式选 <b>Markdown &amp; CSV</b>，<b>Include subpages</b> 打开 → 导出得到一个 <code>.zip</code>。<br>
+    3. 把这个 zip 拖到下面 → 点「开始评审」→ 跑完自动下载 Excel。
+    <div class="small muted" style="margin-top:6px">⚠️ 只导成 CSV 不行（不含正文），必须是 <b>Markdown &amp; CSV</b>。单次最多 80 篇。</div>
+  </div>
+
+  <div class="drop" id="drop">
+    <div class="big" id="dropBig">拖入 Notion 导出的 .zip</div>
+    <div class="hint">或点击选择文件</div>
+    <input type="file" id="fileInput" accept=".zip" style="display:none" />
+  </div>
+
+  <div class="bar">
+    <button id="run" disabled>开始评审</button>
+    <span class="small muted">用你设置里的 OpenRouter Key，正文不存服务器。</span>
+  </div>
+  <div id="status"></div>
+  <div class="prog" id="prog"><div class="fill" id="fill"></div></div>
+  <div class="rows" id="rows"></div>
+
+  <div class="done-box" id="doneBox">
+    <div class="dt" id="doneTitle"></div>
+    <button id="dl">⬇ 重新下载 Excel</button>
+  </div>
+</div>
+
+<script src="/shared/keys.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let FILE=null, LAST=null;  // LAST = {b64, filename}
+
+function syncKeyBtn(){ const b=$("keybtn"); if(SEOKEYS.get().openrouter_key){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
+syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+
+// --- 拖放 / 选择文件 ---
+const drop=$("drop"), fi=$("fileInput");
+drop.onclick=()=>fi.click();
+fi.onchange=()=>{ if(fi.files[0]) setFile(fi.files[0]); };
+["dragenter","dragover"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop",ev=>{ const f=ev.dataTransfer.files[0]; if(f) setFile(f); });
+function setFile(f){
+  if(!f.name.toLowerCase().endsWith(".zip")){ setStatus("请选择 .zip 文件（Notion 的 Markdown & CSV 导出）。",true); return; }
+  FILE=f; $("dropBig").innerHTML='<span class="file">'+f.name+'</span>'; $("run").disabled=false; setStatus("");
+}
+function setStatus(m,e){ const s=$("status"); s.textContent=m||""; s.className=e?"err":""; }
+
+function scClass(s){ return s==null?"fail":s>=80?"good":s>=65?"mid":"bad"; }
+
+// --- 运行 ---
+$("run").onclick=async()=>{
+  if(!FILE) return;
+  if(!SEOKEYS.get().openrouter_key){ setStatus("请先在右上角设置 OpenRouter API Key。",true); SEOKEYS.open(); return; }
+  $("run").disabled=true; $("rows").innerHTML=""; $("doneBox").style.display="none"; LAST=null;
+  $("prog").style.display="block"; $("fill").style.width="0";
+  setStatus("上传并解析…");
+
+  const fd=new FormData();
+  fd.append("file", FILE);
+  fd.append("openrouter_key", SEOKEYS.get().openrouter_key);
+
+  try{
+    const resp=await fetch("/api/article-quality/batch_stream",{method:"POST",body:fd});
+    if(!resp.ok){ const t=await resp.text(); throw new Error(t||("HTTP "+resp.status)); }
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let idx;
+      while((idx=buf.indexOf("\n\n"))>=0){
+        const chunk=buf.slice(0,idx); buf=buf.slice(idx+2);
+        const line=chunk.split("\n").find(l=>l.startsWith("data:"));
+        if(!line) continue;
+        handle(JSON.parse(line.slice(5).trim()));
+      }
+    }
+  }catch(err){
+    setStatus("失败："+(err.message||err),true);
+  }finally{
+    $("run").disabled=false;
+  }
+};
+
+let TOTAL=0;
+function handle(ev){
+  if(ev.type==="start"){ TOTAL=ev.total; setStatus("共 "+TOTAL+" 篇，评审中…"); }
+  else if(ev.type==="item"){
+    $("fill").style.width=Math.round(ev.done/ev.total*100)+"%";
+    setStatus("评审中 "+ev.done+" / "+ev.total+"…");
+    const r=document.createElement("div"); r.className="r";
+    const sc=document.createElement("div"); sc.className="sc "+scClass(ev.score); sc.textContent=ev.score==null?"—":ev.score;
+    const ti=document.createElement("div"); ti.className="ti"; ti.textContent=ev.title||"（无标题）";
+    const gd=document.createElement("div"); gd.className="gd"; gd.textContent=ev.grade||"";
+    r.append(sc,ti,gd); $("rows").append(r);
+  }
+  else if(ev.type==="done"){
+    $("fill").style.width="100%";
+    setStatus("完成：成功 "+ev.ok+" / "+ev.total+" 篇。");
+    LAST={b64:ev.xlsx_b64, filename:ev.filename};
+    download(LAST);
+    $("doneTitle").textContent="已生成 Excel（成功 "+ev.ok+" / "+ev.total+" 篇），已自动下载。";
+    $("doneBox").style.display="block";
+  }
+  else if(ev.type==="error"){ setStatus("失败："+ev.message,true); }
+}
+
+function download(x){
+  const bin=atob(x.b64); const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  const blob=new Blob([arr],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=x.filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+$("dl").onclick=()=>{ if(LAST) download(LAST); };
+</script>
+</body>
+</html>
