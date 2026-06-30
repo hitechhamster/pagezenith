@@ -131,7 +131,7 @@ function secBox(n,title){const s=panel();const h=E("h2");h.append(E("span","n",S
 function metric(k,v){const m=E("div","metric");m.append(E("div","k",k),E("div","v",String(v)));return m;}
 
 function skeleton(){
-  const root=$("report"); root.innerHTML=""; SEC={}; suppCleared=false;
+  const root=$("report"); root.innerHTML=""; SEC={}; suppCleared=false; redditDone=false;
   SEC.overview=panel(); SEC.overview.append(E("div","ph","准备中…")); root.append(SEC.overview);
   SEC.summary=E("div"); root.append(SEC.summary);                      // AI 总结（置顶，最后填）
   SEC.match=E("div"); root.append(SEC.match);                          // 页面类型 callout 占位
@@ -141,6 +141,7 @@ function skeleton(){
   SEC.targetWrap=panel(); SEC.targetWrap.append(E("h2",null,"我们的页面")); SEC.target=E("div"); SEC.target.append(E("div","ph","抓取中…")); SEC.targetWrap.append(SEC.target); root.append(SEC.targetWrap);
   [s,b]=secBox(3,"LSI 语义词分析（覆盖检测）"); SEC.lsi=b; b.append(E("div","ph","等待中…")); root.append(s);
   [s,b]=secBox("AI","GEO 分析（面向 AI 生成式搜索引擎）"); SEC.geo=b; b.append(E("div","ph","等待中…")); root.append(s);
+  [s,b]=secBox("R","Reddit 真实讨论（真实用户在聊什么 · 高权重融入增补）"); SEC.reddit=b; b.append(E("div","ph","正在抓取 Reddit 讨论…")); root.append(s);
   [s,b]=secBox(4,"增补段落（可直接粘贴，跟随页面语言）"); SEC.supp=b; b.append(E("div","ph","等待中…")); root.append(s);
 }
 
@@ -177,10 +178,11 @@ async function run(){
         else if(ev.type==="competitor"){ got++; handleComp(ev.data); setStatus(`分析中…竞品 ${got}/${total} 已完成`,false,true); }
         else if(ev.type==="page_match") handleMatch(ev.data);
         else if(ev.type==="geo") handleGeo(ev.data);
+        else if(ev.type==="reddit") handleReddit(ev.data);
         else if(ev.type==="summary") handleSummary(ev.data);
         else if(ev.type==="lsi") handleLsi(ev.data);
         else if(ev.type==="supplement") handleSupp(ev.data);
-        else if(ev.type==="done") setStatus("分析完成 ✓");
+        else if(ev.type==="done"){ redditFallback(); setStatus("分析完成 ✓"); }
         else if(ev.type==="error") setStatus("错误："+ev.message,true);
       }
     }
@@ -277,6 +279,29 @@ function handleLsi(lsi){
   (lsi.terms||[]).forEach(t=>{const c=E("span","chip "+(t.covered?"green":"red"),(t.covered?"✓ ":"✗ ")+t.term);c.title="来源："+t.source;chips.append(c);});
   SEC.lsi.append(chips);
 }
+function handleReddit(r){
+  clr(SEC.reddit); redditDone=true;
+  SEC.reddit.append(E("div","muted small",`来源 ${r.thread_count} 帖 · ${r.comment_count} 条评论 · 真实用户需求已按最高权重融入下方增补段落`));
+  if(r.summary){ const sm=E("div",null,r.summary); sm.style.margin="6px 0 10px"; SEC.reddit.append(sm); }
+  (r.themes||[]).forEach(t=>{
+    const box=E("div","callout"); box.style.margin="8px 0";
+    box.append(E("div","h",t.name));
+    if(t.summary) box.append(E("div","body",t.summary));
+    if((t.pain_points||[]).length){const c=E("div","chips");c.style.marginTop="6px";t.pain_points.forEach(p=>c.append(E("span","chip",p)));box.append(c);}
+    (t.quotes||[]).forEach(q=>{const e=E("div","muted small");e.style.fontStyle="italic";e.style.marginTop="4px";e.textContent="“"+q+"”";box.append(e);});
+    SEC.reddit.append(box);
+  });
+  if((r.content_angles||[]).length){ SEC.reddit.append(E("div","bt","真实用户想要、你该覆盖的角度")); const ul=E("ul"); r.content_angles.forEach(x=>ul.append(E("li",null,x))); SEC.reddit.append(ul); }
+  if((r.unmet_needs||[]).length){ SEC.reddit.append(E("div","bt","反复问、却常被忽略的点")); const ul=E("ul"); r.unmet_needs.forEach(x=>ul.append(E("li","lack",x))); SEC.reddit.append(ul); }
+  if((r.threads||[]).length){
+    SEC.reddit.append(E("div","bt","来源帖"));
+    const tl=E("div"); tl.style.display="grid"; tl.style.gap="4px";
+    r.threads.forEach(t=>{const a=E("a",null,`r/${t.subreddit} · ${t.score}↑ · ${t.num_comments}💬 — ${t.title}`);a.href=t.url;a.target="_blank";a.rel="noopener";a.className="small";a.style.color="var(--accent)";tl.append(a);});
+    SEC.reddit.append(tl);
+  }
+}
+let redditDone=false;
+function redditFallback(){ if(!redditDone && SEC.reddit){ clr(SEC.reddit); SEC.reddit.append(E("div","muted small","未找到相关 Reddit 讨论（或该词在 Reddit 上讨论较少 / 已跳过）。")); } }
 function handleSupp(sp){
   if(!suppCleared){ clr(SEC.supp); suppCleared=true; }
   const box=E("div","supp");

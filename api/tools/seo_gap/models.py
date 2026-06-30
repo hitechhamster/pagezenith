@@ -312,6 +312,32 @@ class GeoAnalysis(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
 
 
+# Reddit 真实讨论洞察（融入内容差距分析，权重加强）
+class RedditThreadRef(BaseModel):
+    title: str = ""
+    url: str = ""
+    subreddit: str = ""
+    score: int = 0
+    num_comments: int = 0
+
+
+class RedditTheme(BaseModel):
+    name: str
+    summary: str = ""
+    pain_points: list[str] = Field(default_factory=list)
+    quotes: list[str] = Field(default_factory=list)   # 英文原话
+
+
+class RedditInsights(BaseModel):
+    summary: str = ""                # Reddit 整体在这个词上讨论什么（中文）
+    themes: list[RedditTheme] = Field(default_factory=list)
+    content_angles: list[str] = Field(default_factory=list)  # 页面应覆盖、真实用户想要的角度
+    unmet_needs: list[str] = Field(default_factory=list)     # 反复问但现有内容没满足的
+    thread_count: int = 0
+    comment_count: int = 0
+    threads: list[RedditThreadRef] = Field(default_factory=list)
+
+
 class ReportV2(BaseModel):
     keyword: str
     target_url: str
@@ -321,6 +347,7 @@ class ReportV2(BaseModel):
     keyword_semantics: KeywordSemantics
     page_match: Optional[PageMatch] = None
     geo: Optional[GeoAnalysis] = None
+    reddit: Optional[RedditInsights] = None
     competitors: list[CompetitorPage] = Field(default_factory=list)
     target: TargetSummary
     lsi: LSIAnalysis

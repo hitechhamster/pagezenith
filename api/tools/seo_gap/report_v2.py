@@ -13,18 +13,19 @@ import re
 from .clients.browser_fetch import BrowserFetcher
 from .clients.fetch import PageFetcher, looks_blocked
 from .clients.llm import LLMClient
+from .clients.reddit import RedditClient
 from .clients.serpapi import SerpApiClient
 from .config import Settings, get_settings
 from .extraction.extractor import Extractor
 from .extraction.prompts_v2 import (
-    LSI_SYSTEM, SEMANTICS_SYSTEM, SUPPLEMENT_SYSTEM,
-    build_lsi_user, build_semantics_user, build_supplement_user,
+    LSI_SYSTEM, REDDIT_SYSTEM, SEMANTICS_SYSTEM, SUPPLEMENT_SYSTEM,
+    build_lsi_user, build_reddit_user, build_semantics_user, build_supplement_user,
 )
 from .lexical import detect_lang
 from .models import (
     PAGE_KIND_ZH, AISummary, CompetitorPage, GeoAnalysis, GeoDimension, KeywordSemantics,
-    LSIAnalysis, LSITerm, PageContent, PageMatch, ReportRequest, ReportV2,
-    SupplementSection, TargetSummary,
+    LSIAnalysis, LSITerm, PageContent, PageMatch, RedditInsights, RedditTheme,
+    RedditThreadRef, ReportRequest, ReportV2, SupplementSection, TargetSummary,
 )
 from .scoring.semantic import SemanticDeduper
 
@@ -53,6 +54,7 @@ class ReportV2Builder:
         self.serp = SerpApiClient(self.s)
         self.extractor = Extractor(self.llm, PageFetcher(self.s))
         self.deduper = SemanticDeduper(self.llm)
+        self.reddit = RedditClient(self.s)
 
     def _make_fetcher(self, req: ReportRequest):
         mode = req.fetch_mode or "browser"  # v2 默认浏览器抓取，过反爬
@@ -75,6 +77,8 @@ class ReportV2Builder:
                 parts["page_match"] = PageMatch(**ev["data"])
             elif t == "geo":
                 parts["geo"] = GeoAnalysis(**ev["data"])
+            elif t == "reddit":
+                parts["reddit"] = RedditInsights(**ev["data"])
             elif t == "summary":
                 parts["ai_summary"] = AISummary(**ev["data"])
             elif t == "lsi":
@@ -91,7 +95,8 @@ class ReportV2Builder:
             rank=meta.get("rank"), in_top_10=meta.get("in_top_10", False),
             ai_summary=parts.get("ai_summary"),
             keyword_semantics=parts["semantics"], page_match=parts.get("page_match"),
-            geo=parts.get("geo"), competitors=parts["competitors"],
+            geo=parts.get("geo"), reddit=parts.get("reddit"),
+            competitors=parts["competitors"],
             target=parts["target"], lsi=parts["lsi"], supplements=parts["supplements"],
             debug=parts.get("debug"),
         )
@@ -145,6 +150,11 @@ class ReportV2Builder:
             text_adequacy=visual.get("text_adequacy", ""),
         ).model_dump()}
 
+        # Reddit 真实讨论（与竞品分析并行跑，约 15-20s；失败/禁用则为 None）
+        reddit_task = asyncio.create_task(
+            self._reddit(req.keyword, req.location_code, req.language_code, target_page.text)
+        )
+
         # 二 竞品：抓取成功一个就分析并产出一个
         missing_pool: list[str] = []
         comp_kinds: list[str] = []
@@ -187,12 +197,21 @@ class ReportV2Builder:
         geo = await self._geo(req.keyword, target_page, target_profile)
         yield {"type": "geo", "data": geo.model_dump()}
 
+        # Reddit 真实讨论洞察（融入后续增补与总结，权重最高）
+        reddit = await reddit_task
+        reddit_demand: list[str] = []
+        if reddit:
+            yield {"type": "reddit", "data": reddit.model_dump()}
+            # 真实用户需求优先级最高：放进 missing_pool 最前，并单独高权重传给增补
+            reddit_demand = list(reddit.content_angles) + list(reddit.unmet_needs)
+            missing_pool = reddit_demand + missing_pool
+
         # 四 增补段落（用页面语言写）
         missing_lsi = [t.term for t in lsi.terms if not t.covered]
         our_main = target_profile.subtopics or [c.text for c in target_profile.claims[:10]]
         supplements = await self._supplements(
             req.keyword, semantics.user_wants, missing_pool, missing_lsi, our_main,
-            page_lang, target_page.text,
+            page_lang, target_page.text, reddit_demand,
         )
         for sp in supplements:
             yield {"type": "supplement", "data": sp.model_dump()}
@@ -206,6 +225,7 @@ class ReportV2Builder:
              "claim_count": len(target_profile.claims),
              "text_adequacy": visual.get("text_adequacy", "")},
             missing_pool, len(missing_lsi), geo.score,
+            reddit.summary if reddit else "", reddit.unmet_needs if reddit else None,
         )
         yield {"type": "summary", "data": summary.model_dump()}
 
@@ -328,8 +348,52 @@ class ReportV2Builder:
         return GeoAnalysis(score=int(raw.get("score", 0) or 0), summary=raw.get("summary", ""),
                            dimensions=dims, recommendations=raw.get("recommendations", []))
 
+    async def _reddit(self, keyword, location_code, language_code, page_sample) -> RedditInsights | None:
+        """SerpApi 找帖 + Arctic-Shift 取全评论 → LLM 提炼真实用户需求。失败/禁用返回 None。"""
+        if not self.s.reddit_enabled:
+            return None
+        try:
+            threads = await self.reddit.collect(keyword, location_code, language_code)
+        except Exception as exc:
+            logger.warning("Reddit 抓取失败：%s", exc)
+            return None
+        if not threads:
+            return None
+        per = max(1200, 14000 // max(len(threads), 1))
+        corpus = "\n\n---\n\n".join(t.as_text(per) for t in threads)[:14000]
+        mock = {"summary": "Reddit 用户关心如何识别黑平台、出金被拖延后如何维权。",
+                "themes": [{"name": "出金困难", "summary": "入金易出金难。",
+                            "pain_points": ["出金被拖延"], "quotes": ["They delay my withdrawal"]}],
+                "content_angles": ["如何核验监管牌照", "出金被拒后的维权步骤"],
+                "unmet_needs": ["被骗后能否追回资金"]}
+        try:
+            raw = await self.llm.complete_json(
+                REDDIT_SYSTEM, build_reddit_user(keyword, page_sample, corpus),
+                mock=mock, model=self.s.writer_model or None,
+            )
+        except Exception as exc:
+            logger.warning("Reddit 分析失败：%s", exc)
+            return None
+        if not isinstance(raw, dict):
+            raw = {}
+        themes = [
+            RedditTheme(name=t.get("name", ""), summary=t.get("summary", ""),
+                        pain_points=t.get("pain_points", []) or [], quotes=t.get("quotes", []) or [])
+            for t in raw.get("themes", []) if t.get("name")
+        ]
+        return RedditInsights(
+            summary=raw.get("summary", ""), themes=themes,
+            content_angles=raw.get("content_angles", []) or [],
+            unmet_needs=raw.get("unmet_needs", []) or [],
+            thread_count=len(threads),
+            comment_count=sum(len(t.top_comments) for t in threads),
+            threads=[RedditThreadRef(title=t.title, url=t.url, subreddit=t.subreddit,
+                                     score=t.score, num_comments=t.num_comments) for t in threads],
+        )
+
     async def _ai_summary(self, keyword, semantics, page_match_verdict, target_info,
-                          missing_pool, lsi_missing, geo_score):
+                          missing_pool, lsi_missing, geo_score,
+                          reddit_summary="", reddit_unmet=None):
         from .extraction.prompts_v2 import SUMMARY_SYSTEM, build_summary_user
         mock = {"score": 58, "grade": "一般", "quality": "内容方向对路但深度不足。",
                 "strengths": ["主题相关"], "gaps": ["字数偏少", "缺权威信号"],
@@ -337,19 +401,20 @@ class ReportV2Builder:
         raw = await self.llm.complete_json(
             SUMMARY_SYSTEM,
             build_summary_user(keyword, semantics.model_dump(), page_match_verdict,
-                               target_info, missing_pool, lsi_missing, geo_score),
+                               target_info, missing_pool, lsi_missing, geo_score,
+                               reddit_summary, reddit_unmet),
             mock=mock, model=self.s.writer_model or None,
         )
         return AISummary(**raw) if isinstance(raw, dict) else AISummary()
 
     async def _supplements(self, keyword, user_wants, missing_points, missing_lsi, our_main,
-                           page_lang="zh", page_sample=""):
+                           page_lang="zh", page_sample="", reddit_demand=None):
         mock = [{"heading": "如何核验监管牌照", "body": "在 FCA/ASIC/NFA 官网输入牌照号即可核验……",
                  "reason": "竞品覆盖+LSI缺失"}]
         raw = await self.llm.complete_json(
             SUPPLEMENT_SYSTEM,
             build_supplement_user(keyword, user_wants, missing_points, missing_lsi, our_main,
-                                  page_lang, page_sample),
+                                  page_lang, page_sample, reddit_demand),
             mock=mock,
             model=self.s.writer_model or None,  # 可单独用更强的写作模型
         )

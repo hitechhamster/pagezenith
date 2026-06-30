@@ -98,7 +98,12 @@ SUMMARY_SYSTEM = """\
 
 
 def build_summary_user(keyword, semantics, page_match_verdict, target_info,
-                       top_missing, lsi_missing_count, geo_score) -> str:
+                       top_missing, lsi_missing_count, geo_score,
+                       reddit_summary: str = "", reddit_unmet=None) -> str:
+    reddit_line = ""
+    if reddit_summary or reddit_unmet:
+        reddit_line = (f"\nReddit 真实讨论：{reddit_summary}\n"
+                       f"真实用户反复关心但常被忽略的点：{json.dumps((reddit_unmet or [])[:6], ensure_ascii=False)}")
     return f"""\
 关键词：{keyword}
 搜索意图：{semantics.get('intent_type','')} / {semantics.get('expected_format','')}
@@ -106,7 +111,7 @@ def build_summary_user(keyword, semantics, page_match_verdict, target_info,
 我们页面：类型={target_info.get('page_kind')} 字数={target_info.get('word_count')} 图片={target_info.get('image_count')} 论点数={target_info.get('claim_count')} 正文={target_info.get('text_adequacy','')}
 竞品有我们缺的要点(节选)：{json.dumps(top_missing[:15], ensure_ascii=False)}
 缺失 LSI 词数：{lsi_missing_count}
-GEO(生成式引擎)得分：{geo_score}
+GEO(生成式引擎)得分：{geo_score}{reddit_line}
 
 输出 JSON：
 {{
@@ -116,6 +121,34 @@ GEO(生成式引擎)得分：{geo_score}
   "strengths": ["亮点，1-3条"],
   "gaps": ["与前10的主要差异/不足，2-4条"],
   "verdict": "结论：这页面就当前关键词的竞争力如何 + 最该优先做的1-2件事"
+}}"""
+
+
+# Reddit 真实讨论洞察 ------------------------------------------------------- #
+REDDIT_SYSTEM = """\
+你是面向"做这个关键词的内容/SEO"的策略师。下面给你关键词、目标页面正文摘录，以及围绕
+该词从 Reddit 抓到的真实帖子标题、正文与高赞评论。请**只基于这些真实讨论**分析：真实用户
+在关心什么、抱怨什么、反复问什么，以及这些里**目标页面还没覆盖**的内容角度。
+真实用户需求权重最高——这是判断该写什么、补什么的第一依据。
+只输出一个 JSON 对象（除 quotes 外用简体中文），不要前言、不要 markdown。"""
+
+
+def build_reddit_user(keyword: str, page_sample: str, corpus: str) -> str:
+    return f"""\
+关键词：{keyword}
+
+目标页面正文摘录（据此判断哪些角度页面已覆盖、哪些没有）：
+\"\"\"{page_sample[:1500]}\"\"\"
+
+=== Reddit 真实讨论（标题 / 正文 / 高赞评论）===
+{corpus}
+
+输出 JSON：
+{{
+  "summary": "一段：Reddit 用户围绕这个词整体在讨论/关心什么（中文）",
+  "themes": [{{"name":"讨论主题(中文)","summary":"大家在说什么(中文)","pain_points":["痛点(中文)"],"quotes":["1-2句英文原话"]}}],
+  "content_angles": ["真实用户想要、且目标页面应覆盖的内容角度（中文，6-10条，按真实需求强度排序）"],
+  "unmet_needs": ["用户反复问/抱怨、但现有内容普遍没讲清的点（中文，3-6条）"]
 }}"""
 
 
@@ -133,9 +166,16 @@ _LANG_ZH = {"zh": "简体中文", "en": "英文", "other": "页面所用语言"}
 def build_supplement_user(
     keyword: str, user_wants: list[str], missing_points: list[str],
     missing_lsi: list[str], our_main: list[str], page_lang: str = "zh",
-    page_sample: str = "",
+    page_sample: str = "", reddit_demand: list[str] | None = None,
 ) -> str:
     lang_name = _LANG_ZH.get(page_lang, "页面所用语言")
+    reddit_block = ""
+    if reddit_demand:
+        reddit_block = (
+            "\nReddit 真实用户需求（**最高优先级**——这是真实读者反复关心/追问的，"
+            "优先据此补内容）：\n"
+            + json.dumps(reddit_demand[:15], ensure_ascii=False) + "\n"
+        )
     return f"""\
 【最重要】heading 与 body 必须与下面「目标页面原文摘录」**同一种语言**（页面是英文就写英文、
 中文就写中文）；以页面原文为准（约为 {lang_name}）。reason 始终用简体中文。
@@ -146,9 +186,10 @@ def build_supplement_user(
 关键词：{keyword}
 用户期望内容：{json.dumps(user_wants, ensure_ascii=False)}
 竞品有、我们缺的要点：{json.dumps(missing_points[:25], ensure_ascii=False)}
-缺失的语义词/问题(LSI)：{json.dumps(missing_lsi[:20], ensure_ascii=False)}
-
-针对最重要的缺口，生成 3-6 个建议新增的小节，每节写好可直接粘贴的正文。
+缺失的语义词/问题(LSI)：{json.dumps(missing_lsi[:20], ensure_ascii=False)}{reddit_block}
+针对最重要的缺口生成 3-6 个建议新增的小节，每节写好可直接粘贴的正文。
+**若 Reddit 真实用户需求里有页面没覆盖的点，优先为它们各写一节**（这些是经过真实讨论验证的需求）。
+在 reason 里注明该节是否回应了 Reddit 上的真实关切。
 输出 JSON 数组：
 [{{
   "heading": "建议新增的小标题（与页面同语言）",
