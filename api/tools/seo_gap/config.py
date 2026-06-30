@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     max_competitors: int = 10
     # 四部分报告(v2)分析前几名竞品
     report_competitors: int = 10
+    # 批量模式（关键词簇）：上限关键词数、跨词去重后实际抓取的竞品数、参与 Reddit 的关键词数
+    batch_max_keywords: int = 10
+    batch_max_competitors: int = 12     # 跨词去重后按"命中关键词数"取前 N 个竞品抓取
+    batch_reddit_keywords: int = 3      # 只对前 N 个关键词跑 Reddit（控 SerpApi 额度）
     # 混合去重阈值（替换原 semantic_dup_threshold）：
     #   cosine ≥ HIGH        直接判“同一条”，不调 LLM
     #   cosine <  LOW        直接判“不同”，不调 LLM

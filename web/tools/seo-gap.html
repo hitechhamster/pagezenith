@@ -83,6 +83,18 @@
   .geobar .fill{height:100%;background:var(--accent);border-radius:5px}
   .geobar .gv{width:30px;text-align:right;font-size:12px;color:var(--muted)}
   .geobar .gn{flex-basis:100%;font-size:11px;color:var(--faint);margin-left:130px;margin-top:-2px}
+  .modetabs{display:flex;gap:6px;margin:6px 0 10px}
+  .mtab{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;width:auto}
+  .mtab.on{background:var(--accentsoft);color:var(--accent);border-color:transparent;font-weight:600}
+  textarea#keywords{width:100%;resize:vertical;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);line-height:1.6}
+  .krow{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .krow .kw{flex:1}
+  .krow .rk{font-size:12px;padding:2px 9px;border-radius:7px}
+  .krow .rk.in{background:#e6f4ea;color:#137333} .krow .rk.out{background:var(--soft);color:var(--muted)}
+  .gaprow{display:flex;align-items:baseline;gap:8px;padding:4px 0;font-size:13.5px}
+  .gaprow .wt{font-size:11px;color:var(--accent);background:var(--accentsoft);border-radius:6px;padding:1px 7px;flex-shrink:0}
+  .comp .kwfor{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0}
+  .comp .kwfor span{font-size:11px;background:var(--accentsoft);color:var(--accent);border-radius:6px;padding:1px 8px}
 </style>
 </head>
 <body>
@@ -98,9 +110,15 @@
   </div>
   <div class="sub">输入目标网址 + 关键词，AI 对比前 10：页面类型匹配、语义意图、逐页差距、LSI 覆盖、GEO，并给出可直接粘贴的增补段落。</div>
 
+  <div class="modetabs">
+    <button id="tab-single" class="mtab on" onclick="setMode('single')">单关键词</button>
+    <button id="tab-batch" class="mtab" onclick="setMode('batch')">批量（关键词簇）</button>
+  </div>
+
   <div class="panel bar">
     <div class="f"><label>目标网址</label><input id="url" placeholder="https://..." /></div>
-    <div class="f"><label>关键词</label><input id="keyword" placeholder="如 bathroom feng shui" /></div>
+    <div class="f" id="kwSingle"><label>关键词</label><input id="keyword" placeholder="如 bathroom feng shui" /></div>
+    <div class="f grow" id="kwBatch" style="display:none"><label>关键词簇（每行一个，最多 10 个）</label><textarea id="keywords" rows="4" placeholder="forex broker scam&#10;forex regulation&#10;how to verify forex broker"></textarea></div>
     <div class="f"><label>地区 / 语言</label>
       <select id="region">
         <option value="us-en">美国 / English</option>
@@ -112,6 +130,7 @@
     <label class="check"><input type="checkbox" id="browser" checked />本地浏览器抓取</label>
     <button id="run">开始分析</button>
   </div>
+  <div class="sub small" id="batchHint" style="display:none;margin-top:-6px">批量模式：综合看你的页/站在整组关键词上的差距与该补的内容；跨关键词自动去重（同一竞品页只抓一次），Reddit 仅取前 3 个词以省额度。</div>
 
   <div id="status" class="status"></div>
   <div id="report"></div>
@@ -145,7 +164,16 @@ function skeleton(){
   [s,b]=secBox(4,"增补段落（可直接粘贴，跟随页面语言）"); SEC.supp=b; b.append(E("div","ph","等待中…")); root.append(s);
 }
 
-$("run").addEventListener("click", run);
+let MODE="single";
+function setMode(m){
+  MODE=m;
+  $("tab-single").classList.toggle("on",m==="single");
+  $("tab-batch").classList.toggle("on",m==="batch");
+  $("kwSingle").style.display=m==="single"?"":"none";
+  $("kwBatch").style.display=m==="batch"?"":"none";
+  $("batchHint").style.display=m==="batch"?"":"none";
+}
+$("run").addEventListener("click",()=>MODE==="batch"?runBatch():run());
 
 async function run(){
   const target_url=$("url").value.trim();
@@ -190,6 +218,96 @@ async function run(){
   finally{ $("run").disabled=false; }
 }
 
+// ---------- 批量模式 ----------
+function skeletonBatch(){
+  const root=$("report"); root.innerHTML=""; SEC={}; suppCleared=false; redditDone=false;
+  SEC.summary=E("div"); root.append(SEC.summary);
+  let s,b;
+  [s,b]=secBox("K","关键词排名（目标页在每个词的位置）"); SEC.kranks=b; b.append(E("div","ph","查询中…")); root.append(s);
+  [s,b]=secBox(1,"核心竞品（跨关键词去重 · 命中越多越是对手）"); SEC.comp=b; b.append(E("div","ph","抓取中，完成一个显示一个…")); root.append(s);
+  [s,b]=secBox(2,"综合内容缺口（跨竞品汇总，权重=多少竞品覆盖）"); SEC.gaps=b; b.append(E("div","ph","等待中…")); root.append(s);
+  SEC.targetWrap=panel(); SEC.targetWrap.append(E("h2",null,"我们的页面")); SEC.target=E("div"); SEC.target.append(E("div","ph","抓取中…")); SEC.targetWrap.append(SEC.target); root.append(SEC.targetWrap);
+  [s,b]=secBox(3,"LSI 语义词（整组词并集，覆盖检测）"); SEC.lsi=b; b.append(E("div","ph","等待中…")); root.append(s);
+  [s,b]=secBox("R","Reddit 真实讨论（簇级 · 高权重融入增补）"); SEC.reddit=b; b.append(E("div","ph","抓取 Reddit 讨论…")); root.append(s);
+  [s,b]=secBox(4,"综合增补段落（覆盖整组词，可直接粘贴）"); SEC.supp=b; b.append(E("div","ph","等待中…")); root.append(s);
+}
+
+async function runBatch(){
+  const target_url=$("url").value.trim();
+  const seen=new Set();
+  const keywords=$("keywords").value.split("\n").map(x=>x.trim()).filter(x=>x&&!seen.has(x.toLowerCase())&&seen.add(x.toLowerCase())).slice(0,10);
+  const [location_code,language_code]=REGION[$("region").value];
+  const fetch_mode=$("browser").checked?"browser":"httpx";
+  if(!/^https?:/.test(target_url)) return setStatus("目标网址需为 http/https。",true);
+  if(!keywords.length) return setStatus("请至少输入一个关键词（每行一个）。",true);
+  if(!SEOKEYS.hasKeys()){ setStatus("请先在右上角「API Key 设置」填写 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+
+  $("run").disabled=true; skeletonBatch();
+  setStatus(`批量分析 ${keywords.length} 个关键词…结果逐块出现，请勿关闭本页。`,false,true);
+  try{
+    const resp=await fetch("/api/seo-gap/batch_stream",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,...SEOKEYS.get()})});
+    if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf("\n\n"))>=0){
+        const line=buf.slice(0,i).trim(); buf=buf.slice(i+2);
+        if(!line.startsWith("data:")) continue;
+        const ev=JSON.parse(line.slice(5).trim());
+        if(ev.type==="target") handleTarget(ev.data);
+        else if(ev.type==="meta") handleBatchMeta(ev);
+        else if(ev.type==="competitor") handleBatchComp(ev.data);
+        else if(ev.type==="gaps") handleGaps(ev.data);
+        else if(ev.type==="lsi") handleLsi(ev.data);
+        else if(ev.type==="reddit") handleReddit(ev.data);
+        else if(ev.type==="supplement") handleSupp(ev.data);
+        else if(ev.type==="summary") handleSummary(ev.data);
+        else if(ev.type==="done"){ redditFallback(); setStatus("批量分析完成 ✓"); }
+        else if(ev.type==="error") setStatus("错误："+ev.message,true);
+      }
+    }
+  }catch(e){ setStatus(String(e),true); }
+  finally{ $("run").disabled=false; }
+}
+
+function handleBatchMeta(m){
+  clr(SEC.kranks);
+  SEC.kranks.append(E("div","muted small",`共 ${m.keywords.length} 个关键词 · 跨词去重后 ${m.unique_competitors} 个不同竞品（取核心若干抓取）`));
+  (m.keywords||[]).forEach(k=>{
+    const row=E("div","krow");
+    row.append(E("span","kw",k.keyword));
+    row.append(E("span","rk "+(k.in_top_10?"in":"out"), k.in_top_10?("#"+k.rank):"未进前10"));
+    SEC.kranks.append(row);
+  });
+}
+function handleBatchComp(c){
+  if(SEC.comp.firstChild && SEC.comp.firstChild.classList && SEC.comp.firstChild.classList.contains("ph")) clr(SEC.comp);
+  const box=E("div","comp");
+  const top=E("div","top");
+  top.append(E("span","t",c.title||c.url));
+  if(c.fetched && c.page_kind) top.append(E("span","pill kind",KIND[c.page_kind]||c.page_kind));
+  top.append(E("span","pill","命中 "+c.keyword_count+" 词 · 最好 #"+c.best_rank));
+  box.append(top);
+  const a=E("a",null,c.url); a.href=c.url; a.target="_blank"; box.append(a);
+  if((c.ranks_for||[]).length){const kf=E("div","kwfor");c.ranks_for.forEach(k=>kf.append(E("span",null,k)));box.append(kf);}
+  if(!c.fetched){ box.append(E("div","meta","（抓取失败 / 被反爬，已跳过）")); SEC.comp.append(box); return; }
+  box.append(E("div","meta",`字数 ${c.word_count}`));
+  if((c.we_lack||[]).length){box.append(E("div","small lack","我们缺："));const ul=E("ul");c.we_lack.forEach(x=>ul.append(E("li","lack",x)));box.append(ul);}
+  SEC.comp.append(box);
+}
+function handleGaps(list){
+  clr(SEC.gaps);
+  if(!list.length){ SEC.gaps.append(E("div","muted small","未发现明显共性缺口。")); return; }
+  list.forEach(g=>{
+    const row=E("div","gaprow");
+    row.append(E("span","wt","×"+g.weight));
+    row.append(E("span",null,g.text));
+    SEC.gaps.append(row);
+  });
+}
 function handleMeta(m){
   clr(SEC.overview);
   SEC.overview.append(E("div",null,`关键词「${m.keyword}」`));

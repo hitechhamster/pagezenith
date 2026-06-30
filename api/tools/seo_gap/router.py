@@ -13,7 +13,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from .config import get_settings
-from .models import ReportRequest, ReportV2
+from .models import BatchReportRequest, ReportRequest, ReportV2
+from .report_batch import BatchReportBuilder
 from .report_v2 import ReportV2Builder
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,38 @@ async def report_stream(req: ReportRequest):
                     yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
             except Exception as exc:
                 logger.exception("report_stream failed")
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _settings_for_batch(req: BatchReportRequest):
+    s = get_settings().with_keys(req.openrouter_key, req.serpapi_key)
+    if not s.use_mocks:
+        if not s.openrouter_api_key:
+            raise HTTPException(status_code=400, detail="缺少 OpenRouter API Key，请在设置里填写。")
+        if s.serp_provider == "serpapi" and not s.serpapi_key:
+            raise HTTPException(status_code=400, detail="缺少 SerpApi Key，请在设置里填写。")
+    return s
+
+
+@router.post("/batch_stream")
+async def batch_stream(req: BatchReportRequest):
+    """批量模式（关键词簇 vs 目标页）流式报告（SSE）。"""
+    s = _settings_for_batch(req)
+
+    async def gen():
+        if _sema.locked():
+            yield f"data: {json.dumps({'type': 'error', 'message': '服务繁忙，请稍后重试'}, ensure_ascii=False)}\n\n"
+            return
+        async with _sema:
+            try:
+                async for ev in BatchReportBuilder(s).build_stream(req):
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            except Exception as exc:
+                logger.exception("batch_stream failed")
                 yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
     from fastapi.responses import StreamingResponse

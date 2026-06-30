@@ -338,6 +338,57 @@ class RedditInsights(BaseModel):
     threads: list[RedditThreadRef] = Field(default_factory=list)
 
 
+# =========================================================================== #
+# 批量模式（关键词簇 vs 目标页）
+# =========================================================================== #
+class BatchReportRequest(BaseModel):
+    keywords: list[str] = Field(default_factory=list)   # 最多 N 个
+    target_url: str
+    location_code: int = 2840
+    language_code: str = "en"
+    target_text: Optional[str] = None
+    target_title: Optional[str] = None
+    fetch_mode: Optional[str] = None
+    openrouter_key: Optional[str] = None
+    serpapi_key: Optional[str] = None
+
+
+class KeywordRank(BaseModel):
+    keyword: str
+    rank: Optional[int] = None
+    in_top_10: bool = False
+
+
+class BatchCompetitor(BaseModel):
+    url: str
+    title: Optional[str] = None
+    page_kind: str = ""
+    ranks_for: list[str] = Field(default_factory=list)   # 命中的关键词
+    keyword_count: int = 0                               # 跨词命中数（越高越是核心对手）
+    best_rank: int = 99
+    we_lack: list[str] = Field(default_factory=list)
+    word_count: int = 0
+    fetched: bool = True
+
+
+class ConsolidatedGap(BaseModel):
+    text: str
+    weight: int = 1                                      # 多少竞品覆盖了该缺口
+
+
+class BatchReport(BaseModel):
+    target_url: str
+    keywords: list[KeywordRank] = Field(default_factory=list)
+    ai_summary: Optional["AISummary"] = None
+    competitors: list[BatchCompetitor] = Field(default_factory=list)
+    gaps: list[ConsolidatedGap] = Field(default_factory=list)
+    lsi: Optional["LSIAnalysis"] = None
+    reddit: Optional["RedditInsights"] = None
+    supplements: list["SupplementSection"] = Field(default_factory=list)
+    target: Optional["TargetSummary"] = None
+    debug: Optional[dict] = None
+
+
 class ReportV2(BaseModel):
     keyword: str
     target_url: str
