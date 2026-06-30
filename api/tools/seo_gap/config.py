@@ -65,6 +65,19 @@ class Settings(BaseSettings):
     # 输出语言：zh=所有抽取文本/报告用简体中文（默认）
     output_lang: str = "zh"
 
+    # Reddit 内容研究：发现走 SerpApi（site:reddit.com），读帖+全评论走 Arctic-Shift
+    # （Pushshift 维护中继任归档，免费、无需 key、数据中心 IP 可用、新鲜到当天）。
+    reddit_enabled: bool = True
+    reddit_user_agent: str = "web:pagezenith:1.0 (cross-border content research)"
+    arctic_base_url: str = "https://arctic-shift.photon-reddit.com"
+    reddit_max_threads: int = 10        # 每个关键词最多分析几帖
+    reddit_max_comments: int = 40       # 每帖按点赞取前 N 条评论
+    reddit_comment_min_score: int = 1   # 评论点赞下限（滤掉 0/负分噪声）
+    reddit_max_chars_per_thread: int = 6000  # 单帖正文+评论拼接后的字符上限
+    reddit_timeout: float = 20.0
+    reddit_cache_ttl: int = 86400       # 关键词→帖子结果缓存（秒），削减 Arctic-Shift 调用
+    reddit_concurrency: int = 4         # 同时抓评论的帖子数（保护共享限流）
+
     # 本地 Excel 落盘：每次分析追加一行（多用户服务器上应关闭）
     excel_enabled: bool = False
     excel_path: str = "reports/seo_reports.xlsx"
