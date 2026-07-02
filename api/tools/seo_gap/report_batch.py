@@ -115,6 +115,7 @@ class BatchReportBuilder:
                     url=e["url"], title=e["title"], page_kind=pr.page_kind,
                     ranks_for=sorted(e["ranks_for"]), keyword_count=len(e["ranks_for"]),
                     best_rank=e["best_rank"], we_lack=wl[:8], word_count=_word_count(pg.text),
+                    full_text=pg.text[:20000],
                 ), wl
 
         tasks = [asyncio.create_task(analyze(e)) for e in ordered]

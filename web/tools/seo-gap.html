@@ -95,6 +95,15 @@
   .gaprow .wt{font-size:11px;color:var(--accent);background:var(--accentsoft);border-radius:6px;padding:1px 7px;flex-shrink:0}
   .comp .kwfor{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0}
   .comp .kwfor span{font-size:11px;background:var(--accentsoft);color:var(--accent);border-radius:6px;padding:1px 8px}
+  .viewbtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:6px;height:22px;padding:0 8px;font-size:11px;cursor:pointer;width:auto;flex-shrink:0;display:inline-flex;align-items:center;gap:4px}
+  .viewbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .tv-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none}
+  .tv-card{position:fixed;z-index:51;top:5vh;left:50%;transform:translateX(-50%);width:min(760px,92vw);max-height:88vh;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);display:none;flex-direction:column}
+  .tv-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .tv-head .tt{flex:1;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tv-head .cnt{font-size:12px;color:var(--faint)}
+  .tv-x{cursor:pointer;border:none;background:transparent;color:var(--muted);font-size:18px;width:auto;padding:0 4px;line-height:1}
+  .tv-body{padding:14px 16px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.75;color:var(--text)}
 </style>
 </head>
 <body>
@@ -136,6 +145,17 @@
   <div id="report"></div>
 </div>
 
+<div class="tv-bg" id="tvBg" onclick="closeText()"></div>
+<div class="tv-card" id="tvCard" role="dialog" aria-modal="true">
+  <div class="tv-head">
+    <span class="tt" id="tvTitle"></span>
+    <span class="cnt" id="tvCount"></span>
+    <button class="copy" id="tvCopy">复制全文</button>
+    <button class="tv-x" onclick="closeText()" title="关闭">✕</button>
+  </div>
+  <div class="tv-body" id="tvBody"></div>
+</div>
+
 <script>
 const REGION={"us-en":[2840,"en"],"cn-zh":[2156,"zh"],"hk-zh":[2344,"zh"],"uk-en":[2826,"en"]};
 const KIND={article:"信息型文章",product_list:"商品集合页",product_detail:"产品详情页",category:"分类页",homepage:"首页",forum:"论坛/问答",review:"测评页",tool:"工具页",other:"其它"};
@@ -163,6 +183,21 @@ function skeleton(){
   [s,b]=secBox("R","Reddit 真实讨论（真实用户在聊什么 · 高权重融入增补）"); SEC.reddit=b; b.append(E("div","ph","正在抓取 Reddit 讨论…")); root.append(s);
   [s,b]=secBox(4,"增补段落（可直接粘贴，跟随页面语言）"); SEC.supp=b; b.append(E("div","ph","等待中…")); root.append(s);
 }
+
+// 查看竞品抓取原文（可复制）
+let tvText="";
+function openText(title,text){
+  tvText=text||"";
+  $("tvTitle").textContent=title||"竞品原文";
+  $("tvCount").textContent=tvText?(tvText.length+" 字符"):"";
+  $("tvBody").textContent=tvText||"（未获取到正文）";
+  $("tvBody").scrollTop=0;
+  $("tvBg").style.display="block"; $("tvCard").style.display="flex";
+}
+function closeText(){ $("tvBg").style.display="none"; $("tvCard").style.display="none"; }
+$("tvCopy").onclick=()=>{ if(!tvText)return; navigator.clipboard.writeText(tvText); const b=$("tvCopy"); b.textContent="已复制 ✓"; setTimeout(()=>b.textContent="复制全文",1500); };
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeText(); });
+function viewBtn(title,text){ const b=E("button","viewbtn"); b.append(document.createTextNode("⧉ 原文")); b.title="查看抓取到的竞品原文（可复制）"; b.onclick=()=>openText(title,text); return b; }
 
 let MODE="single";
 function setMode(m){
@@ -290,6 +325,7 @@ function handleBatchComp(c){
   top.append(E("span","t",c.title||c.url));
   if(c.fetched && c.page_kind) top.append(E("span","pill kind",KIND[c.page_kind]||c.page_kind));
   top.append(E("span","pill","命中 "+c.keyword_count+" 词 · 最好 #"+c.best_rank));
+  if(c.fetched && c.full_text) top.append(viewBtn(c.title||c.url, c.full_text));
   box.append(top);
   const a=E("a",null,c.url); a.href=c.url; a.target="_blank"; box.append(a);
   if((c.ranks_for||[]).length){const kf=E("div","kwfor");c.ranks_for.forEach(k=>kf.append(E("span",null,k)));box.append(kf);}
@@ -339,6 +375,7 @@ function handleComp(c){
   const top=E("div","top");
   top.append(E("span","t",`#${c.rank} ${c.title||c.url}`));
   if(c.fetched && c.page_kind) top.append(E("span","pill kind",KIND[c.page_kind]||c.page_kind));
+  if(c.fetched && c.full_text) top.append(viewBtn(c.title||c.url, c.full_text));
   box.append(top);
   const a=E("a",null,c.url); a.href=c.url; a.target="_blank"; box.append(a);
   if(!c.fetched){ box.append(E("div","meta","（抓取失败 / 被反爬，已跳过）")); SEC.comp.append(box); return; }

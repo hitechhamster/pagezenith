@@ -238,6 +238,7 @@ class CompetitorPage(BaseModel):
     we_lack: list[str] = Field(default_factory=list)       # 它有、我们没有的点
     word_count: int = 0
     image_count: int = 0
+    full_text: str = ""                  # 抓取到的竞品正文（供前端「查看原文」）
     fetched: bool = True                 # False=抓取失败/被反爬
 
 
@@ -368,6 +369,7 @@ class BatchCompetitor(BaseModel):
     best_rank: int = 99
     we_lack: list[str] = Field(default_factory=list)
     word_count: int = 0
+    full_text: str = ""                  # 抓取到的竞品正文（供前端「查看原文」）
     fetched: bool = True
 
 

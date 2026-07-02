@@ -173,6 +173,7 @@ class ReportV2Builder:
                 rank=it.rank, url=it.url, title=it.title, page_kind=pr.page_kind,
                 main_content=pr.subtopics[:8], we_lack=wl[:8],
                 word_count=_word_count(pg.text), image_count=_image_count(pg.raw_html),
+                full_text=pg.text[:20000],
             ), wl
 
         ok = 0
