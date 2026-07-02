@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     batch_max_keywords: int = 10
     batch_max_competitors: int = 12     # 跨词去重后按"命中关键词数"取前 N 个竞品抓取
     batch_reddit_keywords: int = 3      # 只对前 N 个关键词跑 Reddit（控 SerpApi 额度）
+
+    # 外链拓客：足迹找站 + 抓邮箱 + 邮件草稿（全免费，BYO SerpApi）
+    outreach_max_prospects: int = 30    # 单次去重域名后最多处理的候选站
+    outreach_concurrency: int = 5       # 抓取+分析候选站的并发
+    outreach_footprints_per_run: int = 5  # 每次用几个搜索足迹（每个 1 SerpApi 额度）
     # 混合去重阈值（替换原 semantic_dup_threshold）：
     #   cosine ≥ HIGH        直接判“同一条”，不调 LLM
     #   cosine <  LOW        直接判“不同”，不调 LLM

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>外链拓客 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .sub{color:var(--muted);font-size:14px;margin:0 0 14px;max-width:64ch;line-height:1.7}
+  .bar{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+  .bar .f{display:flex;flex-direction:column;gap:4px}
+  .bar .f.full{grid-column:1/-1}
+  .bar label{font-size:12px;color:var(--muted)}
+  .bar input,.bar select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit}
+  .opts{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:12px 0 4px}
+  .opts .check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer}
+  #status{margin:10px 2px;color:var(--muted);font-size:13px}
+  #status.err{color:var(--red)}
+  .prog{height:8px;background:var(--soft);border-radius:6px;overflow:hidden;margin:10px 0;display:none}
+  .prog .fill{height:100%;width:0;background:var(--accent);transition:width .3s}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;color:var(--muted);font-weight:600}
+  td .dom{font-weight:600;color:var(--text);text-decoration:none} td .dom:hover{color:var(--accent)}
+  .rel{display:inline-block;min-width:30px;text-align:center;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
+  .opp{font-size:12px} .skip{opacity:.5}
+  .em{font-size:12px;line-height:1.5} .em .cf{color:var(--faint)}
+  .noem{color:var(--faint);font-size:12px}
+  .mailbtn{background:transparent;border:1px solid var(--line);color:var(--accent);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;width:auto}
+  .mailbtn:hover{border-color:var(--accent)}
+  .dlbar{display:none;align-items:center;gap:12px;margin:14px 0 4px;padding:12px 14px;background:var(--accentsoft);border-radius:10px}
+  .note{font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:9px 12px;margin:12px 0;line-height:1.6}
+  /* 邮件模态 */
+  .tv-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none}
+  .tv-card{position:fixed;z-index:51;top:6vh;left:50%;transform:translateX(-50%);width:min(680px,92vw);max-height:86vh;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);display:none;flex-direction:column}
+  .tv-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .tv-head .tt{flex:1;font-weight:600;font-size:14px}
+  .tv-x{cursor:pointer;border:none;background:transparent;color:var(--muted);font-size:18px;width:auto}
+  .tv-body{padding:14px 16px;overflow:auto}
+  .tv-body .lbl{font-size:12px;color:var(--muted);margin:8px 0 3px}
+  .tv-body .subj{font-weight:600;font-size:14px}
+  .tv-body .bd{white-space:pre-wrap;font-size:13.5px;line-height:1.7;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+</div>
+<div class="wrap" style="max-width:920px">
+  <h1 style="font-size:22px;margin:0 0 4px">外链拓客</h1>
+  <div class="sub">输入主题关键词（或你的网址），自动用搜索足迹在全网找可能给外链的站点，抓取联系邮箱，并按站点性质生成英文外联邮件草稿，汇总成 Excel。全程免费、用你自己的 key。</div>
+
+  <div class="panel bar">
+    <div class="f"><label>主题关键词（英文）</label><input id="kw" placeholder="如 forex broker review" /></div>
+    <div class="f"><label>地区 / 语言</label><select id="region"><option value="us-en">美国 / English</option><option value="uk-en">英国 / English</option></select></div>
+    <div class="f full"><label>你的网址（可选，用于邮件个性化；留空则用关键词）</label><input id="yourl" placeholder="https://yoursite.com/page" /></div>
+    <div class="f full"><label>一句话简介（可选：你能提供什么 / 为何值得链接）</label><input id="brief" placeholder="如 我们做了一份免费的外汇监管核验工具" /></div>
+  </div>
+  <div class="opts">
+    <label class="check"><input type="checkbox" id="genmail" checked /> 生成外联邮件草稿</label>
+    <label class="check">候选站上限 <select id="maxp"><option>15</option><option selected>25</option><option>30</option></select></label>
+    <button id="run" style="width:auto;margin-left:auto">开始找站</button>
+  </div>
+
+  <div id="status"></div>
+  <div class="prog" id="prog"><div class="fill" id="fill"></div></div>
+
+  <div class="dlbar" id="dlbar">
+    <span id="dlText" style="flex:1;font-size:13px"></span>
+    <button id="dl" style="width:auto">⬇ 下载 Excel</button>
+  </div>
+
+  <div id="tableWrap"></div>
+
+  <div class="note" id="legalNote" style="display:none">⚠️ 合规提醒：本工具只帮你<b>备好名单与草稿</b>，不替你群发。冷邮件请遵守对方所在地法规（如 GDPR / CAN-SPAM）：用你自己的邮箱、逐封个性化、附带退订说明、别群发轰炸。抓到的邮箱可能不准，发前请核对。</div>
+</div>
+
+<div class="tv-bg" id="tvBg" onclick="closeMail()"></div>
+<div class="tv-card" id="tvCard">
+  <div class="tv-head"><span class="tt" id="tvDom"></span><button class="copy" id="tvCopy">复制邮件</button><button class="tv-x" onclick="closeMail()">✕</button></div>
+  <div class="tv-body">
+    <div class="lbl">主题</div><div class="subj" id="tvSubj"></div>
+    <div class="lbl">正文</div><div class="bd" id="tvBody"></div>
+  </div>
+</div>
+
+<script src="/shared/keys.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const REGION={"us-en":[2840,"en"],"uk-en":[2826,"en"]};
+let LAST=null, tbody=null;
+
+function syncKeyBtn(){ const b=$("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
+syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+function setStatus(m,e){ $("status").textContent=m||""; $("status").className=e?"err":""; }
+function relColor(v){ return v>=70?"#137333":v>=45?"#b06000":"#c5221f"; }
+function relBg(v){ return v>=70?"#e6f4ea":v>=45?"#fef7e0":"#fce8e6"; }
+
+$("run").onclick=run;
+$("kw").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
+
+async function run(){
+  const keyword=$("kw").value.trim();
+  const your_url=$("yourl").value.trim();
+  if(!keyword && !your_url){ setStatus("请填写主题关键词或你的网址。",true); return; }
+  if(!SEOKEYS.hasKeys()){ setStatus("请先设置 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+  const [location_code,language_code]=REGION[$("region").value];
+  const body={keyword,your_url,your_brief:$("brief").value.trim(),location_code,language_code,
+    generate_emails:$("genmail").checked,max_prospects:parseInt($("maxp").value,10),...SEOKEYS.get()};
+
+  $("run").disabled=true; $("dlbar").style.display="none"; LAST=null;
+  $("tableWrap").innerHTML=""; $("legalNote").style.display="none";
+  $("prog").style.display="block"; $("fill").style.width="0";
+  setStatus("正在用搜索足迹找站…");
+
+  const tbl=E("table"); tbl.innerHTML="<thead><tr><th>域名</th><th>类型</th><th>相关</th><th>机会</th><th>邮箱</th><th>邮件</th></tr></thead>";
+  tbody=E("tbody"); tbl.append(tbody); $("tableWrap").append(tbl);
+
+  try{
+    const resp=await fetch("/api/outreach/find_stream",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!resp.ok){ const t=await resp.json().catch(()=>({detail:resp.status})); throw new Error(t.detail||resp.status); }
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf("\n\n"))>=0){ const line=buf.slice(0,i).trim(); buf=buf.slice(i+2);
+        if(line.startsWith("data:")) handle(JSON.parse(line.slice(5).trim())); }
+    }
+  }catch(e){ setStatus("失败："+(e.message||e),true); }
+  finally{ $("run").disabled=false; }
+}
+
+function handle(ev){
+  if(ev.type==="start"){ setStatus(`主题「${ev.keyword}」找站中…`); }
+  else if(ev.type==="discovered"){ setStatus(`找到 ${ev.total} 个候选站，逐个抓取分析中…`); }
+  else if(ev.type==="prospect"){ addRow(ev.data); $("fill").style.width=Math.round(ev.done/ev.total*100)+"%"; setStatus(`分析中 ${ev.done}/${ev.total}…`); }
+  else if(ev.type==="done"){
+    $("fill").style.width="100%";
+    setStatus(`完成：${ev.total} 站，其中 ${ev.with_email} 站抓到邮箱。`);
+    LAST={b64:ev.xlsx_b64,filename:ev.filename};
+    $("dlText").textContent=`已生成 Excel（${ev.total} 站 · ${ev.with_email} 有邮箱），含邮件草稿。`;
+    $("dlbar").style.display="flex"; $("legalNote").style.display="block";
+    download(LAST);
+  }
+  else if(ev.type==="error"){ setStatus("失败："+ev.message,true); }
+}
+
+function addRow(p){
+  const tr=E("tr"); if(p.opportunity==="跳过"||!p.fetched) tr.className="skip";
+  const d=E("td"); const a=E("a","dom",p.domain); a.href=p.url; a.target="_blank"; a.rel="noopener"; d.append(a);
+  if(p.reason){ const rs=E("div","noem",p.reason); d.append(rs); }
+  tr.append(d);
+  tr.append(E("td",null,p.fetched?(p.site_type||"—"):"抓取失败"));
+  const rt=E("td"); if(p.fetched){ const s=E("span","rel",String(p.relevance)); s.style.color=relColor(p.relevance); s.style.background=relBg(p.relevance); rt.append(s);} else rt.append(document.createTextNode("—")); tr.append(rt);
+  tr.append(E("td","opp",p.fetched?(p.opportunity||"—"):"—"));
+  const em=E("td");
+  if(p.emails&&p.emails.length){ p.emails.forEach(e=>{const line=E("div","em");line.append(document.createTextNode(e.address+" "));line.append(E("span","cf","("+e.confidence+")"));em.append(line);}); }
+  else if(p.has_form){ em.append(E("span","noem","仅联系表单")); }
+  else { em.append(E("span","noem","—")); }
+  tr.append(em);
+  const mt=E("td");
+  if(p.email_body){ const b=E("button","mailbtn","查看"); b.onclick=()=>openMail(p); mt.append(b); }
+  tr.append(mt);
+  tbody.append(tr);
+}
+
+// 邮件模态
+let mailText="";
+function openMail(p){ mailText=(p.email_subject?("Subject: "+p.email_subject+"\n\n"):"")+p.email_body;
+  $("tvDom").textContent=p.domain; $("tvSubj").textContent=p.email_subject||"（无）"; $("tvBody").textContent=p.email_body||"";
+  $("tvBg").style.display="block"; $("tvCard").style.display="flex"; }
+function closeMail(){ $("tvBg").style.display="none"; $("tvCard").style.display="none"; }
+$("tvCopy").onclick=()=>{ if(!mailText)return; navigator.clipboard.writeText(mailText); const b=$("tvCopy"); b.textContent="已复制 ✓"; setTimeout(()=>b.textContent="复制邮件",1500); };
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMail();});
+
+// 下载
+function download(x){ const bin=atob(x.b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  const blob=new Blob([arr],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=x.filename; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+$("dl").onclick=()=>{ if(LAST)download(LAST); };
+</script>
+</body>
+</html>
