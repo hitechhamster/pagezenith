@@ -26,7 +26,7 @@ _sema = asyncio.Semaphore(get_settings().max_concurrent_runs)
 
 def _settings_for(req: ReportRequest):
     """合并用户 key，并校验有了能跑。"""
-    s = get_settings().with_keys(req.openrouter_key, req.serpapi_key)
+    s = get_settings().with_keys(req.openrouter_key, req.serpapi_key, req.tavily_key)
     if not s.use_mocks:
         if not s.openrouter_api_key:
             raise HTTPException(status_code=400, detail="缺少 OpenRouter API Key，请在设置里填写。")
@@ -80,7 +80,7 @@ async def report_stream(req: ReportRequest):
 
 
 def _settings_for_batch(req: BatchReportRequest):
-    s = get_settings().with_keys(req.openrouter_key, req.serpapi_key)
+    s = get_settings().with_keys(req.openrouter_key, req.serpapi_key, req.tavily_key)
     if not s.use_mocks:
         if not s.openrouter_api_key:
             raise HTTPException(status_code=400, detail="缺少 OpenRouter API Key，请在设置里填写。")

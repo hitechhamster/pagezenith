@@ -137,6 +137,7 @@
       </select>
     </div>
     <label class="check"><input type="checkbox" id="browser" checked />本地浏览器抓取</label>
+    <label class="check" title="需在右上角设置里填 Tavily key；用它把竞品页解析成更干净的正文"><input type="checkbox" id="tavily" />Tavily 解析（更干净）</label>
     <button id="run">开始分析</button>
   </div>
   <div class="sub small" id="batchHint" style="display:none;margin-top:-6px">批量模式：综合看你的页/站在整组关键词上的差距与该补的内容；跨关键词自动去重（同一竞品页只抓一次），Reddit 仅取前 3 个词以省额度。</div>
@@ -224,7 +225,7 @@ async function run(){
   let total=0, got=0;
   try{
     const resp=await fetch("/api/seo-gap/report_stream",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,...SEOKEYS.get()})});
+      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked,...SEOKEYS.get()})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
     while(true){
@@ -281,7 +282,7 @@ async function runBatch(){
   setStatus(`批量分析 ${keywords.length} 个关键词…结果逐块出现，请勿关闭本页。`,false,true);
   try{
     const resp=await fetch("/api/seo-gap/batch_stream",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,...SEOKEYS.get()})});
+      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked,...SEOKEYS.get()})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
     while(true){

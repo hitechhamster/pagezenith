@@ -21,7 +21,7 @@ from .models import (
     PAGE_KIND_ZH, BatchCompetitor, BatchReportRequest, ConsolidatedGap, KeywordRank,
     KeywordSemantics, RedditInsights, RedditTheme, RedditThreadRef, ReportRequest, TargetSummary,
 )
-from .report_v2 import ReportV2Builder, _image_count, _norm, _word_count
+from .report_v2 import ReportV2Builder, _clean_text, _image_count, _norm, _word_count
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class BatchReportBuilder:
         async def analyze(e):
             async with sem:
                 try:
-                    pg = await fetcher.fetch(e["url"])
+                    pg = await self.rv._fetch_content(e["url"], fetcher, req.use_tavily)
                     from .clients.fetch import looks_blocked
                     if _word_count(pg.text) < 50 or looks_blocked(pg.text):
                         raise ValueError("正文过少或被反爬")
@@ -115,7 +115,7 @@ class BatchReportBuilder:
                     url=e["url"], title=e["title"], page_kind=pr.page_kind,
                     ranks_for=sorted(e["ranks_for"]), keyword_count=len(e["ranks_for"]),
                     best_rank=e["best_rank"], we_lack=wl[:8], word_count=_word_count(pg.text),
-                    full_text=pg.text[:20000],
+                    full_text=_clean_text(pg.text)[:20000],
                 ), wl
 
         tasks = [asyncio.create_task(analyze(e)) for e in ordered]

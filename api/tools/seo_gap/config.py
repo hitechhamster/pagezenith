@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     serpapi_key: str = ""
     serpapi_base_url: str = "https://serpapi.com"
 
+    # Tavily（可选）：填了就能用它把竞品页解析成更干净的正文
+    tavily_key: str = ""
+    tavily_base_url: str = "https://api.tavily.com"
+    tavily_timeout: float = 30.0
+
     # DataForSEO（SERP + backlinks；backlinks 目前无替代源）
     dataforseo_login: str = ""
     dataforseo_password: str = ""
@@ -95,13 +100,16 @@ class Settings(BaseSettings):
     # SSRF 防护：禁止抓取私有/内网/元数据地址
     block_private_urls: bool = True
 
-    def with_keys(self, openrouter_key: str | None, serpapi_key: str | None) -> "Settings":
+    def with_keys(self, openrouter_key: str | None, serpapi_key: str | None,
+                  tavily_key: str | None = None) -> "Settings":
         """按请求覆盖用户 key，返回新实例（绝不改全局单例，绝不落库/日志）。"""
         upd = {}
         if openrouter_key:
             upd["openrouter_api_key"] = openrouter_key
         if serpapi_key:
             upd["serpapi_key"] = serpapi_key
+        if tavily_key:
+            upd["tavily_key"] = tavily_key
         return self.model_copy(update=upd) if upd else self
 
     # 抓取

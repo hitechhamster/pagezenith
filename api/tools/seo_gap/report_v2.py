@@ -15,6 +15,7 @@ from .clients.fetch import PageFetcher, looks_blocked
 from .clients.llm import LLMClient
 from .clients.reddit import RedditClient
 from .clients.serpapi import SerpApiClient
+from .clients.tavily import TavilyClient
 from .config import Settings, get_settings
 from .extraction.extractor import Extractor
 from .extraction.prompts_v2 import (
@@ -47,6 +48,11 @@ def _image_count(html: str | None) -> int:
     return html.lower().count("<img") if html else 0
 
 
+def _clean_text(text: str) -> str:
+    """删掉空行（抓取正文常有大量空行），每个内容块占一行。"""
+    return "\n".join(ln.rstrip() for ln in (text or "").splitlines() if ln.strip())
+
+
 class ReportV2Builder:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()
@@ -55,6 +61,15 @@ class ReportV2Builder:
         self.extractor = Extractor(self.llm, PageFetcher(self.s))
         self.deduper = SemanticDeduper(self.llm)
         self.reddit = RedditClient(self.s)
+        self.tavily = TavilyClient(self.s)
+
+    async def _fetch_content(self, url: str, fetcher, use_tavily: bool):
+        """竞品正文抓取：use_tavily 且有 key 时先用 Tavily 解析（更干净），失败回退常规抓取。"""
+        if use_tavily and self.tavily.available:
+            text = await self.tavily.extract(url)
+            if text and _word_count(text) >= 50:
+                return PageContent(url=url, text=text, raw_html=None)
+        return await fetcher.fetch(url)
 
     def _make_fetcher(self, req: ReportRequest):
         mode = req.fetch_mode or "browser"  # v2 默认浏览器抓取，过反爬
@@ -161,7 +176,7 @@ class ReportV2Builder:
 
         async def analyze(it):
             try:
-                pg = await fetcher.fetch(it.url)
+                pg = await self._fetch_content(it.url, fetcher, req.use_tavily)
                 if _word_count(pg.text) < 50 or looks_blocked(pg.text):  # 拦截页/空壳 → 失败
                     raise ValueError("正文过少或被反爬拦截")
                 pr = await self.extractor.extract_content(pg, use_cache=True)
@@ -173,7 +188,7 @@ class ReportV2Builder:
                 rank=it.rank, url=it.url, title=it.title, page_kind=pr.page_kind,
                 main_content=pr.subtopics[:8], we_lack=wl[:8],
                 word_count=_word_count(pg.text), image_count=_image_count(pg.raw_html),
-                full_text=pg.text[:20000],
+                full_text=_clean_text(pg.text)[:20000],
             ), wl
 
         ok = 0

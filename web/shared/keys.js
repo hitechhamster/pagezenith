@@ -8,9 +8,11 @@
 
   function get() {
     const k = read();
-    return { openrouter_key: k.openrouter_key || "", serpapi_key: k.serpapi_key || "" };
+    return { openrouter_key: k.openrouter_key || "", serpapi_key: k.serpapi_key || "",
+             tavily_key: k.tavily_key || "" };
   }
   function hasKeys() { const k = get(); return !!(k.openrouter_key && k.serpapi_key); }
+  function hasTavily() { return !!get().tavily_key; }
 
   function modal() {
     let m = document.getElementById("keys-modal");
@@ -26,6 +28,8 @@
         <input id="km-or" type="password" placeholder="sk-or-..." />
         <label>SerpApi Key <a href="https://serpapi.com/manage-api-key" target="_blank">获取</a></label>
         <input id="km-serp" type="password" placeholder="..." />
+        <label>Tavily Key（可选，更干净地解析竞品正文）<a href="https://app.tavily.com" target="_blank">获取</a></label>
+        <input id="km-tavily" type="password" placeholder="tvly-..." />
         <div class="km-btns"><button id="km-cancel" class="km-ghost">取消</button><button id="km-save">保存</button></div>
       </div>`;
     document.body.appendChild(m);
@@ -34,7 +38,8 @@
     m.querySelector("#km-cancel").onclick = close;
     m.querySelector("#km-save").onclick = () => {
       write({ openrouter_key: m.querySelector("#km-or").value.trim(),
-              serpapi_key: m.querySelector("#km-serp").value.trim() });
+              serpapi_key: m.querySelector("#km-serp").value.trim(),
+              tavily_key: m.querySelector("#km-tavily").value.trim() });
       close();
       window.dispatchEvent(new Event("seo-keys-updated"));
     };
@@ -45,8 +50,9 @@
     const m = modal(); const k = get();
     m.querySelector("#km-or").value = k.openrouter_key;
     m.querySelector("#km-serp").value = k.serpapi_key;
+    m.querySelector("#km-tavily").value = k.tavily_key;
     m.style.display = "block";
   }
 
-  window.SEOKEYS = { get, hasKeys, open };
+  window.SEOKEYS = { get, hasKeys, hasTavily, open };
 })();

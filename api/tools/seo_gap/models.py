@@ -215,9 +215,11 @@ class ReportRequest(BaseModel):
     target_title: Optional[str] = None
     fetch_mode: Optional[str] = None     # 默认 browser（过反爬）
     top_n: Optional[int] = None
+    use_tavily: bool = False             # 有 Tavily key 时用它解析竞品正文（更干净）
     # 用户自带 key（前端 localStorage 传入；后端用完即弃，不存不记日志）
     openrouter_key: Optional[str] = None
     serpapi_key: Optional[str] = None
+    tavily_key: Optional[str] = None
 
 
 # 一 · 关键词语义分析
@@ -350,8 +352,10 @@ class BatchReportRequest(BaseModel):
     target_text: Optional[str] = None
     target_title: Optional[str] = None
     fetch_mode: Optional[str] = None
+    use_tavily: bool = False
     openrouter_key: Optional[str] = None
     serpapi_key: Optional[str] = None
+    tavily_key: Optional[str] = None
 
 
 class KeywordRank(BaseModel):
