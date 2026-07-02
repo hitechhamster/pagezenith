@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-# (查询模板, 默认机会提示)
+# (查询模板, 默认机会提示)。按经验从高命中往下排，取前 N 个。
 FOOTPRINTS: list[tuple[str, str]] = [
     ('{kw} "write for us"', "投稿"),
     ('{kw} "guest post"', "投稿"),
@@ -15,6 +15,15 @@ FOOTPRINTS: list[tuple[str, str]] = [
     ('{kw} blog', "合作"),
     ('{kw} "useful links"', "资源位加链"),
     ('{kw} "submit a guest post"', "投稿"),
+    ('{kw} "become a contributor"', "投稿"),
+    ('{kw} "guest post guidelines"', "投稿"),
+    ('{kw} inurl:resources', "资源位加链"),
+    ('{kw} "recommended reading"', "资源位加链"),
+    ('{kw} "best" (tools OR resources)', "资源位加链"),
+    ('{kw} "roundup"', "合作"),
+    ('{kw} "advertise with us"', "合作"),
+    ('{kw} "contribute to"', "投稿"),
+    ('{kw} "top" blogs', "合作"),
 ]
 
 

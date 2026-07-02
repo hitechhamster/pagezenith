@@ -61,7 +61,13 @@
   </div>
   <div class="opts">
     <label class="check"><input type="checkbox" id="genmail" checked /> 生成外联邮件草稿</label>
-    <label class="check">候选站上限 <select id="maxp"><option>15</option><option selected>25</option><option>30</option></select></label>
+    <label class="check">搜索广度
+      <select id="breadth">
+        <option value="standard">标准（≈6 额度 · ~25 站）</option>
+        <option value="wide" selected>广（≈12 额度 · ~50 站）</option>
+        <option value="max">很广（≈32 额度 · 自动扩展关键词 · ~90 站）</option>
+      </select>
+    </label>
     <button id="run" style="width:auto;margin-left:auto">开始找站</button>
   </div>
 
@@ -110,7 +116,7 @@ async function run(){
   if(!SEOKEYS.hasKeys()){ setStatus("请先设置 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
   const [location_code,language_code]=REGION[$("region").value];
   const body={keyword,your_url,your_brief:$("brief").value.trim(),location_code,language_code,
-    generate_emails:$("genmail").checked,max_prospects:parseInt($("maxp").value,10),...SEOKEYS.get()};
+    generate_emails:$("genmail").checked,breadth:$("breadth").value,...SEOKEYS.get()};
 
   $("run").disabled=true; $("dlbar").style.display="none"; LAST=null;
   $("tableWrap").innerHTML=""; $("legalNote").style.display="none";
@@ -136,7 +142,7 @@ async function run(){
 }
 
 function handle(ev){
-  if(ev.type==="start"){ setStatus(`主题「${ev.keyword}」找站中…`); }
+  if(ev.type==="start"){ const extra=(ev.keywords&&ev.keywords.length>1)?`（含扩展词：${ev.keywords.slice(1).join("、")}）`:""; setStatus(`主题「${ev.keyword}」找站中…${extra}`); }
   else if(ev.type==="discovered"){ setStatus(`找到 ${ev.total} 个候选站，逐个抓取分析中…`); }
   else if(ev.type==="prospect"){ addRow(ev.data); $("fill").style.width=Math.round(ev.done/ev.total*100)+"%"; setStatus(`分析中 ${ev.done}/${ev.total}…`); }
   else if(ev.type==="done"){

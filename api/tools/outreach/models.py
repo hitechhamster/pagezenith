@@ -14,7 +14,8 @@ class OutreachRequest(BaseModel):
     location_code: int = 2840
     language_code: str = "en"
     generate_emails: bool = True         # 是否为有邮箱的站生成外联邮件草稿
-    max_prospects: Optional[int] = None
+    breadth: str = "standard"            # 搜索广度：standard | wide | max
+    max_prospects: Optional[int] = None  # 显式覆盖上限（一般由 breadth 决定）
     openrouter_key: Optional[str] = None
     serpapi_key: Optional[str] = None
 

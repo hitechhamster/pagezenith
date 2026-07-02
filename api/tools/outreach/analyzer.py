@@ -28,6 +28,15 @@ def _domain(url: str) -> str:
     return urlparse(url).netloc.replace("www.", "").lower()
 
 
+# 搜索广度档位：footprints=用几个足迹，depth=每个足迹取多深，cap=候选站上限，
+# kw_expand=自动扩展几个相关关键词（一起搜，真正扩大范围）。
+# SerpApi 额度 ≈ footprints ×（1 + kw_expand）。depth 不额外计费。
+_BREADTH = {
+    "standard": {"footprints": 6,  "depth": 10, "cap": 25, "kw_expand": 0},
+    "wide":     {"footprints": 12, "depth": 20, "cap": 50, "kw_expand": 0},
+    "max":      {"footprints": 8,  "depth": 20, "cap": 90, "kw_expand": 3},
+}
+
 _CLS_MOCK = {"site_type": "博客", "relevance": 72, "opportunity": "投稿",
              "reason": "主题相关的独立博客，接受投稿。",
              "email_subject": "Guest post idea for your readers",
@@ -55,15 +64,29 @@ class OutreachFinder:
             f"网页内容：\n{sample}\n\n输出 JSON：{{\"keyword\":\"...\"}}", mock=mock)
         return (raw.get("keyword", "") if isinstance(raw, dict) else "") or ""
 
-    async def discover(self, keyword: str, loc: int, lang: str, your_domain: str,
-                       cap: int) -> list[dict]:
-        """跑足迹搜索，按域名去重，返回 [{domain,url,title,hint}]（最多 cap 个）。"""
-        fps = build_footprints(keyword, self.s.outreach_footprints_per_run)
+    async def _expand_keywords(self, keyword: str, n: int) -> list[str]:
+        """让 LLM 生成 n 个相关（非同义）关键词，用来扩大候选站范围。"""
+        if n <= 0:
+            return []
+        mock = {"keywords": [f"{keyword} guide", f"best {keyword}", f"{keyword} tips"][:n]}
+        raw = await self.llm.complete_json(
+            "你是 SEO 拓客助手。给一个主题词，生成若干**相关但不同角度**的英文关键词，"
+            "用于扩大外链候选站范围（不要近义词堆砌，要覆盖相邻子话题）。只输出 JSON。",
+            f"主题词：{keyword}\n生成 {n} 个。输出 JSON：{{\"keywords\":[\"...\"]}}", mock=mock)
+        kws = raw.get("keywords", []) if isinstance(raw, dict) else []
+        return [k.strip() for k in kws if isinstance(k, str) and k.strip()][:n]
+
+    async def discover(self, keywords: list[str], loc: int, lang: str, your_domain: str,
+                       cap: int, n_footprints: int, depth: int) -> list[dict]:
+        """跨多个关键词跑足迹搜索，按域名去重，返回 [{domain,url,title,hint}]（最多 cap 个）。"""
+        queries: list[tuple[str, str]] = []
+        for kw in keywords:
+            queries += build_footprints(kw, n_footprints)
         results = await asyncio.gather(*[
-            self.serp.fetch_serp(q, loc, lang, depth=10) for q, _ in fps
+            self.serp.fetch_serp(q, loc, lang, depth=depth) for q, _ in queries
         ], return_exceptions=True)
         seen, out = set(), []
-        for (q, hint), items in zip(fps, results):
+        for (q, hint), items in zip(queries, results):
             if isinstance(items, Exception):
                 logger.warning("足迹搜索失败 %s: %s", q, items)
                 continue
@@ -142,9 +165,16 @@ class OutreachFinder:
             return
 
         your_domain = _domain(req.your_url) if req.your_url else ""
-        cap = min(req.max_prospects or self.s.outreach_max_prospects, self.s.outreach_max_prospects)
-        yield {"type": "start", "keyword": keyword}
-        seeds = await self.discover(keyword, req.location_code, req.language_code, your_domain, cap)
+        cfg = _BREADTH.get(req.breadth, _BREADTH["standard"])
+        cap = min(req.max_prospects or cfg["cap"], self.s.outreach_max_prospects)
+
+        keywords = [keyword]
+        if cfg["kw_expand"]:
+            keywords += await self._expand_keywords(keyword, cfg["kw_expand"])
+        yield {"type": "start", "keyword": keyword, "keywords": keywords}
+
+        seeds = await self.discover(keywords, req.location_code, req.language_code, your_domain,
+                                    cap, cfg["footprints"], cfg["depth"])
         if not seeds:
             yield {"type": "error", "message": "没找到候选站点。换个更常见的英文主题词试试。"}
             return
