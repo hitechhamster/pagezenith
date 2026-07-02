@@ -12,8 +12,13 @@
   .bar .f.full{grid-column:1/-1}
   .bar label{font-size:12px;color:var(--muted)}
   .bar input,.bar select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit}
-  .opts{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:12px 0 4px}
+  .form .bar{margin:0}
+  .opts{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .opts .check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer}
+  .opts button{width:auto;margin-left:auto}
+  .opts select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit}
+  .rhead{font-family:var(--font-display);font-weight:600;font-size:15px;margin:0 0 4px}
+  .rcard{margin-top:14px}
   #status{margin:10px 2px;color:var(--muted);font-size:13px}
   #status.err{color:var(--red)}
   .prog{height:8px;background:var(--soft);border-radius:6px;overflow:hidden;margin:10px 0;display:none}
@@ -53,22 +58,33 @@
   <h1 style="font-size:22px;margin:0 0 4px">外链拓客</h1>
   <div class="sub">输入主题关键词（或你的网址），自动用搜索足迹在全网找可能给外链的站点，抓取联系邮箱，并按站点性质生成英文外联邮件草稿，汇总成 Excel。全程免费、用你自己的 key。</div>
 
-  <div class="panel bar">
-    <div class="f"><label>主题关键词（英文）</label><input id="kw" placeholder="如 forex broker review" /></div>
-    <div class="f"><label>地区 / 语言</label><select id="region"><option value="us-en">美国 / English</option><option value="uk-en">英国 / English</option></select></div>
-    <div class="f full"><label>你的网址（可选，用于邮件个性化；留空则用关键词）</label><input id="yourl" placeholder="https://yoursite.com/page" /></div>
-    <div class="f full"><label>一句话简介（可选：你能提供什么 / 为何值得链接）</label><input id="brief" placeholder="如 我们做了一份免费的外汇监管核验工具" /></div>
-  </div>
-  <div class="opts">
-    <label class="check"><input type="checkbox" id="genmail" checked /> 生成外联邮件草稿</label>
-    <label class="check">搜索广度
-      <select id="breadth">
-        <option value="standard">标准（≈6 额度 · ~25 站）</option>
-        <option value="wide" selected>广（≈12 额度 · ~50 站）</option>
-        <option value="max">很广（≈32 额度 · 自动扩展关键词 · ~90 站）</option>
-      </select>
-    </label>
-    <button id="run" style="width:auto;margin-left:auto">开始找站</button>
+  <div class="panel form">
+    <div class="bar">
+      <div class="f"><label>主题关键词（英文）</label><input id="kw" placeholder="如 forex broker review" /></div>
+      <div class="f"><label>语言</label><select id="lang">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+        <option value="es">Español</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Français</option>
+        <option value="ja">日本語</option>
+        <option value="pt">Português</option>
+        <option value="it">Italiano</option>
+      </select></div>
+      <div class="f full"><label>你的网址（可选，用于邮件个性化；留空则用关键词）</label><input id="yourl" placeholder="https://yoursite.com/page" /></div>
+      <div class="f full"><label>一句话简介（可选：你能提供什么 / 为何值得链接）</label><input id="brief" placeholder="如 我们做了一份免费的外汇监管核验工具" /></div>
+    </div>
+    <div class="opts">
+      <label class="check"><input type="checkbox" id="genmail" checked /> 生成外联邮件草稿</label>
+      <label class="check">搜索广度
+        <select id="breadth">
+          <option value="standard">标准（≈6 额度 · ~25 站）</option>
+          <option value="wide" selected>广（≈12 额度 · ~50 站）</option>
+          <option value="max">很广（≈32 额度 · 自动扩展关键词 · ~90 站）</option>
+        </select>
+      </label>
+      <button id="run">开始找站</button>
+    </div>
   </div>
 
   <div id="status"></div>
@@ -97,7 +113,8 @@
 <script>
 const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
-const REGION={"us-en":[2840,"en"],"uk-en":[2826,"en"]};
+// 只按语言（外链拓客不关心国家）；location_code 取该语言的一个合理默认，不外露。
+const LANG={en:[2840,"en"],zh:[2156,"zh"],es:[2724,"es"],de:[2276,"de"],fr:[2250,"fr"],ja:[2392,"ja"],pt:[2076,"pt"],it:[2380,"it"]};
 let LAST=null, tbody=null;
 
 function syncKeyBtn(){ const b=$("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
@@ -114,7 +131,7 @@ async function run(){
   const your_url=$("yourl").value.trim();
   if(!keyword && !your_url){ setStatus("请填写主题关键词或你的网址。",true); return; }
   if(!SEOKEYS.hasKeys()){ setStatus("请先设置 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
-  const [location_code,language_code]=REGION[$("region").value];
+  const [location_code,language_code]=LANG[$("lang").value];
   const body={keyword,your_url,your_brief:$("brief").value.trim(),location_code,language_code,
     generate_emails:$("genmail").checked,breadth:$("breadth").value,...SEOKEYS.get()};
 
@@ -123,8 +140,9 @@ async function run(){
   $("prog").style.display="block"; $("fill").style.width="0";
   setStatus("正在用搜索足迹找站…");
 
+  const card=E("div","panel rcard"); card.append(E("div","rhead","候选站点"));
   const tbl=E("table"); tbl.innerHTML="<thead><tr><th>域名</th><th>类型</th><th>相关</th><th>机会</th><th>邮箱</th><th>邮件</th></tr></thead>";
-  tbody=E("tbody"); tbl.append(tbody); $("tableWrap").append(tbl);
+  tbody=E("tbody"); tbl.append(tbody); card.append(tbl); $("tableWrap").append(card);
 
   try{
     const resp=await fetch("/api/outreach/find_stream",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
