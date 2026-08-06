@@ -1,7 +1,7 @@
 # PageZenith — AI 跨境营销工具
 
 自带 API Key 的 AI 跨境营销工具集。主推 **SEO 文章生成**：填关键词 → 搜同类内容避开同质化 →
-出大纲给你审批（可反复改）→ 按大纲写整篇长文，自动插外链、出 SEO 标题描述、可选 AI 配图，导出 Word。
+出大纲给你审批（可反复改）→ 按大纲写整篇长文，出 SEO 标题描述、可选 AI 配图，导出 Word。
 另有内容差距分析、文章质量检测、站点情报侦察、Reddit 选题研究、外链拓客。
 
 ## 结构
@@ -14,7 +14,7 @@ api/
     seo_writer/           # 工具⑥：SEO 文章生成（主推）
       router.py           # /api/seo-writer/*（三步向导，全部 SSE 流式）
       providers.py        # LLM: OpenRouter | DeepSeek；搜索: Tavily | Exa；配图: OpenRouter
-      workflow.py         # 判字数 → 搜索 → 分类 → 大纲 → 改大纲 → 选外链 → 写文 → SEO 元数据 → 配图
+      workflow.py         # 判字数 → 搜索 → 分类 → 大纲 → 改大纲 → 写文 → SEO 元数据 → 配图
       prompts.py          # 全部 prompt（改文风只动这里）
       docx_export.py      # Markdown → Word（标题层级/表格/超链接/嵌图）
       session.py          # 三步之间的进程内会话（带 TTL，不落库）

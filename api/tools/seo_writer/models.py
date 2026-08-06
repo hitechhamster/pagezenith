@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 LLMProvider = Literal["openrouter", "deepseek"]
 SearchProvider = Literal["tavily", "exa", "none"]
@@ -47,7 +47,6 @@ class OutlineRequest(Keys, Providers):
     language: str = "English"
     enable_images: bool = False
     images_per_article: int = 2
-    links: list[dict] = Field(default_factory=list)   # [{url, title}]，来自 /links/parse
 
 
 class ReviseRequest(Keys, Providers):
@@ -59,7 +58,7 @@ class ReviseRequest(Keys, Providers):
 
 
 class ArticleRequest(Keys, Providers):
-    """第三步：大纲通过 → 选外链 → 写文 → SEO 元数据 →（可选）配图 → Word。"""
+    """第三步：大纲通过 → 写文 → SEO 元数据 →（可选）配图 → Word。"""
 
     session_id: str
     outline: Optional[str] = None          # 会话丢失时的降级入口
@@ -72,15 +71,3 @@ class ArticleRequest(Keys, Providers):
     language: Optional[str] = None
     enable_images: Optional[bool] = None
     images_per_article: Optional[int] = None
-
-
-class LinkRow(BaseModel):
-    url: str
-    title: str = ""
-
-
-class SelectedLink(BaseModel):
-    url: str = ""
-    title: str = ""
-    anchor_text: str = ""
-    suggested_section: str = ""

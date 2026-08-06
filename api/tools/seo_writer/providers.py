@@ -34,14 +34,13 @@ class ProviderError(Exception):
 TOKEN_LIMITS = {
     "wordcount": 1500,
     "classify": 2000,
-    "links": 3000,
     "seo": 4000,
     "outline": 12000,
     "revise_outline": 12000,
     "article": 24000,
 }
 # 这些任务不需要模型长考，OpenRouter 上显式降低 reasoning 开销
-LOW_REASONING_TASKS = {"seo", "classify", "wordcount", "links"}
+LOW_REASONING_TASKS = {"seo", "classify", "wordcount"}
 
 LLM_MODELS = {
     "openrouter": [
@@ -379,8 +378,6 @@ def _mock_text(task: str) -> str:
         "outline": _MOCK_OUTLINE,
         "revise_outline": _MOCK_OUTLINE + "\n\n（已按修改意见调整）",
         "article": _MOCK_ARTICLE,
-        "links": '{"links": [{"url": "https://example.com/a", "title": "Broker Guide", '
-                 '"anchor_text": "how brokers are supervised", "suggested_section": "What Does Regulation Actually Mean?"}]}',
         "seo": "Title: How To Choose A Regulated Forex Broker\n"
                "Description: A practical checklist for choosing a regulated forex broker, "
                "from verifying licences to spotting withdrawal red flags.",

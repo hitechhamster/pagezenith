@@ -25,8 +25,6 @@
   .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text)}
   .chk input{width:auto}
   .chk.dim{color:var(--faint)}
-  .filebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
-  .filebar input[type=file]{font-size:12px;border:0;padding:0;background:transparent}
   #status{margin:12px 2px;color:var(--muted);font-size:13px;min-height:20px}
   #status.err{color:var(--red)}
   .log{font-size:12.5px;color:var(--muted);line-height:1.9;margin:4px 0 10px}
@@ -56,8 +54,6 @@
   .wc.ok{background:var(--greenbg);color:var(--green);border:1px solid var(--greenline)}
   .wc.warn{background:var(--amberbg);color:var(--amber);border:1px solid var(--amberline)}
   .wc.bad{background:var(--redbg);color:var(--red);border:1px solid var(--redline)}
-  .linkrow{font-size:12.5px;color:var(--muted);padding:4px 0;border-top:1px solid var(--line)}
-  .linkrow b{color:var(--text);font-weight:500}
   .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   .ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
   .ghost:hover{background:var(--soft);border-color:var(--line)}
@@ -74,7 +70,7 @@
 <div class="wrap" style="max-width:860px">
   <h1 style="font-size:22px;margin:0 0 4px">SEO 文章生成</h1>
   <div class="sub">填关键词 → AI 搜同类内容避开同质化 → 出大纲给你审批（可反复改）→ 按大纲写整篇长文，
-    自动插外链、出 SEO 标题描述、可选配图，最后导出 Word。标题全用疑问句 + 黄金答案句结构。</div>
+    出 SEO 标题描述、可选配图，最后导出 Word。标题全用疑问句 + 黄金答案句结构。</div>
 
   <!-- 供应商 -->
   <div class="sec">
@@ -117,13 +113,6 @@
         <select id="imagesPer" disabled><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></div>
     </div>
     <div class="hint" id="imgHint">配图需要 OpenRouter key（只有它有文生图模型）。</div>
-    <div class="row">
-      <div class="f"><label>外链表格（可选，第一列 url、第二列文章标题）</label>
-        <div class="filebar">
-          <input type="file" id="linksFile" accept=".csv,.xlsx,.xls" />
-          <span id="linksInfo" class="small muted"></span>
-        </div></div>
-    </div>
     <div class="btns"><button id="btnOutline">生成大纲</button></div>
   </div>
 
@@ -219,21 +208,6 @@ window.addEventListener("seo-keys-updated",()=>{syncKeyBtn();syncProviders();});
   syncKeyBtn(); syncProviders();
 })();
 
-/* ---------- 外链表格 ---------- */
-let LINKS=[];
-$("linksFile").onchange=async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  $("linksInfo").textContent="解析中…";
-  const fd=new FormData(); fd.append("file",f);
-  try{
-    const r=await fetch("/api/seo-writer/links/parse",{method:"POST",body:fd});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.detail||r.status);
-    LINKS=d.links||[];
-    $("linksInfo").textContent=`已读 ${d.count} 条外链，写文时自动挑最合适的 2 条插入`;
-  }catch(err){ LINKS=[]; $("linksInfo").textContent="解析失败："+(err.message||err); }
-};
-
 /* ---------- SSE ---------- */
 async function sse(url,body,onEvent){
   const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -289,7 +263,7 @@ $("btnOutline").onclick=async()=>{
       main_keyword:mainKw, secondary_keyword:secKw, topic,
       specific:$("specific").value, wordcounts:parseInt($("wordcounts").value||"0",10),
       language:$("language").value, enable_images:$("enableImages").checked,
-      images_per_article:parseInt($("imagesPer").value,10), links:LINKS},
+      images_per_article:parseInt($("imagesPer").value,10)},
       ev=>{
         if(ev.type==="step") logTo("log1",ev.message);
         else if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
@@ -347,7 +321,6 @@ $("btnArticle").onclick=async()=>{
       ev=>{
         if(ev.type==="step") logTo("log2",ev.message);
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
-        else if(ev.type==="links") (ev.links||[]).forEach(l=>logTo("log2",`外链：${l.anchor_text} → ${l.url}`));
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
         else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
         else if(ev.type==="done"){
@@ -381,14 +354,6 @@ function renderInfo(ev){
   const wc=E("div","metaitem"); wc.append(E("div","k","字数"));
   const w=E("span","wc "+(ev.wordcount_level||"ok"),ev.wordcount_message||String(ev.word_count));
   const wrap=E("div","v"); wrap.append(w); wc.append(wrap); box.append(wc);
-  if(ev.links&&ev.links.length){
-    const d=E("div","metaitem"); d.append(E("div","k","已插入外链"));
-    ev.links.forEach(l=>{
-      const r=E("div","linkrow"); r.append(E("b",null,l.anchor_text||l.title||l.url));
-      r.append(document.createTextNode(" → "+l.url)); d.append(r);
-    });
-    box.append(d);
-  }
 }
 
 $("btnDocx").onclick=()=>{

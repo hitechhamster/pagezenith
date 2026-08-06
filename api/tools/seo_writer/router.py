@@ -5,21 +5,18 @@
 
   POST /outline         参数 → 搜索 → 判字数 → 分类 → 流式大纲 → 返回 session_id
   POST /outline/revise  session_id + 修改意见 → 流式新大纲（可反复调）
-  POST /article         session_id → 选外链 → 流式正文 → SEO 元数据 → 配图 → Word
-  POST /links/parse     外链表格（csv/xlsx）→ 解析出 [{url,title}]
+  POST /article         session_id → 流式正文 → SEO 元数据 → 配图 → Word
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import csv
-import io
 import json
 import logging
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..seo_gap.config import get_settings
@@ -65,56 +62,6 @@ async def health() -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# 外链表格
-# --------------------------------------------------------------------------- #
-@router.post("/links/parse")
-async def links_parse(file: UploadFile = File(...)) -> dict:
-    """第一列 url、第二列文章标题（与线下工作流的表格格式一致）。"""
-    raw = await file.read()
-    name = (file.filename or "").lower()
-    try:
-        rows = _parse_csv(raw) if name.endswith(".csv") else _parse_xlsx(raw)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"表格解析失败：{exc}") from exc
-    if not rows:
-        raise HTTPException(status_code=400, detail="没读到有效外链（第一列 url，第二列标题）。")
-    return {"count": len(rows), "links": rows[:500], "preview": rows[:5]}
-
-
-def _clean_rows(rows: list[tuple[Any, Any]]) -> list[dict]:
-    out = []
-    for first, second in rows:
-        url = str(first or "").strip()
-        if not url.lower().startswith("http"):
-            continue          # 顺手跳过表头行和空行
-        out.append({"url": url, "title": str(second or "").strip()})
-    return out
-
-
-def _parse_csv(raw: bytes) -> list[dict]:
-    for enc in ("utf-8-sig", "utf-8", "gbk"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
-        raise ValueError("无法识别 CSV 编码")
-    reader = csv.reader(io.StringIO(text))
-    return _clean_rows([(r[0] if r else "", r[1] if len(r) > 1 else "") for r in reader])
-
-
-def _parse_xlsx(raw: bytes) -> list[dict]:
-    from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-    ws = wb.active
-    rows = [(r[0] if r else None, r[1] if len(r) > 1 else None)
-            for r in ws.iter_rows(values_only=True)]
-    wb.close()
-    return _clean_rows(rows)
-
-
-# --------------------------------------------------------------------------- #
 # 第一步：大纲
 # --------------------------------------------------------------------------- #
 @router.post("/outline")
@@ -133,7 +80,7 @@ async def outline(req: OutlineRequest):
                     "secondary_keyword": req.secondary_keyword.strip(),
                     "topic": req.topic.strip(), "specific": req.specific or "",
                     "language": req.language, "enable_images": req.enable_images,
-                    "images_per_article": req.images_per_article, "links": req.links,
+                    "images_per_article": req.images_per_article,
                 }
 
                 if req.wordcounts and req.wordcounts > 0:
@@ -223,7 +170,7 @@ async def article(req: ArticleRequest):
             "wordcounts": req.wordcounts or 1800, "language": req.language or "English",
             "topic_type": "conceptual", "main_search": "", "sec_search": "",
             "enable_images": bool(req.enable_images),
-            "images_per_article": req.images_per_article or 2, "links": [],
+            "images_per_article": req.images_per_article or 2,
         }
     if req.outline:
         ctx["outline"] = req.outline
@@ -240,15 +187,9 @@ async def article(req: ArticleRequest):
     async def gen() -> AsyncIterator[str]:
         async with _sema:
             try:
-                selected_links: list[dict] = []
-                if ctx.get("links"):
-                    yield _sse({"type": "step", "key": "links", "message": "从外链表里挑最合适的两篇…"})
-                    selected_links = await wf.select_external_links(ctx)
-                    yield _sse({"type": "links", "links": selected_links})
-
                 yield _sse({"type": "step", "key": "article", "message": "撰写文章…"})
                 buf: list[str] = []
-                async for piece in wf.stream_article(ctx, selected_links):
+                async for piece in wf.stream_article(ctx):
                     buf.append(piece)
                     yield _sse({"type": "chunk", "text": piece})
                 text = "".join(buf)
@@ -282,7 +223,7 @@ async def article(req: ArticleRequest):
                     "seo_title": seo.get("seo_title", ""),
                     "seo_description": seo.get("seo_description", ""),
                     "word_count": actual, "wordcount_level": level, "wordcount_message": wc_msg,
-                    "links": selected_links, "images": len(image_map),
+                    "images": len(image_map),
                 })
             except Exception as exc:
                 logger.exception("article failed")

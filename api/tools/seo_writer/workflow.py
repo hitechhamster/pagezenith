@@ -1,6 +1,6 @@
 """SEO 文章生成工作流（线下 Colab 工作流 V11 的 async 版）。
 
-流程：判字数 → 搜索红海 → 主题分类 → 大纲 →（人工审批/反复改）→ 选外链 → 写文 →
+流程：判字数 → 搜索红海 → 主题分类 → 大纲 →（人工审批/反复改）→ 写文 →
 SEO 元数据 →（可选）配图。大纲和正文都是流式产出，router 直接转成 SSE。
 
 这里只负责编排和解析，prompt 在 prompts.py，供应商差异在 providers.py。
@@ -9,7 +9,6 @@ SEO 元数据 →（可选）配图。大纲和正文都是流式产出，router
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from typing import Any, AsyncIterator, Optional
@@ -161,48 +160,11 @@ class SEOWriter:
             current_outline=ctx.get("outline", ""), user_feedback=feedback)
         return self.llm.stream(prompt, task="revise_outline")
 
-    # ------------------------------------------------------------ 外链选取
-    async def select_external_links(self, ctx: dict[str, Any]) -> list[dict]:
-        rows = ctx.get("links") or []
-        if not rows:
-            return []
-        links_list = "\n".join(
-            f"{i + 1}. URL: {r.get('url', '')} | 标题: {r.get('title', '')}"
-            for i, r in enumerate(rows))
-        raw = await self.llm.complete(
-            P.LINKS_PROMPT.format(
-                main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
-                topic=ctx["topic"], specific=ctx.get("specific") or "无",
-                outline=(ctx.get("outline") or "")[:3000],
-                links_list=links_list, language=ctx["language"]),
-            task="links", temperature=0.3)
-        try:
-            cleaned = re.sub(r"^`{3,}(?:json)?\s*", "", raw.strip())
-            cleaned = re.sub(r"\s*`{3,}$", "", cleaned)
-            m = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            if m:
-                links = json.loads(m.group(0)).get("links", [])
-                return [l for l in links if l.get("url")][:2]
-        except Exception as exc:
-            logger.warning("外链选取 JSON 解析失败: %s", exc)
-        return []
-
     # -------------------------------------------------------------- 正文
-    def article_prompt(self, ctx: dict[str, Any], selected_links: list[dict]) -> str:
+    def article_prompt(self, ctx: dict[str, Any]) -> str:
         wc = ctx["wordcounts"]
         specific = (ctx.get("specific") or "").strip()
         topic_type = ctx.get("topic_type", "conceptual")
-
-        links_instruction = ""
-        if selected_links:
-            detail = "".join(
-                f"\n外链 {i}:\n"
-                f"  - URL: {l.get('url', '')}\n"
-                f"  - 原文标题: {l.get('title', '')}\n"
-                f"  - 建议锚文本: {l.get('anchor_text', '')}\n"
-                f"  - 建议插入章节: {l.get('suggested_section') or '自行判断'}\n"
-                for i, l in enumerate(selected_links, 1))
-            links_instruction = P.LINKS_INSTRUCTION.format(n=len(selected_links), links_detail=detail)
 
         image_instruction = ""
         if ctx.get("enable_images"):
@@ -217,14 +179,14 @@ class SEOWriter:
             specific_reminder=P.SPECIFIC_REMINDER_ARTICLE.format(specific=specific) if specific else "",
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
             topic=ctx["topic"], wordcounts=wc, wc_min=int(wc * 0.9), wc_max=int(wc * 1.4),
-            outline=ctx.get("outline", ""), links_instruction=links_instruction,
+            outline=ctx.get("outline", ""),
             main_search_results=ctx.get("main_search", ""),
             secondary_search_results=ctx.get("sec_search", ""),
             image_instruction=image_instruction,
         )
 
-    def stream_article(self, ctx: dict[str, Any], selected_links: list[dict]) -> AsyncIterator[str]:
-        return self.llm.stream(self.article_prompt(ctx, selected_links), task="article")
+    def stream_article(self, ctx: dict[str, Any]) -> AsyncIterator[str]:
+        return self.llm.stream(self.article_prompt(ctx), task="article")
 
     # ----------------------------------------------------------- SEO 元数据
     async def generate_seo(self, article: str, main_keyword: str, language: str) -> dict[str, str]:
