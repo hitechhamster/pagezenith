@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SEO 文章生成 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .sub{color:var(--muted);font-size:14px;margin:0 0 16px;max-width:64ch;line-height:1.7}
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
+       box-shadow:var(--shadow);padding:18px 20px;margin-top:14px}
+  .sec.off{opacity:.45}
+  .sec h2{font-size:15px;margin:0 0 14px;font-weight:620;font-family:var(--font-display);display:flex;align-items:center;gap:9px}
+  .sec h2 .step{width:22px;height:22px;border-radius:50%;background:var(--accentsoft);color:var(--accent);
+       font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--font-ui)}
+  .sec h2 .n{font-size:12px;color:var(--muted);font-weight:400}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+  .f{display:flex;flex-direction:column;gap:5px;flex:1;min-width:180px}
+  .f label{font-size:12px;color:var(--muted);font-weight:500}
+  .f label b{color:var(--red);font-weight:400}
+  .f input,.f select,.f textarea{width:100%}
+  .f textarea{min-height:74px;resize:vertical;line-height:1.6;font-family:var(--font-ui)}
+  .f.narrow{flex:0 0 130px;min-width:130px}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:-6px;margin-bottom:10px}
+  .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text)}
+  .chk input{width:auto}
+  .chk.dim{color:var(--faint)}
+  .filebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+  .filebar input[type=file]{font-size:12px;border:0;padding:0;background:transparent}
+  #status{margin:12px 2px;color:var(--muted);font-size:13px;min-height:20px}
+  #status.err{color:var(--red)}
+  .log{font-size:12.5px;color:var(--muted);line-height:1.9;margin:4px 0 10px}
+  .log div:before{content:"› ";color:var(--accent)}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--accent);
+        border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  /* Markdown 渲染区 */
+  .doc{font-family:var(--font-read);font-size:15.5px;line-height:1.85;color:var(--text);
+       max-height:62vh;overflow-y:auto;padding-right:6px}
+  .doc h1{font-size:23px;margin:18px 0 8px} .doc h2{font-size:19px;margin:20px 0 6px}
+  .doc h3{font-size:16.5px;margin:16px 0 5px} .doc h4{font-size:15px;margin:14px 0 4px}
+  .doc p{margin:0 0 11px} .doc ul{margin:0 0 11px;padding-left:20px} .doc li{margin:2px 0}
+  .doc table{border-collapse:collapse;width:100%;margin:10px 0;font-family:var(--font-ui);font-size:13px}
+  .doc th,.doc td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+  .doc th{background:var(--soft)}
+  .doc .md-img{background:var(--soft);border:1px dashed var(--line);border-radius:9px;padding:9px 12px;
+       font-family:var(--font-ui);font-size:12.5px;color:var(--muted);margin:10px 0}
+  .doc img{max-width:100%;border-radius:10px;margin:10px 0;display:block}
+  .doc:empty:after{content:"…";color:var(--faint)}
+  /* 结果元信息 */
+  .meta{display:grid;gap:10px;margin-bottom:14px}
+  .metaitem{background:var(--soft);border-radius:10px;padding:10px 13px}
+  .metaitem .k{font-size:11px;color:var(--muted);margin-bottom:3px}
+  .metaitem .v{font-size:13.5px;line-height:1.6;word-break:break-word}
+  .wc{display:inline-block;border-radius:7px;padding:2px 10px;font-size:12px;font-weight:500}
+  .wc.ok{background:var(--greenbg);color:var(--green);border:1px solid var(--greenline)}
+  .wc.warn{background:var(--amberbg);color:var(--amber);border:1px solid var(--amberline)}
+  .wc.bad{background:var(--redbg);color:var(--red);border:1px solid var(--redline)}
+  .linkrow{font-size:12.5px;color:var(--muted);padding:4px 0;border-top:1px solid var(--line)}
+  .linkrow b{color:var(--text);font-weight:500}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  .ghost:hover{background:var(--soft);border-color:var(--line)}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+</div>
+
+<div class="wrap" style="max-width:860px">
+  <h1 style="font-size:22px;margin:0 0 4px">SEO 文章生成</h1>
+  <div class="sub">填关键词 → AI 搜同类内容避开同质化 → 出大纲给你审批（可反复改）→ 按大纲写整篇长文，
+    自动插外链、出 SEO 标题描述、可选配图，最后导出 Word。标题全用疑问句 + 黄金答案句结构。</div>
+
+  <!-- 供应商 -->
+  <div class="sec">
+    <div class="row" style="margin-bottom:0">
+      <div class="f"><label>写作模型供应商</label>
+        <select id="llmProvider"><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option></select></div>
+      <div class="f"><label>模型</label><select id="llmModel"></select></div>
+      <div class="f"><label>搜索源（给大纲提供竞品语境）</label>
+        <select id="searchProvider">
+          <option value="tavily">Tavily</option><option value="exa">Exa</option><option value="none">不搜索</option>
+        </select></div>
+    </div>
+    <div class="hint" id="provHint" style="margin-top:8px;margin-bottom:0"></div>
+  </div>
+
+  <!-- 第一步 -->
+  <div class="sec" id="sec1">
+    <h2><span class="step">1</span>文章参数</h2>
+    <div class="row">
+      <div class="f"><label>主关键词 <b>*</b></label><input id="mainKw" placeholder="文章核心，标题和全文围绕它" /></div>
+      <div class="f"><label>次关键词 <b>*</b></label><input id="secKw" placeholder="辅助关键词" /></div>
+    </div>
+    <div class="row">
+      <div class="f"><label>主题 <b>*</b></label><input id="topic" placeholder="这篇文章要讲什么" /></div>
+    </div>
+    <div class="row">
+      <div class="f"><label>特殊要求（最高优先级，会覆盖其他规则）</label>
+        <textarea id="specific" placeholder="例如：需要为某品牌引流，全文设置至少 3 处自然钩子；或指定某种论述角度"></textarea></div>
+    </div>
+    <div class="row">
+      <div class="f narrow"><label>字数</label><input id="wordcounts" type="number" min="0" max="5000" value="0" /></div>
+      <div class="f"><label>语言</label><select id="language"></select></div>
+    </div>
+    <div class="hint">字数填 0 = 让 AI 按主题复杂度自己判断（800–3000）。</div>
+    <div class="row">
+      <div class="f">
+        <label class="chk" id="imgLabel"><input type="checkbox" id="enableImages" /> AI 配图</label>
+      </div>
+      <div class="f narrow"><label>配图张数</label>
+        <select id="imagesPer" disabled><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></div>
+    </div>
+    <div class="hint" id="imgHint">配图需要 OpenRouter key（只有它有文生图模型）。</div>
+    <div class="row">
+      <div class="f"><label>外链表格（可选，第一列 url、第二列文章标题）</label>
+        <div class="filebar">
+          <input type="file" id="linksFile" accept=".csv,.xlsx,.xls" />
+          <span id="linksInfo" class="small muted"></span>
+        </div></div>
+    </div>
+    <div class="btns"><button id="btnOutline">生成大纲</button></div>
+  </div>
+
+  <div id="status"></div>
+
+  <!-- 第二步 -->
+  <div class="sec" id="sec2" style="display:none">
+    <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
+    <div class="log" id="log1"></div>
+    <div class="doc" id="outlineBox"></div>
+    <div class="row" style="margin-top:14px;margin-bottom:0">
+      <div class="f"><label>修改意见（可反复改，直到满意）</label>
+        <input id="feedback" placeholder="例如：第二章太浅，改成对比三种方案；删掉最后一节" /></div>
+    </div>
+    <div class="btns">
+      <button id="btnRevise" class="ghost">按意见修改大纲</button>
+      <button id="btnArticle">✓ 通过，开始写文章</button>
+    </div>
+  </div>
+
+  <!-- 第三步 -->
+  <div class="sec" id="sec3" style="display:none">
+    <h2><span class="step">3</span>文章<span class="n" id="artMeta"></span></h2>
+    <div class="log" id="log2"></div>
+    <div class="meta" id="artInfo" style="display:none"></div>
+    <div class="doc" id="articleBox"></div>
+    <div class="btns" id="artBtns" style="display:none">
+      <button id="btnDocx">下载 Word</button>
+      <button id="btnCopy" class="ghost">复制 Markdown</button>
+      <button id="btnRestart" class="ghost">再写一篇</button>
+    </div>
+  </div>
+</div>
+
+<script src="/shared/keys.js"></script>
+<script src="/shared/md.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const S={sessionId:"",outline:"",article:"",docx:"",filename:"article.docx",images:{}};
+let MODELS={},DEFAULTS={};
+
+/* ---------- key / 供应商可用性 ---------- */
+function syncKeyBtn(){
+  const b=$("keybtn"), k=SEOKEYS.get();
+  const ok=(k.openrouter_key||k.deepseek_key);
+  b.classList.toggle("warn",!ok);
+  b.textContent=ok?"API Key ✓":"① 先设置 API Key";
+}
+function syncProviders(){
+  const k=SEOKEYS.get();
+  const set=(sel,val,has)=>{const o=[...$(sel).options].find(o=>o.value===val); if(o){o.disabled=!has; o.textContent=o.textContent.replace(/（未填 key）$/,"")+(has?"":"（未填 key）");}};
+  set("llmProvider","openrouter",!!k.openrouter_key);
+  set("llmProvider","deepseek",!!k.deepseek_key);
+  set("searchProvider","tavily",!!k.tavily_key);
+  set("searchProvider","exa",!!k.exa_key);
+  // 当前选中的不可用就自动跳到可用的那个
+  const pick=(sel,fallback)=>{const s=$(sel); if(s.selectedOptions[0]&&s.selectedOptions[0].disabled){
+    const ok=[...s.options].find(o=>!o.disabled); s.value=ok?ok.value:fallback;}};
+  pick("llmProvider","openrouter"); pick("searchProvider","none");
+
+  const hasOR=!!k.openrouter_key;
+  $("enableImages").disabled=!hasOR;
+  if(!hasOR) $("enableImages").checked=false;
+  $("imagesPer").disabled=!$("enableImages").checked;
+  $("imgLabel").classList.toggle("dim",!hasOR);
+  $("imgHint").textContent=hasOR?"配图会按正文里的 [IMAGE:] 占位符逐张生成，比较慢，也比较贵。"
+                                :"配图需要 OpenRouter key（只有它有文生图模型），DeepSeek 不支持。";
+  fillModels();
+  $("provHint").textContent = $("searchProvider").value==="none"
+    ? "不搜索：大纲少了竞品语境，容易写得同质化，建议至少配一个搜索源。" : "";
+}
+function fillModels(){
+  const p=$("llmProvider").value, sel=$("llmModel"), prev=sel.value;
+  sel.innerHTML="";
+  (MODELS[p]||[]).forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;sel.append(o);});
+  if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
+  else if(DEFAULTS[p]) sel.value=DEFAULTS[p];
+}
+$("llmProvider").onchange=fillModels;
+$("searchProvider").onchange=syncProviders;
+$("enableImages").onchange=()=>{$("imagesPer").disabled=!$("enableImages").checked;};
+window.addEventListener("seo-keys-updated",()=>{syncKeyBtn();syncProviders();});
+
+(async()=>{
+  try{
+    const h=await (await fetch("/api/seo-writer/health")).json();
+    MODELS=h.models||{}; DEFAULTS=h.defaults||{};
+    (h.languages||["English"]).forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
+  }catch(e){
+    ["English","Chinese (Simplified)"].forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
+  }
+  syncKeyBtn(); syncProviders();
+})();
+
+/* ---------- 外链表格 ---------- */
+let LINKS=[];
+$("linksFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $("linksInfo").textContent="解析中…";
+  const fd=new FormData(); fd.append("file",f);
+  try{
+    const r=await fetch("/api/seo-writer/links/parse",{method:"POST",body:fd});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||r.status);
+    LINKS=d.links||[];
+    $("linksInfo").textContent=`已读 ${d.count} 条外链，写文时自动挑最合适的 2 条插入`;
+  }catch(err){ LINKS=[]; $("linksInfo").textContent="解析失败："+(err.message||err); }
+};
+
+/* ---------- SSE ---------- */
+async function sse(url,body,onEvent){
+  const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!resp.ok){ const t=await resp.json().catch(()=>({detail:resp.status})); throw new Error(t.detail||resp.status); }
+  const reader=resp.body.getReader(), dec=new TextDecoder();
+  let buf="";
+  for(;;){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    let idx;
+    while((idx=buf.indexOf("\n\n"))>=0){
+      const raw=buf.slice(0,idx); buf=buf.slice(idx+2);
+      if(!raw.startsWith("data:")) continue;
+      let ev; try{ ev=JSON.parse(raw.slice(5).trim()); }catch(e){ continue; }
+      onEvent(ev);   // 这里抛出的错误要能冒到调用方（用于把 error 事件变成失败提示）
+    }
+  }
+}
+function setStatus(m,err,spin){ const s=$("status"); s.innerHTML=(spin?'<span class="spin"></span>':"")+(m||""); s.className=err?"err":""; }
+function logTo(id,msg){ const l=$(id); l.append(E("div",null,msg)); }
+function baseBody(){
+  return {...SEOKEYS.get(), llm_provider:$("llmProvider").value, llm_model:$("llmModel").value,
+          search_provider:$("searchProvider").value};
+}
+// 流式渲染节流：每 120ms 重排一次，避免长文一边写一边把页面卡住
+function throttleRender(box,getText){
+  let last=0,timer=null;
+  return (final)=>{
+    const paint=()=>{ last=Date.now(); timer=null; box.innerHTML=MD.render(getText()); box.scrollTop=box.scrollHeight; };
+    if(final){ if(timer)clearTimeout(timer); paint(); return; }
+    if(timer) return;
+    const wait=Math.max(0,120-(Date.now()-last));
+    timer=setTimeout(paint,wait);
+  };
+}
+
+/* ---------- 第一步：大纲 ---------- */
+$("btnOutline").onclick=async()=>{
+  const mainKw=$("mainKw").value.trim(), secKw=$("secKw").value.trim(), topic=$("topic").value.trim();
+  if(!mainKw||!secKw||!topic){ setStatus("主关键词 / 次关键词 / 主题 都要填。",true); return; }
+  const k=SEOKEYS.get();
+  if(!k.openrouter_key&&!k.deepseek_key){ setStatus("请先设置 OpenRouter 或 DeepSeek key。",true); SEOKEYS.open(); return; }
+
+  $("btnOutline").disabled=true;
+  $("sec2").style.display=""; $("sec3").style.display="none";
+  $("log1").innerHTML=""; $("outlineBox").innerHTML=""; S.outline="";
+  setStatus("正在生成大纲…",false,true);
+  const paint=throttleRender($("outlineBox"),()=>S.outline);
+
+  try{
+    await sse("/api/seo-writer/outline",{...baseBody(),
+      main_keyword:mainKw, secondary_keyword:secKw, topic,
+      specific:$("specific").value, wordcounts:parseInt($("wordcounts").value||"0",10),
+      language:$("language").value, enable_images:$("enableImages").checked,
+      images_per_article:parseInt($("imagesPer").value,10), links:LINKS},
+      ev=>{
+        if(ev.type==="step") logTo("log1",ev.message);
+        else if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
+        else if(ev.type==="done"){
+          S.sessionId=ev.session_id; S.outline=ev.outline; paint(true);
+          $("outlineMeta").textContent=`· 目标 ${ev.wordcounts} 词 · ${ev.topic_type}`;
+          setStatus("大纲已生成，看一下：不满意就提修改意见，满意就点「通过」。");
+        }
+        else if(ev.type==="error") throw new Error(ev.message);
+      });
+  }catch(err){ setStatus("失败："+(err.message||err),true); }
+  finally{ $("btnOutline").disabled=false; $("sec2").scrollIntoView({behavior:"smooth",block:"start"}); }
+};
+
+/* ---------- 第二步：改大纲 ---------- */
+$("btnRevise").onclick=async()=>{
+  const fb=$("feedback").value.trim();
+  if(!fb){ setStatus("请先填写修改意见。",true); return; }
+  if(!S.sessionId){ setStatus("请先生成大纲。",true); return; }
+  $("btnRevise").disabled=$("btnArticle").disabled=true;
+  setStatus("按你的意见重写大纲…",false,true);
+  const before=S.outline; S.outline="";
+  const paint=throttleRender($("outlineBox"),()=>S.outline);
+  try{
+    await sse("/api/seo-writer/outline/revise",
+      {...baseBody(), session_id:S.sessionId, feedback:fb, outline:before},
+      ev=>{
+        if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
+        else if(ev.type==="done"){ S.outline=ev.outline; paint(true); $("feedback").value="";
+          setStatus("大纲已按意见修改。可以继续提意见，也可以点「通过」。"); }
+        else if(ev.type==="error") throw new Error(ev.message);
+      });
+  }catch(err){ S.outline=before; paint(true); setStatus("修改失败："+(err.message||err),true); }
+  finally{ $("btnRevise").disabled=$("btnArticle").disabled=false; }
+};
+
+/* ---------- 第三步：写文章 ---------- */
+$("btnArticle").onclick=async()=>{
+  if(!S.outline){ setStatus("还没有大纲。",true); return; }
+  $("btnRevise").disabled=$("btnArticle").disabled=true;
+  $("sec3").style.display=""; $("log2").innerHTML=""; $("articleBox").innerHTML="";
+  $("artInfo").style.display="none"; $("artInfo").innerHTML=""; $("artBtns").style.display="none";
+  S.article=""; S.images={};
+  setStatus("正在写文章，长文可能要 2–5 分钟，别关页面…",false,true);
+  $("sec3").scrollIntoView({behavior:"smooth",block:"start"});
+  const paint=throttleRender($("articleBox"),()=>S.article);
+
+  try{
+    await sse("/api/seo-writer/article",{...baseBody(), session_id:S.sessionId, outline:S.outline,
+      // 会话万一过期（进程重启/放太久），把参数一起带上，后端可降级继续
+      main_keyword:$("mainKw").value.trim(), secondary_keyword:$("secKw").value.trim(),
+      topic:$("topic").value.trim(), specific:$("specific").value,
+      wordcounts:parseInt($("wordcounts").value||"0",10)||null, language:$("language").value,
+      enable_images:$("enableImages").checked, images_per_article:parseInt($("imagesPer").value,10)},
+      ev=>{
+        if(ev.type==="step") logTo("log2",ev.message);
+        else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
+        else if(ev.type==="links") (ev.links||[]).forEach(l=>logTo("log2",`外链：${l.anchor_text} → ${l.url}`));
+        else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
+        else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
+        else if(ev.type==="done"){
+          S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article.docx";
+          paint(true); applyImages();
+          renderInfo(ev); $("artBtns").style.display="flex";
+          $("artMeta").textContent=`· ${ev.word_count} 词`+(ev.images?` · ${ev.images} 张配图`:"");
+          setStatus("完成 ✅ 可以下载 Word 了。");
+        }
+        else if(ev.type==="error") throw new Error(ev.message);
+      });
+  }catch(err){ setStatus("失败："+(err.message||err),true); }
+  finally{ $("btnRevise").disabled=$("btnArticle").disabled=false; }
+};
+
+function applyImages(){
+  // 把渲染出的 [IMAGE:] 占位块换成真图
+  $("articleBox").querySelectorAll(".md-img").forEach(el=>{
+    const src=S.images[el.dataset.ph];
+    if(!src) return;
+    const img=document.createElement("img"); img.src=src; img.alt=el.textContent.replace(/^🖼\s*/,"");
+    el.replaceWith(img);
+  });
+}
+
+function renderInfo(ev){
+  const box=$("artInfo"); box.innerHTML=""; box.style.display="grid";
+  const item=(k,v)=>{const d=E("div","metaitem");d.append(E("div","k",k));d.append(E("div","v",v||"—"));return d;};
+  box.append(item("SEO Title（"+(ev.seo_title||"").length+" 字符）",ev.seo_title));
+  box.append(item("SEO Description（"+(ev.seo_description||"").length+" 字符）",ev.seo_description));
+  const wc=E("div","metaitem"); wc.append(E("div","k","字数"));
+  const w=E("span","wc "+(ev.wordcount_level||"ok"),ev.wordcount_message||String(ev.word_count));
+  const wrap=E("div","v"); wrap.append(w); wc.append(wrap); box.append(wc);
+  if(ev.links&&ev.links.length){
+    const d=E("div","metaitem"); d.append(E("div","k","已插入外链"));
+    ev.links.forEach(l=>{
+      const r=E("div","linkrow"); r.append(E("b",null,l.anchor_text||l.title||l.url));
+      r.append(document.createTextNode(" → "+l.url)); d.append(r);
+    });
+    box.append(d);
+  }
+}
+
+$("btnDocx").onclick=()=>{
+  if(!S.docx) return;
+  const bin=atob(S.docx), arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  const url=URL.createObjectURL(new Blob([arr],
+    {type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}));
+  const a=document.createElement("a"); a.href=url; a.download=S.filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+};
+$("btnCopy").onclick=async()=>{
+  try{ await navigator.clipboard.writeText(S.article); $("btnCopy").textContent="已复制 ✓";
+       setTimeout(()=>$("btnCopy").textContent="复制 Markdown",1600); }
+  catch(e){ setStatus("复制失败，请手动选中正文复制。",true); }
+};
+$("btnRestart").onclick=()=>{
+  S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={};
+  $("sec2").style.display="none"; $("sec3").style.display="none"; setStatus("");
+  window.scrollTo({top:0,behavior:"smooth"});
+};
+</script>
+</body>
+</html>

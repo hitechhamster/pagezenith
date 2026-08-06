@@ -15,6 +15,8 @@
   .tool .ic{width:38px;height:38px;border-radius:10px;background:var(--accentsoft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:12px}
   .tool .tt{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--text);margin-bottom:5px}
   .tool .td{color:var(--muted);font-size:13px}
+  .tool.main{border-color:var(--accent);background:linear-gradient(180deg,var(--accentsoft),var(--card) 62%)}
+  .tool.main .tt:after{content:"主推";font-size:11px;color:#F6F3EA;background:var(--accent);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
   .tool.soon{opacity:.55;pointer-events:none}
   .tool.soon .tt:after{content:"即将上线";font-size:11px;color:var(--amber);background:var(--amberbg);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
   .about{margin-top:48px;padding-top:24px;border-top:1px solid var(--line);max-width:60ch}
@@ -52,10 +54,16 @@
   <div class="main">
   <div class="hero">
     <h1>AI 跨境营销工具集</h1>
-    <p>PageZenith · AI 驱动的跨境营销工具。自带 API Key，浏览器里直接用，结果不存服务器。</p>
+    <p>PageZenith · AI 驱动的跨境营销工具。自带 API Key，浏览器里直接用，结果不存服务器。
+      主推 <a href="/tools/seo-writer">SEO 文章生成</a>：关键词进，可审批大纲，Word 出。</p>
   </div>
 
   <div class="grid">
+    <a class="tool main" href="/tools/seo-writer">
+      <div class="ic">✍</div>
+      <div class="tt">SEO 文章生成</div>
+      <div class="td">填关键词 → 搜同类内容避开同质化 → 出大纲给你审批（可反复改）→ 写整篇长文，自动插外链、出 SEO 标题描述、可选配图，导出 Word。</div>
+    </a>
     <a class="tool" href="/tools/seo-gap">
       <div class="ic">◎</div>
       <div class="tt">内容差距分析</div>

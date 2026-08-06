@@ -45,8 +45,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 /* key 设置弹窗 */
 #keys-modal{display:none;position:fixed;inset:0;z-index:50}
 #keys-modal .km-bg{position:absolute;inset:0;background:rgba(27,30,24,.42)}
-#keys-modal .km-card{position:relative;max-width:440px;margin:12vh auto;background:var(--card);border-radius:var(--radius-lg);
-  padding:24px;box-shadow:0 24px 70px rgba(27,30,24,.28);border:1px solid var(--line)}
+#keys-modal .km-card{position:relative;max-width:440px;margin:8vh auto;background:var(--card);border-radius:var(--radius-lg);
+  padding:24px;box-shadow:0 24px 70px rgba(27,30,24,.28);border:1px solid var(--line);
+  max-height:84vh;overflow-y:auto}
 #keys-modal .km-h{font-family:var(--font-display);font-size:19px;font-weight:600;margin-bottom:6px}
 #keys-modal .km-sub{color:var(--muted);font-size:12px;margin:0 0 16px;line-height:1.6}
 #keys-modal label{display:block;font-size:12px;font-weight:500;margin:12px 0 5px}

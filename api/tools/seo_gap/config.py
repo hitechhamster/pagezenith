@@ -26,11 +26,20 @@ class Settings(BaseSettings):
     dataforseo_password: str = ""
     dataforseo_base_url: str = "https://api.dataforseo.com"
 
+    # Exa（可选搜索源）：SEO 文章生成里可替代 Tavily 做"红海参考"检索
+    exa_key: str = ""
+    exa_base_url: str = "https://api.exa.ai"
+    exa_timeout: float = 40.0
+
     # LLM (OpenRouter, OpenAI 兼容)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     llm_model: str = "google/gemini-3.1-flash-lite"
     writer_model: str = ""  # 增补段落写作模型；留空=同 llm_model
+
+    # DeepSeek（可选 LLM 供应商，同为 OpenAI 兼容）
+    deepseek_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
 
     # Embedding（语义去重粗判用）。统一走 OpenRouter /embeddings，多语言模型。
     # base_url / api_key 留空则复用上面的 openrouter_*；只在需要换服务时才填。
@@ -100,8 +109,21 @@ class Settings(BaseSettings):
     # SSRF 防护：禁止抓取私有/内网/元数据地址
     block_private_urls: bool = True
 
+    # SEO 文章生成（工具⑥）：写长文的 token 上限与超时都比其他工具高
+    writer_llm_model: str = "anthropic/claude-sonnet-5"   # OpenRouter 默认写作模型
+    writer_deepseek_model: str = "deepseek-v4-flash"      # DeepSeek 默认写作模型
+    writer_image_model: str = "google/gemini-2.5-flash-image"
+    writer_timeout: float = 600.0        # 写一篇 3000 词可能 3-5 分钟
+    writer_search_results: int = 20      # 每个关键词取几条"红海参考"
+    writer_session_ttl: int = 7200       # 三步向导之间的会话存活时间（秒）
+    writer_max_sessions: int = 200       # 进程内会话数上限（超出按最旧淘汰）
+    # 单独的并发闸：写文只发 HTTP 不开浏览器，比 seo_gap 轻得多，
+    # 但单次要跑几分钟，用 max_concurrent_runs(=2) 会把整站堵死
+    writer_max_concurrent: int = 4
+
     def with_keys(self, openrouter_key: str | None, serpapi_key: str | None,
-                  tavily_key: str | None = None) -> "Settings":
+                  tavily_key: str | None = None, deepseek_key: str | None = None,
+                  exa_key: str | None = None) -> "Settings":
         """按请求覆盖用户 key，返回新实例（绝不改全局单例，绝不落库/日志）。"""
         upd = {}
         if openrouter_key:
@@ -110,6 +132,10 @@ class Settings(BaseSettings):
             upd["serpapi_key"] = serpapi_key
         if tavily_key:
             upd["tavily_key"] = tavily_key
+        if deepseek_key:
+            upd["deepseek_key"] = deepseek_key
+        if exa_key:
+            upd["exa_key"] = exa_key
         return self.model_copy(update=upd) if upd else self
 
     # 抓取
