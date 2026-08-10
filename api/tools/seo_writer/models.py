@@ -71,3 +71,15 @@ class ArticleRequest(Keys, Providers):
     language: Optional[str] = None
     enable_images: Optional[bool] = None
     images_per_article: Optional[int] = None
+
+
+class PolishRequest(Keys, Providers):
+    """独立润色：把已生成的文章整篇改写到「美国 12 年级学生能读懂」。
+
+    不进第三步自动跑 —— 这是一次完整长文调用，成本和写一篇差不多，由用户自己决定要不要花。
+    """
+
+    article: str
+    language: str = "English"
+    session_id: Optional[str] = None
+    main_keyword: Optional[str] = None      # 只用于 Word 文件名

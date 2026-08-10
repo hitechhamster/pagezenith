@@ -1,7 +1,8 @@
 # PageZenith — AI 跨境营销工具
 
 自带 API Key 的 AI 跨境营销工具集。主推 **SEO 文章生成**：填关键词 → 搜同类内容避开同质化 →
-出大纲给你审批（可反复改）→ 按大纲写整篇长文，出 SEO 标题描述、可选 AI 配图，导出 Word。
+出大纲给你审批（可反复改）→ 按大纲写整篇长文，出 SEO 标题描述、可选 AI 配图，导出 Word；
+写完还可以单独跑一次**润色**，把全文改写到「美国 12 年级学生能读懂」（FK 阅读年级 9–12）。
 另有内容差距分析、文章质量检测、站点情报侦察、Reddit 选题研究、外链拓客。
 
 ## 结构
@@ -12,9 +13,9 @@ api/
   requirements.txt
   tools/
     seo_writer/           # 工具⑥：SEO 文章生成（主推）
-      router.py           # /api/seo-writer/*（三步向导，全部 SSE 流式）
+      router.py           # /api/seo-writer/*（三步向导 + 润色，全部 SSE 流式）
       providers.py        # LLM: OpenRouter | DeepSeek；搜索: Tavily | Exa；配图: OpenRouter
-      workflow.py         # 判字数 → 搜索 → 分类 → 大纲 → 改大纲 → 写文 → SEO 元数据 → 配图
+      workflow.py         # 判字数 → 搜索 → 分类 → 大纲 → 改大纲 → 写文 → SEO 元数据 → 配图 → 润色
       prompts.py          # 全部 prompt（改文风只动这里）
       docx_export.py      # Markdown → Word（标题层级/表格/超链接/嵌图）
       session.py          # 三步之间的进程内会话（带 TTL，不落库）
@@ -46,6 +47,13 @@ key 全部由用户在浏览器里填，按请求传给后端，用完即弃。�
 | Exa | SEO 文章生成的另一个搜索源 |
 
 SEO 文章生成页面顶部可以手动切「写作模型供应商 + 模型」和「搜索源」，没填 key 的选项会自动置灰。
+
+### 润色是独立环节，要手动点
+
+写完文章后页面上会出现「✨ 润色一遍（12 年级可读）」。它是**另一次完整长文调用**，成本和写一篇差不多，
+所以不自动跑。润色只改表达不动结构：H 标题的疑问句、黄金答案句的粗体、`[IMAGE:]` 占位符、Markdown
+链接全部原样保留。英文文章会用 `textstat` 算 Flesch-Kincaid 阅读年级，在结果里显示润色前后的对比
+（目标 9–12；低于 9 会提示"偏浅"，高于 12 提示"偏难"）。不满意可以一键「还原润色前」。
 
 **加新工具** = `api/tools/<新工具>/router.py` 写个 `APIRouter` → `main.py` `include_router` →
 `web/tools/<新工具>.html` + 首页加张卡片。互不影响。

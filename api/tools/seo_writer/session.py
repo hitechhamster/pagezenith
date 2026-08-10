@@ -33,9 +33,9 @@ class SessionStore:
             del self._store[oldest]
 
     def create(self, data: dict[str, Any]) -> str:
-        self._purge()
         sid = uuid.uuid4().hex
         self._store[sid] = (time.time(), data)
+        self._purge()          # 插入后再清，保证上限是精确的（新会话最年轻，不会被自己淘汰掉）
         return sid
 
     def get(self, sid: str) -> Optional[dict[str, Any]]:

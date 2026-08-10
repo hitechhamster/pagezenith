@@ -38,6 +38,7 @@ TOKEN_LIMITS = {
     "outline": 12000,
     "revise_outline": 12000,
     "article": 24000,
+    "polish": 24000,
 }
 # 这些任务不需要模型长考，OpenRouter 上显式降低 reasoning 开销
 LOW_REASONING_TASKS = {"seo", "classify", "wordcount"}
@@ -378,6 +379,8 @@ def _mock_text(task: str) -> str:
         "outline": _MOCK_OUTLINE,
         "revise_outline": _MOCK_OUTLINE + "\n\n（已按修改意见调整）",
         "article": _MOCK_ARTICLE,
+        "polish": _MOCK_ARTICLE.replace("supervised by a recognised financial authority",
+                                        "watched by a real financial regulator"),
         "seo": "Title: How To Choose A Regulated Forex Broker\n"
                "Description: A practical checklist for choosing a regulated forex broker, "
                "from verifying licences to spotting withdrawal red flags.",

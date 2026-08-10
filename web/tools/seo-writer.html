@@ -140,10 +140,14 @@
     <div class="meta" id="artInfo" style="display:none"></div>
     <div class="doc" id="articleBox"></div>
     <div class="btns" id="artBtns" style="display:none">
-      <button id="btnDocx">下载 Word</button>
+      <button id="btnPolish">✨ 润色一遍（12 年级可读）</button>
+      <button id="btnDocx" class="ghost">下载 Word</button>
       <button id="btnCopy" class="ghost">复制 Markdown</button>
+      <button id="btnRevert" class="ghost" style="display:none">还原润色前</button>
       <button id="btnRestart" class="ghost">再写一篇</button>
     </div>
+    <div class="hint" style="margin-top:8px">润色是独立的一次完整长文调用，成本和写一篇差不多，所以要你自己点。
+      只改表达不动结构：标题、黄金答案句、图片占位符、链接都原样保留。</div>
   </div>
 </div>
 
@@ -152,7 +156,7 @@
 <script>
 const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
-const S={sessionId:"",outline:"",article:"",docx:"",filename:"article.docx",images:{}};
+const S={sessionId:"",outline:"",article:"",docx:"",filename:"article.docx",images:{},info:{},pre:null};
 let MODELS={},DEFAULTS={};
 
 /* ---------- key / 供应商可用性 ---------- */
@@ -322,13 +326,15 @@ $("btnArticle").onclick=async()=>{
         if(ev.type==="step") logTo("log2",ev.message);
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
+        else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
         else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article.docx";
+          S.pre=null; $("btnRevert").style.display="none";
           paint(true); applyImages();
-          renderInfo(ev); $("artBtns").style.display="flex";
+          S.info={...ev}; renderInfo(); $("artBtns").style.display="flex";
           $("artMeta").textContent=`· ${ev.word_count} 词`+(ev.images?` · ${ev.images} 张配图`:"");
-          setStatus("完成 ✅ 可以下载 Word 了。");
+          setStatus("完成 ✅ 可以下载 Word，也可以再润色一遍。");
         }
         else if(ev.type==="error") throw new Error(ev.message);
       });
@@ -346,15 +352,64 @@ function applyImages(){
   });
 }
 
-function renderInfo(ev){
-  const box=$("artInfo"); box.innerHTML=""; box.style.display="grid";
+function renderInfo(){
+  const ev=S.info, box=$("artInfo"); box.innerHTML=""; box.style.display="grid";
   const item=(k,v)=>{const d=E("div","metaitem");d.append(E("div","k",k));d.append(E("div","v",v||"—"));return d;};
+  const badge=(k,level,msg)=>{const d=E("div","metaitem");d.append(E("div","k",k));
+    const wrap=E("div","v"); wrap.append(E("span","wc "+(level||"ok"),msg)); d.append(wrap); return d;};
   box.append(item("SEO Title（"+(ev.seo_title||"").length+" 字符）",ev.seo_title));
   box.append(item("SEO Description（"+(ev.seo_description||"").length+" 字符）",ev.seo_description));
-  const wc=E("div","metaitem"); wc.append(E("div","k","字数"));
-  const w=E("span","wc "+(ev.wordcount_level||"ok"),ev.wordcount_message||String(ev.word_count));
-  const wrap=E("div","v"); wrap.append(w); wc.append(wrap); box.append(wc);
+  box.append(badge("字数",ev.wordcount_level,ev.wordcount_message||String(ev.word_count||"")));
+  if(ev.grade_message){
+    const before=(ev.grade_before!=null&&ev.grade_before!==ev.grade)?`（润色前 FK ${ev.grade_before}）`:"";
+    box.append(badge("阅读年级",ev.grade_level,ev.grade_message+before));
+  }
 }
+
+/* ---------- 独立环节：润色 ---------- */
+$("btnPolish").onclick=async()=>{
+  if(!S.article){ setStatus("还没有文章。",true); return; }
+  // 先存一份润色前的，改坏了能退回来
+  S.pre={article:S.article, docx:S.docx, filename:S.filename, info:{...S.info}};
+  $("btnPolish").disabled=$("btnDocx").disabled=true;
+  setStatus("润色中，整篇重写一遍，时间和写文差不多…",false,true);
+  logTo("log2","—— 开始润色（目标：美国 12 年级学生能读懂）——");
+  S.article="";
+  const paint=throttleRender($("articleBox"),()=>S.article);
+  try{
+    await sse("/api/seo-writer/polish",{...baseBody(), session_id:S.sessionId,
+      article:S.pre.article, language:$("language").value, main_keyword:$("mainKw").value.trim()},
+      ev=>{
+        if(ev.type==="step") logTo("log2",ev.message);
+        else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
+        else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
+        else if(ev.type==="done"){
+          S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article-polished.docx";
+          paint(true); applyImages();
+          // 标题没改动时后端不重出 SEO，这里保留原来的，别被空值覆盖
+          S.info={...S.info, ...Object.fromEntries(Object.entries(ev).filter(([k,v])=>v!==""&&v!=null))};
+          renderInfo();
+          $("artMeta").textContent=`· ${ev.word_count} 词 · 已润色`;
+          $("btnRevert").style.display="";
+          setStatus("润色完成 ✅ "+(ev.grade_message||""));
+        }
+        else if(ev.type==="error") throw new Error(ev.message);
+      });
+  }catch(err){
+    S.article=S.pre.article; paint(true); applyImages(); S.pre=null;
+    setStatus("润色失败："+(err.message||err),true);
+  }
+  finally{ $("btnPolish").disabled=$("btnDocx").disabled=false; }
+};
+
+$("btnRevert").onclick=()=>{
+  if(!S.pre) return;
+  S.article=S.pre.article; S.docx=S.pre.docx; S.filename=S.pre.filename; S.info=S.pre.info;
+  $("articleBox").innerHTML=MD.render(S.article); applyImages(); renderInfo();
+  $("artMeta").textContent=`· ${S.info.word_count||""} 词`;
+  S.pre=null; $("btnRevert").style.display="none";
+  setStatus("已还原到润色前的版本。");
+};
 
 $("btnDocx").onclick=()=>{
   if(!S.docx) return;
@@ -371,7 +426,8 @@ $("btnCopy").onclick=async()=>{
   catch(e){ setStatus("复制失败，请手动选中正文复制。",true); }
 };
 $("btnRestart").onclick=()=>{
-  S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={};
+  S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={}; S.info={}; S.pre=null;
+  $("btnRevert").style.display="none";
   $("sec2").style.display="none"; $("sec3").style.display="none"; setStatus("");
   window.scrollTo({top:0,behavior:"smooth"});
 };

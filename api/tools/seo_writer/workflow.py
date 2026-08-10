@@ -72,6 +72,38 @@ def wordcount_status(actual: int, target: int) -> tuple[str, str]:
     return "ok", f"合格（{actual}/{target}，{ratio:.0%}）"
 
 
+def reading_grade(article: str, language: str) -> Optional[float]:
+    """Flesch-Kincaid 阅读年级。只对英文有意义，其他语言返回 None。
+
+    与「文章质量检测」工具用的是同一个指标（textstat.flesch_kincaid_grade），
+    方便两边的数字对得上。
+    """
+    if not (language or "").lower().startswith("english"):
+        return None
+    body = IMAGE_TAG.sub("", article or "")
+    body = re.sub(r"^#{1,6}\s+", "", body, flags=re.MULTILINE)   # 标题不参与计算
+    body = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", body)          # 链接只留锚文本
+    body = body.replace("**", "").replace("|", " ")
+    try:
+        import textstat
+        return round(textstat.flesch_kincaid_grade(body), 1)
+    except Exception:
+        return None
+
+
+def grade_verdict(grade: Optional[float]) -> tuple[str, str]:
+    """(等级, 说明)。目标是美国 12 年级学生能读懂 → FK 9-12。"""
+    if grade is None:
+        return "ok", "非英文，不计算阅读年级"
+    if grade <= 8:
+        return "warn", f"FK {grade} 年级 · 偏浅，专业感可能不足"
+    if grade <= 12:
+        return "ok", f"FK {grade} 年级 · 12 年级学生能读懂 ✓"
+    if grade <= 14:
+        return "warn", f"FK {grade} 年级 · 偏难，建议润色"
+    return "bad", f"FK {grade} 年级 · 太难，12 年级学生读不下来"
+
+
 def _h2_count(wordcounts: int) -> str:
     if wordcounts < 1500:
         return "3-4"
@@ -187,6 +219,15 @@ class SEOWriter:
 
     def stream_article(self, ctx: dict[str, Any]) -> AsyncIterator[str]:
         return self.llm.stream(self.article_prompt(ctx), task="article")
+
+    # -------------------------------------------------------------- 润色
+    def stream_polish(self, ctx: dict[str, Any], article: str) -> AsyncIterator[str]:
+        """独立环节：整篇改写到「美国 12 年级学生能读懂」，结构一律不动。"""
+        actual = count_words(article)
+        prompt = P.POLISH_PROMPT.format(
+            language=ctx.get("language", "English"), article=article, actual=actual,
+            wc_min=int(actual * 0.9), wc_max=int(actual * 1.15))
+        return self.llm.stream(prompt, task="polish")
 
     # ----------------------------------------------------------- SEO 元数据
     async def generate_seo(self, article: str, main_keyword: str, language: str) -> dict[str, str]:
