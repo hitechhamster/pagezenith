@@ -163,11 +163,18 @@ class Settings(BaseSettings):
             upd["exa_key"] = exa_key
         return self.model_copy(update=upd) if upd else self
 
-    # ── 出站代理（开发机在中国大陆时需要；香港/海外服务器留空）──
-    # ⚠️ 分流规则不能一刀切：
-    #   Gemini / Serper / Reddit / OpenRouter → 需要代理（大陆直连不通）
-    #   DeepSeek（api.deepseek.com）          → **必须直连**，走代理反而不通
+    # ── 出站代理 ──────────────────────────────────────────────────
+    # 两种场景都靠这一个开关：
+    #   开发机（大陆）：Gemini 必须走代理
+    #   香港服务器    ：**Google 不给 HK IP 用 Gemini API**（400 FAILED_PRECONDITION
+    #                   "User location is not supported"），经自有纽约 VPS 中转
+    # ⚠️ 分流规则不能一刀切,谁走谁不走是实测出来的：
+    #   Gemini            → 走代理（唯一被地域封的）
+    #   DeepSeek          → **必须直连**，走代理反而不通
+    #   Serper / Reddit   → 香港直连正常，不进隧道（少一条依赖就少一个故障点）
     outbound_proxy: str = ""
+    # 需要走代理的目的地关键词；留空则用默认（只有 gemini/google）
+    proxy_targets: str = "gemini,generativelanguage,googleapis"
 
     def proxy_for(self, host_or_provider: str) -> str | None:
         """返回该目的地该用的代理；不需要代理时返回 None。"""
@@ -176,7 +183,8 @@ class Settings(BaseSettings):
         s = (host_or_provider or "").lower()
         if "deepseek" in s:
             return None
-        return self.outbound_proxy
+        keys = [k.strip().lower() for k in self.proxy_targets.split(",") if k.strip()]
+        return self.outbound_proxy if any(k in s for k in keys) else None
 
     # 抓取
     fetch_timeout: float = 20.0
