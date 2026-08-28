@@ -4,11 +4,55 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PageZenith — AI 跨境营销工具</title>
-<link rel="stylesheet" href="/shared/app.css?v=21c3056b" />
+<link rel="stylesheet" href="/shared/app.css?v=aca3b1d6" />
 <style>
-  .hero{padding:48px 0 28px;border-bottom:1px solid var(--line);margin-bottom:24px}
-  .hero h1{font-size:40px;font-weight:600;margin:0 0 10px;line-height:1.1;max-width:16ch}
-  .hero p{color:var(--muted);font-size:16px;margin:0;max-width:46ch;font-family:var(--font-read)}
+  .hero{padding:44px 0 34px;border-bottom:1px solid var(--line);margin-bottom:26px;
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,360px);gap:36px;align-items:center}
+  /* 中文标题不设 max-width：46px 的中文字宽，14ch 会在词中间断行。
+     用 text-wrap:balance（app.css 里已设）让浏览器自己找断点。 */
+  .hero h1{font-size:44px;font-weight:700;margin:0 0 12px;line-height:1.15}
+  .hero .sub{color:var(--muted);font-size:15.5px;margin:0;max-width:46ch;line-height:1.8}
+  .eyebrow{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.16em;
+    color:var(--muted);margin-bottom:14px}
+  .cta-row{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 10px}
+  .btn-primary,.btn-ghost{display:inline-block;border-radius:999px;padding:12px 24px;
+    font-size:14px;font-weight:600;transition:transform .16s,box-shadow .16s,border-color .16s}
+  .btn-primary{background:var(--accent);color:#fff;border:1px solid var(--accent)}
+  .btn-ghost{background:var(--card);color:var(--text);border:1px solid var(--line)}
+  .btn-primary:hover,.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .btn-ghost:hover{border-color:var(--accent)}
+  .cta-note{font-size:12px;color:var(--faint);margin:0}
+  /* 小票流水 */
+  .live{position:relative;min-width:0}
+  .ledger{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
+    box-shadow:var(--shadow);overflow:hidden}
+  .ledger-head{display:flex;align-items:center;gap:9px;padding:12px 16px;font-size:12.5px;
+    color:var(--muted);border-bottom:1px dashed var(--line)}
+  .ledger-head .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+    animation:pulse 1.6s infinite;flex-shrink:0}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .ledger-body{padding:6px 16px 10px;min-height:158px}
+  .lrow{display:flex;align-items:baseline;gap:11px;padding:6px 0;
+    border-bottom:1px dotted var(--line);animation:fadeUp .45s both}
+  .lrow:last-child{border-bottom:0}
+  .lrow .t{font-family:var(--font-mono);font-size:11px;color:var(--faint);
+    flex:0 0 44px;text-align:right;font-variant-numeric:tabular-nums}
+  .lrow .m{flex:1;font-size:13px;color:var(--text);min-width:0}
+  .lrow.done .m{font-weight:600}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .ledger-foot{display:flex;justify-content:space-between;gap:10px;padding:10px 16px;
+    border-top:1px dashed var(--line);font-size:11.5px;color:var(--faint)}
+  .ledger-foot .mono{font-family:var(--font-mono)}
+  .seal{position:absolute;right:-10px;bottom:24px;width:46px;height:46px;
+    display:grid;place-items:center;border:2.5px solid var(--seal);border-radius:9px;
+    color:var(--seal);font-family:var(--font-display);font-weight:700;font-size:20px;
+    background:var(--card);transform:rotate(-8deg) scale(.6);opacity:0;
+    transition:opacity .5s,transform .5s}
+  .seal.on{opacity:1;transform:rotate(-8deg) scale(1)}
+  @media(max-width:860px){
+    .hero{grid-template-columns:1fr;gap:26px}
+    .hero h1{font-size:34px;max-width:none}
+  }
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
   .tool{display:block;padding:20px;border-radius:var(--radius-lg);background:var(--card);border:1px solid var(--line);transition:border-color .15s,transform .08s}
   .tool:hover{border-color:var(--accent);transform:translateY(-1px)}
@@ -69,14 +113,40 @@
 </div>
 
 <div class="wrap home-wrap">
+
+  <!-- 首屏：刻意放在 home-layout 之外，占满整宽。
+       塞进 home-layout 的主栏会被右侧 280px 简报栏挤到只剩 178px。 -->
+  <div class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">不用梯子 · 不用外币卡 · 不用注册任何海外账号</div>
+      <h1>AI 跨境营销工具集</h1>
+      <p class="sub">PageZenith · AI 驱动的跨境营销工具。<b>不用配 API Key、不用梯子、不用外币卡</b> ——
+        买张卡密就能直接用，生成记录云端保存 90 天，换设备插卡即取。
+        主推 <a href="/tools/seo-writer">SEO 文章生成</a>：关键词进，可审批大纲，Word 出。</p>
+      <div class="cta-row">
+        <a class="btn-primary" href="#buy">¥19.9 先试两篇</a>
+        <a class="btn-ghost" href="/tools/seo-writer">直接开始写</a>
+      </div>
+      <p class="cta-note">微信 / 支付宝扫码 · 点数不过期 · 失败自动退点</p>
+    </div>
+    <!-- 签名元素：真实任务流水。付款前唯一能看见「三到五分钟在干什么」的东西 -->
+    <div class="live">
+      <div class="ledger">
+        <div class="ledger-head">
+          <span class="dot"></span>
+          <span>SEO 文章生成 · <span class="en">best espresso machine under 500</span></span>
+        </div>
+        <div class="ledger-body" id="liveFeed"></div>
+        <div class="ledger-foot">
+          <span>关掉页面任务照跑，结果存在「我的记录」</span><span class="mono">本次扣 2 点</span>
+        </div>
+      </div>
+      <div class="seal" id="liveSeal">审</div>
+    </div>
+  </div>
+
  <div class="home-layout">
   <div class="main">
-  <div class="hero">
-    <h1>AI 跨境营销工具集</h1>
-    <p>PageZenith · AI 驱动的跨境营销工具。<b>不用配 API Key、不用梯子、不用外币卡</b> ——
-      买张卡密就能直接用，生成记录云端保存 90 天，换设备插卡即取。
-      主推 <a href="/tools/seo-writer">SEO 文章生成</a>：关键词进，可审批大纲，Word 出。</p>
-  </div>
 
   <div class="grid">
     <a class="tool main" href="/tools/seo-writer">
@@ -197,6 +267,36 @@
       const dd=document.createElement("div");dd.className="nb-date";dd.textContent=date+" · 共 "+dates.length+" 期";body.append(dd);
     }catch(e){ body.className=""; body.textContent="简报加载失败。"; }
   })();
+</script>
+
+<script>
+/* 首屏流水自动播放。用的是真实跑一篇文章的进度与耗时（2026-08-28 实测），不是编的。 */
+(function(){
+  const feed=document.getElementById("liveFeed"), seal=document.getElementById("liveSeal");
+  if(!feed) return;
+  const STEPS=[[0.0,"字数：用户指定 1200"],[0.2,"全网搜索主/次关键词的现有内容…"],
+    [18.4,"已分析谷歌前 10 名页面结构"],[32.5,"抓 Reddit 真实讨论（痛点 / 高频问题）…"],
+    [36.2,"已纳入 Reddit 讨论作为独特价值来源"],[37.6,"主题类型：how_to"],
+    [74.0,"大纲生成完毕 —— 往下看，等你拍板"]];
+  function row(t,m,done){
+    const d=document.createElement("div");
+    d.className="lrow"+(done?" done":"");
+    d.innerHTML='<span class="t"></span><span class="m"></span>';
+    d.querySelector(".t").textContent=t.toFixed(1)+"s";
+    d.querySelector(".m").textContent=m;
+    feed.append(d);
+  }
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches){
+    STEPS.forEach(([t,m],i)=>row(t,m,i===STEPS.length-1));
+    seal.classList.add("on"); return;
+  }
+  let i=0;
+  (function tick(){
+    if(i>=STEPS.length){ setTimeout(()=>seal.classList.add("on"),300); return; }
+    const [t,m]=STEPS[i]; row(t,m,i===STEPS.length-1); i++;
+    setTimeout(tick, i===1?700:850);
+  })();
+})();
 </script>
 </body>
 </html>

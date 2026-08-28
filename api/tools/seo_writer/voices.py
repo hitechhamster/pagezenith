@@ -23,6 +23,21 @@ Clark 就是改造前那套原始 prompt，一个字没变 —— 选它 = 用�
 （两两文本重合度全部 0.24–0.30，说明五个确实写出了不同的东西，
   文风块是真起作用的，不是摆设。）
 
+## 受控对比（2026-08-28 晚，三个写手共用同一份检索资料）
+
+  写手        年级   句长   TTR    数字密度  you 用量
+  Clark 平衡  13.1   17.8   0.495  23.4      13
+  Martin 严谨 10.5   11.0   0.435  23.1       3
+  Dana 轻松    8.4   13.1   0.444  49.4      30
+
+**这一轮才是可信的** —— 之前每个写手各跑一次检索，拿到的资料都不一样，
+测出来的是资料差异不是文风差异（同一个 clark 连跑两次，数字密度 27.4 vs 3.6）。
+
+三条结论：
+- Dana 的数字密度是 Clark 的 2.1 倍 —— 密度保护那段规则有效（教练当初是 -45%）
+- 人称轴很干净：you 用量 3 → 13 → 30，正式到亲切单调排开
+- Martin 的"数字塌陷"不存在（23.1 vs 23.4），那是假象
+
 三条结论直接决定了下面的规则怎么写：
 
 1. **「轻松」不能照教练那样做。** 教练的规则是"短句 + 假设读者是新手 +
@@ -40,9 +55,12 @@ Clark 就是改造前那套原始 prompt，一个字没变 —— 选它 = 用�
       **用模糊措辞替代数量**。所以加了"Hedge the confidence, never the quantity"
       —— 该给数字给数字，克制体现在数字周围的限定词上。**这条别删。**
 
-   b) **年级 13.6 下不来，但不是句子太长**（实测句长 14.4，比 Clark 的 19.8 还短），
-      是词汇太拉丁化：dictates / fundamentally / amplify / facilitates。
-      所以"plain words"那条给了具体对照表 —— 专业不等于用长词。
+   b) **年级偏高不是句子太长，是词汇太拉丁化**（dictates / fundamentally /
+      amplify / facilitates）。所以"plain words"那条给了具体对照表。
+      但这一改**矫枉过正**了：受控轮测出句长掉到 11.0、短句占 49%，
+      比 Clark 还轻快，跟"严谨"的定位反了。所以句长那条改成**上下限都管**。
+
+   ⚠️ a) 那个"数字塌陷"的诊断，事后被受控实验推翻了 —— 见下方受控数据。
 
 3. **编辑赢了，但它不在用户定的那条轴上**（它是"紧凑冷峻"，既非 B 端严肃
    也非轻松）。所以不单独占一格，而是把它赢的机制 —— 主动语态、删掉不改变
@@ -115,8 +133,11 @@ VOICES: dict[str, dict[str, Any]] = {
   write "use" not "utilise", "show" not "demonstrate", "needs" not "necessitates", "makes"
   not "facilitates", "so" not "consequently". Formal vocabulary is what makes B2B writing
   hard to read; precision is not.
-- Sentence length: average 16-22 words. Break anything over 30. Do not stack three clauses
-  in one sentence; a professional audience wants precision, not density of syntax.
+- Sentence length: average 16-22 words, and **that is a floor as well as a ceiling.** Break
+  anything over 30, but do not write in short declarative bursts either — a professional
+  register carries its qualifications inside the sentence ("X holds for A, though not once B
+  exceeds C"), rather than chopping them into three. If your sentences average under 14 words
+  you have drifted out of this voice. Do not stack three clauses in one sentence.
 - Banned: superlatives with no support ("the best", "revolutionary"), and {_BANNED}.""",
         "polish": (
             "Preserve MARTIN's voice: finding-first paragraphs, every table, and the deliberate "

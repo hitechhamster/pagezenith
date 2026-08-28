@@ -147,6 +147,13 @@ async def main() -> None:
     # 不用再单跑一轮 None，那是同一份 prompt。
     order = list(VOICES)
     print(f"题材：{topic['main_keyword']}  ·  {len(order)} 轮\n")
+
+    # 检索一次，三个写手共用 —— 见 fetch_research 的说明，这是受控对比的前提
+    print("检索一次，三个写手共用同一份资料…", flush=True)
+    research = await fetch_research(topic, factory)
+    print(f"  主题类型 {research['topic_type']} · 搜索 {len(research['main_search'])} 字"
+          f" · Reddit {len(research['reddit_context'])} 字", flush=True)
+
     for vid in order:
         label = vid or "_baseline(Clark原版)"
         print(f"→ {label} …", flush=True)
