@@ -63,4 +63,8 @@ async def job_stream(job_id: str, from_index: int = Query(0, ge=0),
     job = jobs.get(job_id, card.key_hash)
     if job is None:
         raise HTTPException(status_code=404, detail="任务不存在或已过期（完成的结果请去「我的记录」）。")
-    return StreamingResponse(jobs.stream(job, from_index), media_type="text/event-stream")
+    return StreamingResponse(
+        jobs.stream(job, from_index), media_type="text/event-stream",
+        # X-Accel-Buffering: 让任何一层反代（nginx / 未来可能加的 CDN）别攒着缓冲，
+        # 否则流式生成会憋到最后一次性吐出，用户看着像卡死。
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

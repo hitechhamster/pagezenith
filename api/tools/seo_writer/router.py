@@ -75,7 +75,8 @@ def _precheck(card: Card, action: str, tier: str, credits: int | None = None) ->
 
 def _stream(job) -> StreamingResponse:
     return StreamingResponse(jobs.stream(job), media_type="text/event-stream",
-                             headers={"X-Job-Id": job.id, "Cache-Control": "no-cache"})
+                             headers={"X-Job-Id": job.id, "Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
 
 
 @router.get("/health")
