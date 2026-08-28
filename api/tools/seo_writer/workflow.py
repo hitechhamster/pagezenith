@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Optional
 from ..seo_gap.config import Settings
 from . import prompts as P
 from .providers import LLM, generate_image, search
+from .voices import get_voice
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,28 @@ def _product_instructions(ctx: dict[str, Any]) -> str:
         product_url=url,
         level=ctx.get("product_level") or P.DEFAULT_PRODUCT_LEVEL,
     )
+
+
+def _voice_instructions(ctx: dict[str, Any], stage: str) -> str:
+    """写手文风块。stage ∈ outline/article/polish。
+
+    三个阶段都要注入，缺一不可：大纲不给就按通用结构规划、正文不给就没文风、
+    **润色不给会把文风整篇抹平**（润色是整篇重写）。
+
+    没选写手时：outline/polish 返回空串（那两处的 prompt 片段直接消失），
+    article 返回改造前那句硬编码文风 —— 保证"不选写手"与老版本产物一致。
+    """
+    v = get_voice(ctx.get("voice"))
+    # 规则为空也算"没选" —— clark（平衡档）三段规则就是空的，它 ≡ 原版文风。
+    # 不这样兜底的话会拼出一个「写作声音」标题下面什么都没有的空块。
+    rules = (v or {}).get(stage, "").strip() if v else ""
+    if not rules:
+        return P.ARTICLE_VOICE_DEFAULT if stage == "article" else ""
+    if stage == "outline":
+        return P.OUTLINE_VOICE_BLOCK.format(voice_outline_rules=rules)
+    if stage == "polish":
+        return P.POLISH_VOICE_BLOCK.format(voice_polish_rules=rules)
+    return P.ARTICLE_VOICE_BLOCK.format(voice_article_rules=rules)
 
 
 class SEOWriter:
@@ -252,6 +275,7 @@ class SEOWriter:
             product_context=product_block,
             reddit_context=P.REDDIT_CONTEXT.format(reddit=reddit) if reddit else "",
             image_context=image_context,
+            voice_outline=_voice_instructions(ctx, "outline"),
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
             topic=ctx["topic"], wordcounts=ctx["wordcounts"],
             main_search_results=ctx.get("main_search", ""),
@@ -293,6 +317,7 @@ class SEOWriter:
             main_search_results=ctx.get("main_search", ""),
             secondary_search_results=ctx.get("sec_search", ""),
             image_instruction=image_instruction,
+            voice_article=_voice_instructions(ctx, "article"),
         )
 
     def stream_article(self, ctx: dict[str, Any]) -> AsyncIterator[str]:
@@ -333,7 +358,8 @@ class SEOWriter:
             main_keyword=ctx.get("main_keyword", ""),
             secondary_keyword=ctx.get("secondary_keyword", ""),
             preserve_instructions=(P.POLISH_PRESERVE_LINKS
-                                   if (ctx.get("product_url") or "").strip() else ""))
+                                   if (ctx.get("product_url") or "").strip() else ""),
+            voice_polish=_voice_instructions(ctx, "polish"))
         if strict:
             prompt += P.POLISH_STRICT_RETRY
         return self.llm.stream(prompt, task="polish")
@@ -368,11 +394,14 @@ class SEOWriter:
         return seo
 
     # -------------------------------------------------------------- 配图
-    async def generate_images(self, article: str, topic_type: str,
-                              limit: int) -> dict[str, bytes]:
-        """按占位符逐张生成（串行，避免把图片模型的限流打爆）。失败的那张跳过。"""
+    async def generate_images(self, article: str, topic_type: str, limit: int,
+                              image_style: str = "auto") -> dict[str, bytes]:
+        """按占位符逐张生成（串行，避免把图片模型的限流打爆）。失败的那张跳过。
+
+        image_style 由用户选；"auto" 走按 topic_type 自动判断的老逻辑。
+        """
         out: dict[str, bytes] = {}
-        style = P.image_style_suffix(topic_type)
+        style = P.image_style_suffix(topic_type, image_style)
         for item in extract_image_prompts(article)[:limit]:
             png = await generate_image(self.s, item["prompt"], style)
             if png:

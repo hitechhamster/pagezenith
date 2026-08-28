@@ -62,7 +62,7 @@ PRICES: dict[tuple[str, str], dict[str, int]] = {
     ("seo-writer", "revise"):   {"pro": 0},     # 前 N 次免费，超出按 REVISE_EXTRA
     ("seo-writer", "article"):  {"pro": 5},     # 正文 + SEO 元数据  → 一篇 = 2+5 = 7 点
     ("seo-writer", "polish"):   {"pro": 3},     # 又一次整篇长文调用，独立收
-    ("seo-writer", "image"):    {"pro": 2},     # 每张配图
+    ("seo-writer", "image"):    {"pro": 3},     # 每张配图（高质量档，见下方成本）
     ("seo-gap", "analyze"):     {"pro": 5},
     ("article-quality", "check"): {"pro": 1},
     ("reddit-research", "run"): {"pro": 2},
@@ -106,6 +106,22 @@ MODEL_COST_CNY_PER_MTOK: dict[str, tuple[float, float]] = {
     "anthropic/claude-sonnet-5": (21.6, 108.0),
 }
 _FALLBACK_COST = (5.0, 20.0)
+
+# ── 配图成本（¥/张）────────────────────────────────────────────────
+# 图片不按 token 计价，套上面那张表会算错（会 fallback 到文本单价）。
+# 实测 2026-08-28：gemini-3-pro-image 出 1376x768，图像输出 1120 token，
+# 官方图像输出 $60/M token → $0.067/张；加上思考与文本 token 约 $0.070，
+# 按 1 USD≈7.2 CNY 算 ≈ ¥0.50/张。售 3 点（¥2.1-3.0）→ 毛利 76-83%。
+MODEL_COST_CNY_PER_IMAGE: dict[str, float] = {
+    "gemini-3-pro-image": 0.50,
+    "gemini-3.1-flash-image": 0.50,
+    "gemini-2.5-flash-image": 0.30,
+}
+_FALLBACK_IMAGE_COST = 0.60
+
+
+def est_image_cost_cny(model: str, n: int = 1) -> float:
+    return MODEL_COST_CNY_PER_IMAGE.get(model, _FALLBACK_IMAGE_COST) * max(0, int(n))
 
 
 def est_cost_cny(model: str, tokens_in: int, tokens_out: int) -> float:

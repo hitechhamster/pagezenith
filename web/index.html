@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PageZenith — AI 跨境营销工具</title>
-<link rel="stylesheet" href="/shared/app.css" />
+<link rel="stylesheet" href="/shared/app.css?v=21c3056b" />
 <style>
   .hero{padding:48px 0 28px;border-bottom:1px solid var(--line);margin-bottom:24px}
   .hero h1{font-size:40px;font-weight:600;margin:0 0 10px;line-height:1.1;max-width:16ch}
@@ -12,7 +12,8 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
   .tool{display:block;padding:20px;border-radius:var(--radius-lg);background:var(--card);border:1px solid var(--line);transition:border-color .15s,transform .08s}
   .tool:hover{border-color:var(--accent);transform:translateY(-1px)}
-  .tool .ic{width:38px;height:38px;border-radius:10px;background:var(--accentsoft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:12px}
+  .tool .ic{width:38px;height:38px;border-radius:10px;background:var(--accentsoft);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+  .tool .ic svg{width:20px;height:20px;display:block}
   .tool .tt{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--text);margin-bottom:5px}
   .tool .td{color:var(--muted);font-size:13px}
   .tool.main{border-color:var(--accent);background:linear-gradient(180deg,var(--accentsoft),var(--card) 62%)}
@@ -79,37 +80,37 @@
 
   <div class="grid">
     <a class="tool main" href="/tools/seo-writer">
-      <div class="ic">✍</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M12.5 6.5l5 5"/></svg></div>
       <div class="tt">SEO 文章生成</div>
       <div class="td">填关键词 → <b>全网搜索 + Reddit 真实讨论</b>挖真人痛点 → 出 <b>EEAT 大纲</b>给你审批（可反复改）→ 写整篇长文 → 可选<b>可读性润色</b>，导出 Word。</div>
     </a>
     <a class="tool" href="/tools/seo-gap">
-      <div class="ic">◎</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></div>
       <div class="tt">内容差距分析</div>
       <div class="td">对比前 10：页面类型匹配、语义意图、逐页差距、LSI 覆盖、GEO，并给出可粘贴的增补段落。</div>
     </a>
     <a class="tool" href="/tools/article-quality">
-      <div class="ic">✎</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M9 15l2 2 4-4"/></svg></div>
       <div class="tt">文章质量检测</div>
       <div class="td">Hemingway 式可读性高亮 + 信息密度（查注水）+ 标题吸引力与改写。粘贴即测，中英双语。</div>
     </a>
     <a class="tool" href="/tools/site-recon">
-      <div class="ic">◈</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M4 11h14"/><path d="M11 4c2 2.5 2 11.5 0 14"/><path d="M20 20l-3.5-3.5"/></svg></div>
       <div class="tt">站点情报侦察</div>
       <div class="td">输网址即查：建站平台、是否 Shopify（主题/产品/价格）、域名年龄、营销技术栈、联系方式。</div>
     </a>
     <a class="tool" href="/tools/reddit-research">
-      <div class="ic">◇</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/><path d="M10 20v-3H8"/><path d="M10 9h9a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z"/></svg></div>
       <div class="tt">Reddit 选题研究</div>
       <div class="td">输入英文关键词，自动挖 Reddit 真实讨论与全部评论：在聊什么、痛点、高频问题，给出写什么文章对应什么关键词。</div>
     </a>
     <a class="tool" href="/tools/outreach">
-      <div class="ic">✉</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a4 4 0 0 0 6 .5l2.5-2.5a4 4 0 0 0-5.7-5.7L11.5 6.5"/><path d="M14 11a4 4 0 0 0-6-.5L5.5 13a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg></div>
       <div class="tt">外链拓客</div>
       <div class="td">关键词/网址驱动，全网找可能给外链的站点，抓联系邮箱，按站点性质生成英文外联邮件草稿，导出 Excel。</div>
     </a>
     <div class="tool soon">
-      <div class="ic">◷</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></div>
       <div class="tt">更多工具</div>
       <div class="td">敬请期待。</div>
     </div>

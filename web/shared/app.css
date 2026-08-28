@@ -1,23 +1,53 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Space+Grotesk:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap');
+/* PageZenith 设计系统 —— 2026-08-28 换肤到「单据美学」（设计稿 work/design-v2）
+ *
+ * 两条不能回退的决定：
+ *
+ * 1. **不加载网络字体。** 这里原来第一行 @import 了三套 Google Fonts。
+ *    @import 在样式表顶部是阻塞渲染的，而国内用户打不开 fonts.googleapis.com ——
+ *    等于让本站的目标用户（不翻墙的跨境卖家）盯着白屏等超时。
+ *    全部改走系统字体栈：中文标题走宋体、界面走系统黑体、数字走等宽。
+ *
+ * 2. **变量名一个没改，只换取值。** 全站 9 个页面、约 400 处 var() 引用，
+ *    换名字要全量改标记；换值则零风险、一次到位。所以下面会看到
+ *    --accent 其实是墨黑、--green 其实也是墨黑 —— 名字是历史包袱，别当真，
+ *    以注释为准。
+ */
 
 :root{
-  /* 暖纸白 + 墨绿编辑风（去 AI 味：衬线标题、克制单色、发丝边框） */
-  --bg:#F6F3EA; --card:#FFFDF8; --soft:#EFEBDF; --line:#E2DCCC;
-  --text:#1B1E18; --muted:#6C6F63; --faint:#9B9C8C;
-  --accent:#1F4D3A; --accent2:#2E6B50; --accentsoft:#E6EFE7;
-  --green:#1f7a52; --greenbg:#E6F1E8; --greenline:#bfd9c5;
-  --red:#b23b2e; --redbg:#F6E7E2; --redline:#e6c3b9;
-  --amber:#9a6a12; --amberbg:#F6ECD8; --amberline:#e6d3a8;
-  --radius:12px; --radius-lg:16px;
-  --shadow:0 1px 2px rgba(27,30,24,.05);
-  --font-ui:"Space Grotesk",-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
-  --font-display:"Fraunces",Georgia,"Songti SC",serif;
-  --font-read:"Newsreader",Georgia,"Songti SC",serif;
+  /* 底色：暖灰纸 + 点阵（点阵在 .dotgrid 里用） */
+  --bg:#ECECE9; --dot:#D8D8D3; --card:#FFFFFF; --soft:#E4E4DF; --line:#DEDED8;
+  --text:#141414; --muted:#63635E; --faint:#98988F;
+
+  /* 主操作色 = 墨黑。这套设计里按钮是黑的，不是彩色的 */
+  --accent:#141414; --accent2:#000000; --accentsoft:#E4E4DF;
+
+  /* 语义色：整体黑白，只有"章"用印泥红。
+     成功态用墨黑（靠图形而非颜色表达），警示/错误保留可辨识的暖色 */
+  --green:#141414; --greenbg:#E4E4DF; --greenline:#C9C9C2;
+  --red:#C2402A;   --redbg:#F6E7E2;   --redline:#E3BCB2;
+  --amber:#8A6414; --amberbg:#F1E9D6; --amberline:#DCCBA0;
+  --seal:#C2402A;  /* 印泥红：只给审批章 / 退款章，别拿它当强调色 */
+
+  --radius:10px; --radius-lg:16px;
+  --shadow:0 1px 2px rgba(15,15,15,.05),0 10px 28px rgba(15,15,15,.08);
+
+  /* 字体：系统栈，零网络请求。
+     中文标题用宋体（中文正式文档的惯例），界面用系统黑体，数据用等宽 */
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --font-display:"Noto Serif SC","Source Han Serif SC","Songti SC","STSong",SimSun,Georgia,serif;
+  --font-read:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --font-mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Consolas,monospace;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
+body{margin:0;color:var(--text);
+  /* 点阵纸底：单据美学的底子。纯 CSS，零请求 */
+  background:var(--bg) radial-gradient(var(--dot) 1px,transparent 1px);
+  background-size:22px 22px;
   font-family:var(--font-ui);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
-h1,h2,h3{font-family:var(--font-display);font-weight:500;letter-spacing:-0.01em}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;letter-spacing:0;text-wrap:balance;line-height:1.25}
+h1{font-size:34px;margin:0 0 10px}
+/* 表单里的数字/卡密/点数一律等宽，跟设计稿一致 */
+input[type=number],.mono,[data-mono]{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 a{color:var(--accent);text-decoration:none}
 .wrap{max-width:900px;margin:0 auto;padding:24px 20px 100px}
 .muted{color:var(--muted)} .small{font-size:12px}
@@ -34,8 +64,15 @@ a{color:var(--accent);text-decoration:none}
 .nav .keybtn:hover{background:var(--soft)}
 .nav .keybtn.warn{border-color:var(--amberline);background:var(--amberbg);color:var(--amber)}
 
-button{background:var(--accent);border:1px solid var(--accent);border-radius:9px;color:#F6F3EA;font-weight:500;font-family:var(--font-ui);
-  padding:10px 20px;font-size:14px;cursor:pointer;transition:background .15s,transform .05s}
+button{background:var(--accent);border:1px solid var(--accent);
+  /* 胶囊：v2 的招牌形状。数字用等宽，让"多少点"一眼可辨 */
+  border-radius:999px;color:#fff;font-weight:600;font-family:var(--font-ui);
+  padding:11px 22px;font-size:14px;cursor:pointer;line-height:1;
+  transition:transform .16s,box-shadow .16s,background .16s,border-color .16s}
+button:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+button:active{transform:scale(.97)}
+button[disabled]{opacity:.45;cursor:not-allowed}
+button[disabled]:hover{transform:none;box-shadow:none}
 button:hover{background:var(--accent2);border-color:var(--accent2)} button:active{transform:scale(.99)} button:disabled{opacity:.5;cursor:default}
 input,select,textarea{background:var(--card);border:1px solid var(--line);border-radius:9px;color:var(--text);
   padding:9px 11px;font-size:14px;outline:none;font-family:var(--font-ui);transition:border .15s,box-shadow .15s}

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SEO 文章生成 · PageZenith</title>
-<link rel="stylesheet" href="/shared/app.css" />
+<link rel="stylesheet" href="/shared/app.css?v=21c3056b" />
 <style>
   .sub{color:var(--muted);font-size:14px;margin:0 0 16px;max-width:64ch;line-height:1.7}
   .sec{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
@@ -21,6 +21,15 @@
   .f input,.f select,.f textarea{width:100%}
   .f textarea{min-height:74px;resize:vertical;line-height:1.6;font-family:var(--font-ui)}
   .f.narrow{flex:0 0 130px;min-width:130px}
+  .voices{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;margin-bottom:4px}
+  .vo{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px;
+    cursor:pointer;text-align:center;transition:border-color .15s,background .15s}
+  .vo:hover{border-color:var(--accent)}
+  .vo.on{border-color:var(--accent);background:var(--accentsoft)}
+  .vo img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px;display:block;margin-bottom:6px;background:#EFEDE4}
+  .vo .vn{font-size:12.5px;font-weight:500;color:var(--text)}
+  .vo .vr{font-size:11px;color:var(--muted)}
+  .vo .vrec{font-size:10px;color:var(--accent);margin-top:2px;min-height:13px}
   .hint{font-size:11.5px;color:var(--faint);margin-top:-6px;margin-bottom:10px}
   .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text)}
   .chk input{width:auto}
@@ -30,8 +39,25 @@
   .costbox .dim{color:var(--muted);font-size:12px}
   #status{margin:12px 2px;color:var(--muted);font-size:13px;min-height:20px}
   #status.err{color:var(--red)}
-  .log{font-size:12.5px;color:var(--muted);line-height:1.9;margin:4px 0 10px}
-  .log div:before{content:"› ";color:var(--accent)}
+  /* 进度流水 —— 长任务要跑三到五分钟，这块是用户唯一能看见"钱花在哪"的地方。
+     做成带时间戳的小票：等宽时间列右对齐，逐条落下。 */
+  .log{font-size:12.5px;color:var(--muted);margin:6px 0 12px;
+    border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}
+  .log:empty{display:none}
+  .log .li{display:grid;grid-template-columns:56px 1fr;gap:12px;align-items:baseline;
+    padding:7px 14px;border-bottom:1px dashed var(--line)}
+  .log .li:last-child{border-bottom:none}
+  .log .t{font-family:var(--font-mono);font-size:11px;color:var(--faint);
+    text-align:right;font-variant-numeric:tabular-nums}
+  .log .li.now .m{color:var(--text);font-weight:500}
+  /* 审批章：全站唯一用印泥红的地方 */
+  .seal{display:inline-flex;align-items:center;justify-content:center;
+    width:46px;height:46px;border:2px solid var(--seal);color:var(--seal);
+    border-radius:8px;font-family:var(--font-display);font-weight:700;font-size:21px;
+    transform:rotate(-8deg);flex-shrink:0;letter-spacing:0}
+  .sealrow{display:flex;align-items:center;gap:14px;margin:2px 0 12px}
+  .sealrow .st{font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--text)}
+  .sealrow .sd{font-size:12.5px;color:var(--muted);margin-top:3px}
   .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--accent);
         border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -78,11 +104,6 @@
   <!-- 供应商 -->
   <div class="sec">
     <div class="row" style="margin-bottom:0">
-      <div class="f"><label>写作档位</label>
-        <select id="tier">
-          <option value="basic">基础档</option>
-          <option value="pro">高级档</option>
-        </select></div>
       <div class="f"><label>本次消耗</label><div class="costbox" id="costBox">—</div></div>
     </div>
     <div class="hint" id="provHint" style="margin-top:8px;margin-bottom:0"></div>
@@ -100,7 +121,16 @@
     </div>
     <div class="row">
       <div class="f"><label>特殊要求（最高优先级，会覆盖其他规则）</label>
-        <textarea id="specific" placeholder="例如：需要为某品牌引流，全文设置至少 3 处自然钩子；或指定某种论述角度"></textarea></div>
+        <textarea id="specific" placeholder="想让这篇文章特别做到什么？直接写。"></textarea></div>
+    </div>
+    <div class="hint" id="specHint">
+      这一栏优先级最高，和其他设置冲突时以它为准。常用法：
+      <a href="#" data-spec="把要推荐的产品资料整段贴在这里：">贴产品资料</a> ·
+      <a href="#" data-spec="读者是刚开店的新手，不要预设他懂任何术语。">指定读者</a> ·
+      <a href="#" data-spec="必须回答这几个问题：">必答问题</a> ·
+      <a href="#" data-spec="不要出现这些说法：">回避说法</a> ·
+      <a href="#" data-spec="品牌名固定写作：">固定写法</a>
+      <br />贴产品资料和上面「推荐产品页」的区别：那个是给链接让系统去抓，这里是你直接把内容喂进来。
     </div>
     <div class="row">
       <div class="f narrow"><label>字数</label><input id="wordcounts" type="number" min="0" max="5000" value="0" /></div>
@@ -123,7 +153,17 @@
       <div class="f narrow"><label>配图张数</label>
         <select id="imagesPer" disabled><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></div>
     </div>
-    <div class="hint" id="imgHint">配图需要 OpenRouter key（只有它有文生图模型）。</div>
+    <div class="hint" id="imgHint"></div>
+    <div class="row">
+      <div class="f narrow"><label>配图风格</label>
+        <select id="imageStyle" disabled></select></div>
+    </div>
+
+    <label style="font-size:12px;color:var(--muted);font-weight:500;display:block;margin:14px 0 6px">
+      写手（选一个文风，不额外扣点）</label>
+    <div class="voices" id="voices"></div>
+    <div class="hint" id="voiceHint">不选也可以，那就用通用文风。</div>
+
     <div class="btns"><button id="btnOutline">生成大纲</button></div>
   </div>
 
@@ -133,6 +173,13 @@
   <div class="sec" id="sec2" style="display:none">
     <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
     <div class="log" id="log1"></div>
+    <div class="sealrow" id="sealRow" style="display:none">
+      <div class="seal">审</div>
+      <div>
+        <div class="st">大纲出来了，你先过目</div>
+        <div class="sd" id="sealNote"></div>
+      </div>
+    </div>
     <div class="doc" id="outlineBox"></div>
     <div class="row" style="margin-top:14px;margin-bottom:0">
       <div class="f"><label>修改意见（可反复改，直到满意）</label>
@@ -173,7 +220,9 @@ let MODELS={},DEFAULTS={};   /* 兼容残留，不再使用 */
 /* ---------- 档位与价目（卡密制：模型由服务端按档位映射）---------- */
 let TIERS=[], PRICES={}, REVISE_FREE=3;
 function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
-function tier(){ return $("tier").value; }
+/* 档位只剩一档（pricing.TIERS 只有 pro），界面上的选择器已删，这里写死。 */
+function tier(){ return "pro"; }
+let VOICE="";            // 用户选的写手，空 = 通用文风
 function updateCost(){
   const t=tier(), p=PRICES||{};
   const n=$("enableImages").checked?parseInt($("imagesPer").value,10):0;
@@ -182,34 +231,69 @@ function updateCost(){
   const total=(typeof outline==="number"&&typeof article==="number")?(outline+article+img):"?";
   $("costBox").innerHTML=`<b>${total}</b> 点 <span class="dim">= 大纲 ${outline} + 正文 ${article}`
     + (n?` + 配图 ${img}`:"") + `</span>`;
-  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；润色另计 ${(p.polish||{})[t]??"?"} 点。`
-    + " 档位只影响写作模型，其余流程一致。";
+  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；润色另计 ${(p.polish||{})[t]??"?"} 点。选写手不额外扣点。`;
 }
-function syncProviders(){
-  $("imagesPer").disabled=!$("enableImages").checked;
-  $("imgHint").textContent="配图按正文里的 [IMAGE:] 占位符逐张生成，比较慢，也按张扣点。";
+function syncImages(){
+  const on=$("enableImages").checked;
+  $("imagesPer").disabled=!on; $("imageStyle").disabled=!on;
+  $("imgHint").textContent=on
+    ? `配图按正文里的 [IMAGE:] 占位符逐张生成，比较慢，每张 ${(PRICES.image||{})[tier()]??"?"} 点。`
+    : "";
   updateCost();
 }
-$("tier").onchange=updateCost;
+function renderVoices(list){
+  const box=$("voices"); box.innerHTML="";
+  list.forEach(v=>{
+    const d=document.createElement("div");
+    d.className="vo"; d.dataset.id=v.id;
+    d.innerHTML=`<img src="${v.portrait}" alt="" loading="lazy" />`
+      + `<div class="vn">${v.name}</div><div class="vr">${v.role}</div>`
+      + `<div class="vrec" data-rec></div>`;
+    d.title=v.blurb;
+    d.onclick=()=>{
+      VOICE = (VOICE===v.id) ? "" : v.id;      // 再点一次 = 取消，回到通用文风
+      [...box.children].forEach(c=>c.classList.toggle("on", c.dataset.id===VOICE));
+      $("voiceHint").textContent = VOICE
+        ? list.find(x=>x.id===VOICE).blurb
+        : "不选也可以，那就用通用文风。";
+    };
+    box.append(d);
+  });
+}
+/* 大纲跑到第 4 步会推一个写手。用户已经选了就不打扰。 */
+function markRecommended(id){
+  if(VOICE) return;
+  [...$("voices").children].forEach(c=>{
+    const t=c.querySelector("[data-rec]");
+    if(t) t.textContent = (c.dataset.id===id) ? "建议" : "";
+  });
+}
 $("imagesPer").onchange=updateCost;
-$("enableImages").onchange=()=>{$("imagesPer").disabled=!$("enableImages").checked; updateCost();};
+$("enableImages").onchange=syncImages;
 window.addEventListener("pz-card-updated",()=>{});
 
 (async()=>{
   try{
     const h=await (await fetch("/api/seo-writer/health")).json();
     TIERS=h.tiers||[]; PRICES=h.prices||{}; REVISE_FREE=h.revise_free??3;
-    if(TIERS.length){
-      const sel=$("tier"); sel.innerHTML="";
-      TIERS.forEach(t=>{const o=document.createElement("option");o.value=t.key;
-        o.textContent=`${t.label} — ${t.desc}`; sel.append(o);});
-    }
+    renderVoices(h.voices||[]);
+    (h.image_styles||[]).forEach(st=>{const o=document.createElement("option");
+      o.value=st.id; o.textContent=st.label; o.title=st.hint||""; $("imageStyle").append(o);});
     (h.languages||["English"]).forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
   }catch(e){
     ["English","Chinese (Simplified)"].forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
   }
-  syncProviders();
+  syncImages();
 })();
+
+/* specific 的示例：点一下把开头填进去，用户接着往下写 */
+$("specHint").addEventListener("click",e=>{
+  const a=e.target.closest("a[data-spec]"); if(!a) return;
+  e.preventDefault();
+  const box=$("specific"), pre=box.value.trim();
+  box.value = (pre ? pre + String.fromCharCode(10) : "") + a.dataset.spec;
+  box.focus(); box.setSelectionRange(box.value.length, box.value.length);
+});
 
 /* ---------- SSE ---------- */
 async function sse(url,body,onEvent){
@@ -231,7 +315,29 @@ async function sse(url,body,onEvent){
   }
 }
 function setStatus(m,err,spin){ const s=$("status"); s.innerHTML=(spin?'<span class="spin"></span>':"")+(m||""); s.className=err?"err":""; }
-function logTo(id,msg){ const l=$(id); l.append(E("div",null,msg)); }
+/* 进度流水：每条带一个"从这一步开始算起"的耗时，让等待变成看得见的工作量 */
+const LOG_T0={};
+function logTo(id,msg){
+  const l=$(id);
+  if(!LOG_T0[id]) LOG_T0[id]=Date.now();
+  const secs=((Date.now()-LOG_T0[id])/1000).toFixed(1)+"s";
+  [...l.querySelectorAll(".li.now")].forEach(x=>x.classList.remove("now"));
+  const row=E("div",null); row.className="li now";
+  const t=E("div",null,secs); t.className="t";
+  const m=E("div",null,msg); m.className="m";
+  row.append(t,m); l.append(row);
+}
+function logReset(id){ delete LOG_T0[id]; $(id).innerHTML=""; }
+/* 审批章：大纲出来才盖。审批环节是本产品跟"一键出文"最大的区别，要看得见。
+   剩余免费次数用服务端回传的 free_revises_left —— 前端不另记一份计数，
+   否则两边算的必然会对不上（扣点以服务端为准）。 */
+function showSeal(left){
+  $("sealRow").style.display="flex";
+  const n = (left===undefined) ? (REVISE_FREE||3) : left;
+  $("sealNote").textContent = n>0
+    ? `不满意就改，还有 ${n} 次免费。你不点「通过」，正文一个字不写、一点不扣。`
+    : `免费修改已用完，之后每次改扣 1 点。你不点「通过」，正文一个字不写。`;
+}
 function baseBody(){ return {tier: tier()}; }
 // 流式渲染节流：每 120ms 重排一次，避免长文一边写一边把页面卡住
 function throttleRender(box,getText){
@@ -253,7 +359,7 @@ $("btnOutline").onclick=async()=>{
 
   $("btnOutline").disabled=true;
   $("sec2").style.display=""; $("sec3").style.display="none";
-  $("log1").innerHTML=""; $("outlineBox").innerHTML=""; S.outline="";
+  logReset("log1"); $("outlineBox").innerHTML=""; S.outline="";
   setStatus("正在生成大纲…",false,true);
   const paint=throttleRender($("outlineBox"),()=>S.outline);
 
@@ -263,12 +369,14 @@ $("btnOutline").onclick=async()=>{
       product_url:$("productUrl").value.trim(), product_level:$("productLevel").value,
       specific:$("specific").value, wordcounts:parseInt($("wordcounts").value||"0",10),
       language:$("language").value, enable_images:$("enableImages").checked,
-      images_per_article:parseInt($("imagesPer").value,10)},
+      images_per_article:parseInt($("imagesPer").value,10),
+      voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
         if(ev.type==="step") logTo("log1",ev.message);
         else if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
         else if(ev.type==="done"){
           S.sessionId=ev.session_id; S.outline=ev.outline; paint(true);
+          showSeal();
           $("outlineMeta").textContent=`· 目标 ${ev.wordcounts} 词 · ${ev.topic_type}`;
           setStatus("大纲已生成，看一下：不满意就提修改意见，满意就点「通过」。");
         }
@@ -292,7 +400,7 @@ $("btnRevise").onclick=async()=>{
       {...baseBody(), session_id:S.sessionId, feedback:fb, outline:before},
       ev=>{
         if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
-        else if(ev.type==="done"){ S.outline=ev.outline; paint(true); $("feedback").value="";
+        else if(ev.type==="done"){ S.outline=ev.outline; paint(true); $("feedback").value=""; showSeal(ev.free_revises_left);
           setStatus("大纲已按意见修改。可以继续提意见，也可以点「通过」。"); }
         else if(ev.type==="error") throw new Error(ev.message);
       });
@@ -304,7 +412,7 @@ $("btnRevise").onclick=async()=>{
 $("btnArticle").onclick=async()=>{
   if(!S.outline){ setStatus("还没有大纲。",true); return; }
   $("btnRevise").disabled=$("btnArticle").disabled=true;
-  $("sec3").style.display=""; $("log2").innerHTML=""; $("articleBox").innerHTML="";
+  $("sec3").style.display=""; logReset("log2"); $("articleBox").innerHTML="";
   $("artInfo").style.display="none"; $("artInfo").innerHTML=""; $("artBtns").style.display="none";
   S.article=""; S.images={};
   setStatus("正在写文章，长文可能要 2–5 分钟，别关页面…",false,true);
@@ -317,7 +425,8 @@ $("btnArticle").onclick=async()=>{
       main_keyword:$("mainKw").value.trim(), secondary_keyword:$("secKw").value.trim(),
       topic:$("topic").value.trim(), specific:$("specific").value,
       wordcounts:parseInt($("wordcounts").value||"0",10)||null, language:$("language").value,
-      enable_images:$("enableImages").checked, images_per_article:parseInt($("imagesPer").value,10)},
+      enable_images:$("enableImages").checked, images_per_article:parseInt($("imagesPer").value,10),
+      voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
         if(ev.type==="step") logTo("log2",ev.message);
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
@@ -374,7 +483,8 @@ $("btnPolish").onclick=async()=>{
   const paint=throttleRender($("articleBox"),()=>S.article);
   try{
     await sse("/api/seo-writer/polish",{...baseBody(), session_id:S.sessionId,
-      article:S.pre.article, language:$("language").value, main_keyword:$("mainKw").value.trim()},
+      article:S.pre.article, language:$("language").value,
+      main_keyword:$("mainKw").value.trim(), voice:VOICE},
       ev=>{
         if(ev.type==="step") logTo("log2",ev.message);
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }

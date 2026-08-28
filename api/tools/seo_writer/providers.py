@@ -397,40 +397,45 @@ async def _search_exa(s: Settings, query: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# 配图（只有 OpenRouter 有文生图；DeepSeek/Exa 都不支持）
+# 配图（Gemini 原生文生图）
 # --------------------------------------------------------------------------- #
+# 2026-08：从 OpenRouter 迁到 Gemini 原生。迁移的原因不是省钱 ——
+# 是 OpenRouter 整个被砍掉后，key 没配，这个函数一直静默返回 None，
+# 配图功能事实上死了好几周，而价目表还在卖它。
+#
+# 三个跟老实现不一样、缺一个都不通的地方：
+#   1. 必须走代理 —— 香港机器直连 Google 会被拒（老实现完全没设代理）
+#   2. 回包结构不同 —— Gemini 是 candidates[].content.parts[].inlineData
+#   3. 守卫换成 gemini_api_key
 async def generate_image(s: Settings, prompt: str, style_suffix: str) -> Optional[bytes]:
-    """返回 PNG 字节；失败返回 None（配图失败不该拖垮整篇文章）。"""
+    """返回图片字节；失败返回 None（配图失败不该拖垮整篇文章）。"""
     if s.use_mocks:
         return None
-    if not s.openrouter_api_key:
+    key = s.gemini_api_key
+    if not key:
         return None
     enhanced = (f"{prompt}. {style_suffix} "
-                "Wide horizontal aspect ratio (16:9). No text overlays unless requested.")
+                "Wide horizontal aspect ratio (16:9).")
     payload = {
-        "model": s.writer_image_model,
-        "messages": [{"role": "user", "content": enhanced}],
-        "modalities": ["image", "text"],
+        "contents": [{"parts": [{"text": enhanced}]}],
+        "generationConfig": {"responseModalities": ["IMAGE"]},
     }
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{s.writer_image_model}:generateContent")
     try:
-        async with httpx.AsyncClient(timeout=s.writer_timeout) as client:
-            resp = await client.post(
-                f"{s.openrouter_base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {s.openrouter_api_key}",
-                         "Content-Type": "application/json",
-                         "HTTP-Referer": "https://pagezenith.onrender.com",
-                         "X-Title": "PageZenith SEO Writer"},
-                json=payload,
-            )
+        async with httpx.AsyncClient(timeout=s.writer_timeout,
+                                     proxy=s.proxy_for("gemini"),
+                                     trust_env=False) as client:
+            resp = await client.post(url, params={"key": key}, json=payload)
             resp.raise_for_status()
             result = resp.json()
-        images = (result.get("choices", [{}])[0].get("message", {}) or {}).get("images") or []
-        if not images:
-            return None
-        url = (images[0].get("image_url") or {}).get("url", "")
-        if not url.startswith("data:"):
-            return None
-        return base64.b64decode(url.split(",", 1)[1])
+        # parts 里 text 和图混着，取第一个带数据的（下划线/驼峰两种键名都见过）
+        parts = (result.get("candidates") or [{}])[0].get("content", {}).get("parts") or []
+        for part in parts:
+            blob = part.get("inlineData") or part.get("inline_data")
+            if blob and blob.get("data"):
+                return base64.b64decode(blob["data"])
+        return None
     except Exception as exc:
         logger.warning("配图生成失败: %s", exc)
         return None

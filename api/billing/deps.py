@@ -27,7 +27,7 @@ from typing import Any, Optional
 from fastapi import Header, HTTPException, Request
 
 from . import store
-from .pricing import est_cost_cny, price, tier_of
+from .pricing import est_cost_cny, est_image_cost_cny, price, tier_of
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,8 @@ class Charge:
     # 按模型分桶：一次请求会跨模型（正文=pro，SEO 元数据=flash-lite，润色=deepseek），
     # 用单个字段记会被后来者覆盖，成本按错的单价算。
     _usage: dict[str, list[int]] = field(default_factory=dict)
+    # 配图单独记：图片不按 token 计价，混进 _usage 会被按文本单价算错
+    _images: dict[str, int] = field(default_factory=dict)
     _result: Optional[dict[str, Any]] = None
 
     def report_tokens(self, model: str, tokens_in: int, tokens_out: int) -> None:
@@ -119,6 +121,11 @@ class Charge:
         b = self._usage.setdefault(m, [0, 0])
         b[0] += max(0, int(tokens_in or 0))
         b[1] += max(0, int(tokens_out or 0))
+
+    def report_image(self, model: str, n: int = 1) -> None:
+        """记配图张数。不走 report_tokens —— 图片按张计价，不按 token。"""
+        if n > 0:
+            self._images[model or "unknown"] = self._images.get(model or "unknown", 0) + int(n)
 
     @property
     def tokens_in(self) -> int:
@@ -131,13 +138,16 @@ class Charge:
     @property
     def cost_cny(self) -> float:
         """逐模型按各自单价算，再相加 —— 不能用某一个模型的单价套全部 token。"""
-        return sum(est_cost_cny(m, v[0], v[1]) for m, v in self._usage.items())
+        text = sum(est_cost_cny(m, v[0], v[1]) for m, v in self._usage.items())
+        images = sum(est_image_cost_cny(m, n) for m, n in self._images.items())
+        return text + images
 
     @property
     def model_label(self) -> str:
         """流水里存哪些模型参与了这次请求（按输出 token 降序）。"""
-        return "+".join(m for m, _ in sorted(self._usage.items(),
-                                             key=lambda kv: -kv[1][1]))
+        models = [m for m, _ in sorted(self._usage.items(), key=lambda kv: -kv[1][1])]
+        models += [f"{m}x{n}" for m, n in self._images.items()]
+        return "+".join(models)
 
     def set_result(self, *, title: str, summary: str = "", payload: dict[str, Any]) -> None:
         self._result = {"title": title, "summary": summary, "payload": payload}

@@ -132,7 +132,8 @@ class Settings(BaseSettings):
     # SEO 文章生成（工具⑥）：写长文的 token 上限与超时都比其他工具高
     writer_llm_model: str = "anthropic/claude-sonnet-5"   # OpenRouter 默认写作模型
     writer_deepseek_model: str = "deepseek-v4-flash"      # DeepSeek 默认写作模型
-    writer_image_model: str = "google/gemini-2.5-flash-image"
+    # 配图：高质量档。实测输出 1376x768（16:9）、1120 图像 token ≈ $0.067/张 ≈ ¥0.48
+    writer_image_model: str = "gemini-3-pro-image"
     writer_timeout: float = 600.0        # 写一篇 3000 词可能 3-5 分钟
     writer_search_results: int = 20      # 每个关键词取几条"红海参考"
     writer_session_ttl: int = 7200       # 三步向导之间的会话存活时间（秒）

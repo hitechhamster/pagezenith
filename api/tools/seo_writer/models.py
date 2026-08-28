@@ -41,6 +41,9 @@ class OutlineRequest(Tiered):
     language: str = "English"
     enable_images: bool = False
     images_per_article: int = 2
+    image_style: str = "auto"              # 配图风格，见 voices.IMAGE_STYLES
+    # 写手（文风预设，见 voices.VOICES）。留空 = 沿用改造前的通用文风。
+    voice: str = ""
     # 推荐产品（可选）：填了就抓产品页，大纲规划推荐位、正文写成锚文本链接
     product_url: str = ""
     product_level: str = "中等介绍"     # 简短提及 | 中等介绍 | 详细介绍
@@ -68,6 +71,8 @@ class ArticleRequest(Tiered):
     language: Optional[str] = None
     enable_images: Optional[bool] = None
     images_per_article: Optional[int] = None
+    image_style: Optional[str] = None
+    voice: Optional[str] = None
 
 
 class PolishRequest(Tiered):
@@ -80,3 +85,4 @@ class PolishRequest(Tiered):
     language: str = "English"
     session_id: Optional[str] = None
     main_keyword: Optional[str] = None      # 只用于 Word 文件名
+    voice: Optional[str] = None             # 会话丢失时前端回传，否则润色会抹平文风

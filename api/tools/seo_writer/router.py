@@ -27,10 +27,6 @@ from fastapi.responses import StreamingResponse
 
 from billing import jobs
 from billing.deps import Card, InsufficientCredits, charge, require_card
-
-
-class PolishStructureError(RuntimeError):
-    """润色两次都破坏了结构 —— 触发 charge 的异常路径自动退点。"""
 from billing.pricing import REVISE_EXTRA, REVISE_FREE, TIERS, price, tier_of
 
 from ..seo_gap.config import get_settings
@@ -38,6 +34,7 @@ from .docx_export import build_docx, sanitize_filename
 from .models import ArticleRequest, LANGUAGES, OutlineRequest, PolishRequest, ReviseRequest
 from .providers import LLM, ProviderError, resolve_llm
 from .session import get_store
+from .voices import VOICES, image_style_list, recommend_voice, voice_list
 from .workflow import (SEOWriter, count_words, extract_h1, grade_verdict,
                        reading_grade, wordcount_status)
 
@@ -45,6 +42,10 @@ from .workflow import (SEOWriter, count_words, extract_h1, grade_verdict,
 # 单个会话超过这个体积就不存了（宁可润色后的 Word 没图，也不让内存失控）。
 MAX_SESSION_IMAGE_BYTES = 6 * 1024 * 1024
 TOOL = "seo-writer"
+
+class PolishStructureError(RuntimeError):
+    """润色两次都破坏了结构 —— 触发 charge 的异常路径自动退点。"""
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/seo-writer", tags=["seo-writer"])
@@ -86,6 +87,7 @@ async def health() -> dict:
             "tiers": [{"key": k, **v} for k, v in TIERS.items()],
             "prices": {a: {t: price(TOOL, a, t) for t in TIERS}
                        for a in ("outline", "article", "polish", "image")},
+            "voices": voice_list(), "image_styles": image_style_list(),
             "revise_free": REVISE_FREE}
 
 
@@ -109,6 +111,8 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                     "topic": req.topic.strip(), "specific": req.specific or "",
                     "language": req.language, "enable_images": req.enable_images,
                     "images_per_article": req.images_per_article,
+                    "image_style": req.image_style or "auto",
+                    "voice": req.voice or "",
                     "tier": tier, "revise_count": 0,
                 }
 
@@ -154,6 +158,13 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 ctx["topic_type"] = await wf.classify_topic_type(ctx["main_keyword"], ctx["topic"])
                 job.emit({"type": "step", "key": "classify",
                           "message": f"主题类型：{ctx['topic_type']}", "value": ctx["topic_type"]})
+
+                # 顺手推荐写手：topic_type 刚算出来，推荐不额外花钱。
+                # 用户没选写手时才提，选了就尊重用户的选择，不啰嗦。
+                if not ctx.get("voice"):
+                    rec = recommend_voice(ctx["topic_type"])
+                    job.emit({"type": "voice_hint", "voice": rec,
+                              "message": f"这类主题建议用「{VOICES[rec]['role']}」写手"})
 
                 job.emit({"type": "step", "key": "outline", "message": "生成大纲…"})
                 buf: list[str] = []
@@ -234,6 +245,8 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
             "topic_type": "conceptual", "main_search": "", "sec_search": "",
             "enable_images": bool(req.enable_images),
             "images_per_article": req.images_per_article or 2,
+            "image_style": req.image_style or "auto",
+            "voice": req.voice or "",
             "tier": req.tier,
         }
     if req.outline:
@@ -244,7 +257,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
     tier = tier_of(ctx.get("tier") or req.tier)
     s = get_settings()
     want_images = bool(ctx.get("enable_images"))
-    if want_images and not s.openrouter_api_key and not s.use_mocks:
+    if want_images and not s.gemini_api_key and not s.use_mocks:
         want_images = False
     n_images = int(ctx.get("images_per_article", 2)) if want_images else 0
 
@@ -280,7 +293,11 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 if n_images:
                     job.emit({"type": "step", "key": "images", "message": f"生成 {n_images} 张配图…"})
                     image_map = await wf.generate_images(
-                        text, ctx.get("topic_type", "conceptual"), n_images)
+                        text, ctx.get("topic_type", "conceptual"), n_images,
+                        ctx.get("image_style") or "auto")
+                    # 成本入账：图片按张算，不走 report_tokens（那按 token 单价，会算错）
+                    if image_map:
+                        tx.report_image(s.writer_image_model, len(image_map))
                     for ph, png in image_map.items():
                         job.emit({"type": "image", "placeholder": ph,
                                   "png_b64": base64.b64encode(png).decode("ascii")})
@@ -327,6 +344,8 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
 
     language = req.language or sess.get("language") or "English"
     ctx = {**sess, "language": language}
+    if req.voice:                    # 前端回传优先：会话丢了也不能把文风弄丢
+        ctx["voice"] = req.voice
     main_keyword = req.main_keyword or sess.get("main_keyword") or "article"
     before = req.article
 

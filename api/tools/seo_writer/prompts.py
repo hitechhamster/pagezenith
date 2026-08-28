@@ -52,19 +52,44 @@ NEGATIVE_STYLE_BASIC = (
     "topic genuinely calls for it."
 )
 
+# ⚠️ 必须加在**每一张**图上。
+# 实测 gemini-3-pro-image 会自作主张把真实品牌 logo 画到产品上（而且画糊），
+# 用户是拿去商用站的，带真商标 = 实打实的侵权风险。
+NEGATIVE_BRANDS = (
+    "CRITICAL: Do not depict any real brand, logo, trademark, wordmark, or company name. "
+    "Products must be generic and unbranded — blank where a logo would be. "
+    "Do not render any legible text, lettering, captions, labels or watermarks anywhere "
+    "in the image. Do not depict recognisable real people."
+)
 
-def image_style_suffix(topic_type: str) -> str:
-    """配图 prompt 的风格后缀。"""
+
+def image_style_suffix(topic_type: str, style_key: str = "auto") -> str:
+    """配图 prompt 的风格后缀。
+
+    style_key 由用户选（见 voices.IMAGE_STYLES）；"auto"（默认）走原来按
+    topic_type 自动判断的逻辑，保证不选风格时行为跟以前一致。
+    """
+    from .voices import IMAGE_STYLES          # 局部导入，避免与 voices 循环引用
+
+    preset = IMAGE_STYLES.get(style_key or "auto", IMAGE_STYLES["auto"])
+    chosen = preset.get("suffix", "")
+
+    if chosen:
+        # 用户明确选了风格：写实档仍然要带上"别搞科幻"那组负面词
+        negative = NEGATIVE_STYLE_REALISTIC if style_key == "photo" else NEGATIVE_STYLE_BASIC
+        return f"{chosen} {negative} {NEGATIVE_BRANDS} High quality."
+
     if topic_type == "realistic_product":
         return (
             f"{NEGATIVE_STYLE_REALISTIC} "
             "Realistic product photography, high resolution, natural lighting, "
             "accurate materials and proportions, clean neutral background, "
-            "commercial catalog quality."
+            "commercial catalog quality. "
+            f"{NEGATIVE_BRANDS}"
         )
     return (
         "Professional, clean composition suitable for a blog article. "
-        f"{NEGATIVE_STYLE_BASIC} High quality."
+        f"{NEGATIVE_STYLE_BASIC} {NEGATIVE_BRANDS} High quality."
     )
 
 
@@ -133,6 +158,35 @@ SPECIFIC_REMINDER_OUTLINE = """
 如果特殊要求中提到某品牌/产品/经纪商引流需求,设置至少 3 处自然钩子引导点击。
 """
 
+# ============================================================
+# 写作声音（写手）
+# ============================================================
+# 三个阶段各一个包装：大纲要按声音规划结构，正文按声音落笔，润色不能把声音抹平。
+# 规则正文在 voices.py，这里只负责包装成 prompt 片段。
+
+OUTLINE_VOICE_BLOCK = """
+## 本文的写作声音
+{voice_outline_rules}
+（下面「输出格式要求」里的语言风格一节，要照这个声音来描述，不要另外发明。）
+"""
+
+ARTICLE_VOICE_BLOCK = """## 写作声音（文风的最终依据，与大纲中的风格描述冲突时以此为准）
+
+{voice_article_rules}
+"""
+
+# 没选写手时的默认文风 = 改造前 ARTICLE_PROMPT 里那两句原文，一字不改地搬进来：
+#   ① 硬编码的那句文风
+#   ② 「遵从大纲中的语言风格进行写作」
+# ②必须留在这里。正文模板下方有一句静态的「语言风格以上面「写作声音」一节为准」，
+# 不选写手时如果这里不写②，那句原始指令就凭空消失了，而且模板还会引用一个
+# 不存在的小节 —— 等于悄悄改了老用户的产出。加上小标题让那句引用也有着落。
+ARTICLE_VOICE_DEFAULT = """## 写作声音
+
+你的写作风格是简练，高信息密度，具备第一手经验的行业专家。
+另外，遵从大纲中的语言风格进行写作。"""
+
+
 OUTLINE_PROMPT = """# 指令：创建以用户为中心的内容大纲
 
 ## 角色：
@@ -153,6 +207,7 @@ OUTLINE_PROMPT = """# 指令：创建以用户为中心的内容大纲
 {product_context}
 {image_context}
 {reddit_context}
+{voice_outline}
 
 ## 大纲核心要求 (深度融合 Helpful Content & E-E-A-T):
 
@@ -181,7 +236,8 @@ OUTLINE_PROMPT = """# 指令：创建以用户为中心的内容大纲
 ## 输出格式要求：
 
 1.  **文章标题 (Title):** 提供1-2个建议的 {language} 标题，要求：吸引点击 (High CTR)，准确反映核心内容和用户价值，自然包含核心关键词。
-2.  **目标受众与语言风格 (Audience & Tone):** 基于之前的分析，用1-2句话明确描述目标受众画像，并据此建议最合适的语言风格（例如：面向初学者的通俗易懂、面向专业人士的严谨精确、友好对话式、客观中立的教学式等）。
+2.  **目标受众与语言风格 (Audience & Tone):** 基于之前的分析，用1-2句话明确描述目标受众画像。
+    语言风格：**如果上文给了「本文的写作声音」，就照它写，不要另外发明一套风格**；只有在没给的情况下，才由你建议最合适的语言风格（例如：面向初学者的通俗易懂、面向专业人士的严谨精确、友好对话式、客观中立的教学式等）。
 3.  **内容大纲 (Outline):**
     * 使用层级清晰的Markdown格式（例如 H1, H2, H3...）。
     * **H1:** 应为最终采纳的文章标题。
@@ -337,7 +393,8 @@ ARTICLE_PROMPT = """你为{main_keyword}关键词写SEO文章
 
 不要超过这个字数的30%以上！！！！
 
-你的写作风格是简练，高信息密度，具备第一手经验的行业专家。你输出{language}。
+你输出{language}。
+{voice_article}
 
 你严格遵从这个大纲：{outline}同时 遵守特殊要求：{specific}
 
@@ -349,7 +406,7 @@ ARTICLE_PROMPT = """你为{main_keyword}关键词写SEO文章
 
 你输出的总字数应该在{wordcounts}左右。
 
-遵从大纲中的语言风格进行写作。遵从大纲中对关键词出现次数的需求。
+遵从大纲中对关键词出现次数的需求。语言风格以上面「写作声音」一节为准；大纲里的风格描述与之冲突时，以「写作声音」为准。
 
 你输出干净的可以直接发布的文本，所有不要有任何不适合发布的解释性内容。
 
@@ -390,8 +447,18 @@ POLISH_PROMPT = """**Task: Rewrite the following text in {language}.**
 6.  **句式节奏：使用长短交错的句式** —— 不是严格一长一短，而是让长句与短句自然交替出现：
     用短句制造停顿和强调，用长句承载完整的因果与条件。避免通篇长度相近的句子，那读起来像机器写的。
 {preserve_instructions}
+{voice_polish}
 
 **Begin rewriting in {language} directly. Do not add any explanations or introductory phrases.**"""
+
+# 写手文风在润色阶段的包装。
+# 润色是整篇重写，不把文风带进来会被抹平成通用腔 —— 这是加它的全部理由。
+# 它凌驾于规则 6（长短交错）之上：有的写手就是要通篇短句或通篇匀速。
+POLISH_VOICE_BLOCK = """
+**Voice — preserve it (this overrides instruction 6 wherever they disagree):**
+{voice_polish_rules}
+The original text was written in this voice on purpose. Simplifying for readability must not
+flatten it into generic prose."""
 
 # 保留链接的附加指令（有产品链接时才加）
 POLISH_PRESERVE_LINKS = "7.  **Preserve all links.**"
