@@ -64,7 +64,7 @@
   <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
   <a class="navlink" href="/">← 全部工具</a>
   <div class="grow"></div>
-  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 <div class="wrap" style="max-width:1000px">
   <div class="toolbar">
@@ -106,8 +106,8 @@ function wordSpans(raw,zh,C){
   const ranges=[], pr={pass:0,adv:1,cplx:2};
   if(!zh){
     for(const m of raw.matchAll(/\b(is|are|was|were|be|been|being)\s+\w+ed\b/gi)) ranges.push([m.index,m.index+m[0].length,"w-pass","pass"]);
-    for(const m of raw.matchAll(/\b\w{3,}ly\b/gi)) ranges.push([m.index,m.index+m[0].length,"w-adv","adv"]);
-    for(const m of raw.matchAll(/\b[A-Za-z]{4,}\b/g)) if(syllables(m[0])>=4) ranges.push([m.index,m.index+m[0].length,"w-cplx","cplx"]);
+    for(const m of raw.matchAll(/\b\w{3}ly\b/gi)) ranges.push([m.index,m.index+m[0].length,"w-adv","adv"]);
+    for(const m of raw.matchAll(/\b[A-Za-z]{4}\b/g)) if(syllables(m[0])>=4) ranges.push([m.index,m.index+m[0].length,"w-cplx","cplx"]);
   }else{
     for(const f of FILLERS){let i=0;while((i=raw.indexOf(f,i))!==-1){ranges.push([i,i+f.length,"w-cplx","cplx"]);i+=f.length;}}
   }
@@ -141,7 +141,7 @@ function htmlToMd(html){
       else if(/^(p|div|li|br|tr|section|article)$/.test(t)){walk(c);out.push("\n");}
       else walk(c);
     }});})(doc.body);
-  return out.join("").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+  return out.join("").replace(/[ \t]+\n/g,"\n").replace(/\n{3}/g,"\n\n").trim();
 }
 
 function render(){
@@ -211,17 +211,17 @@ $("fetch").addEventListener("click",async()=>{
 });
 
 // ---- AI 深度分析 ----
-function syncKeyBtn(){const b=$("keybtn");if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";}}
-syncKeyBtn(); window.addEventListener("seo-keys-updated",syncKeyBtn);
+function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
+syncKeyBtn(); 
 
 $("ai").addEventListener("click",async()=>{
   const text=ED.value.trim();
   if(text.length<40) return setS("正文太短。",true);
-  if(!SEOKEYS.hasKeys()){ setS("请先在右上角设置 API Key。",true); SEOKEYS.open(); return; }
+  if(!CARD.has()){ CARD.toast("请先输入卡密", true); CARD.open(); return; }
   $("ai").disabled=true; $("ai-report").innerHTML=""; setS("分析中…约 10–20 秒",false);
   try{
     const resp=await fetch("/api/article-quality/check",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({text,...SEOKEYS.get()})});
+      body:JSON.stringify({text})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     renderAI(await resp.json()); setS("");
   }catch(e){ setS(String(e),true); }

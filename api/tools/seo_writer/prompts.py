@@ -133,76 +133,130 @@ SPECIFIC_REMINDER_OUTLINE = """
 如果特殊要求中提到某品牌/产品/经纪商引流需求,设置至少 3 处自然钩子引导点击。
 """
 
-OUTLINE_PROMPT = """# 指令: 创建一份 {language} 长文大纲
+OUTLINE_PROMPT = """# 指令：创建以用户为中心的内容大纲
 
-## 角色
-你是一位资深的 SEO 内容策略师。你的大纲将被写手严格按照执行。
+## 角色：
+你是一位经验丰富的内容策略师和主题专家，专注于创作符合Google Helpful Content和E-E-A-T原则的高质量、高价值 {language} 内容。
 
-{specific_block}
+## 核心任务：
+为核心主题{main_keyword} 和 {secondary_keyword} 推断出的用户核心查询/主题]" 创建一份详细、实用且以用户为中心的 {language} 文章大纲。最终目标是创作出能真正帮助目标受众、解答他们疑问、提供独特价值，并让他们读后感到满意的内容。
+这个文章的主题必须是：{topic}
+这个文章的预估总字数应该是{wordcounts}
 
-## 核心关键词
-- **主关键词(文章核心,标题/H1/全文都围绕它)**: {main_keyword}
-- **次关键词(辅助)**: {secondary_keyword}
-- **主题**: {topic}
-- **预估总字数**: {wordcounts}(合格区间 {wc_min}-{wc_max})
-- **建议 H2 主章节数**: {h2_count}
+## 输入信息：
+1.  **核心关键词：** `{main_keyword}`
+2.  **次要关键词/相关概念：** `{secondary_keyword}` (用于拓宽和深化内容角度)
+3.  **大致篇幅指导：** 文章旨在提供全面且深入的信息，预估篇幅约为 `{wordcounts}` 字。
 
+你还需要遵循这个特殊要求：{specific}(如果特殊要求为空或者没有的情况下，忽略这一要求,如果这个需求不为空，以这个要求为最高需求，和其他指令冲突时以这个指令为准。
+
+{product_context}
 {image_context}
+{reddit_context}
+
+## 大纲核心要求 (深度融合 Helpful Content & E-E-A-T):
+
+1.  **以用户为中心 & 满足核心意图 (People-First & Intent Fulfillment):**
+    * **快速解答核心问题：** 大纲的开篇部分（如引言或第一主要章节）必须直接、清晰地回应用户最可能关心的核心问题（基于上述意图分析）。避免不必要的冗长引入。
+    * **逻辑清晰的用户旅程：** 设计一个自然的、符合用户思考路径的内容流。结构应引导读者从基础认知到深入理解，最终有效满足其搜索意图，让用户读完感觉"问题解决了"。
+    * **全面性与实质性内容 (Completeness & Substance):** 确保大纲覆盖了用户围绕该主题可能关心的所有关键方面，提供足够深入、实质性的信息，避免内容过于肤浅或遗漏关键点。
+
+2.  **原创性 & 显著附加价值 (Originality & Significant Added Value):**
+    * **超越参考，创造独特：** 大纲中必须明确规划出 **至少1-2个核心部分**，其目标是提供现有高排名内容（见下文参考）**所缺乏的独特价值**。这可以是：**原创的深入分析、独特的视角/观点、第一手经验的详细分享（非简单提及）、具体的案例研究、实用的、非泛泛而谈的操作步骤、或者对现有信息的批判性整合与提炼**。请在这些部分明确标注其【独特价值点】。
+    * **避免同质化：** 除非能提供显著不同的解释、更深层次的洞察或更新的信息，否则应避免重复参考内容中已经泛滥且无新意的信息点。
+
+3.  **体现E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness):**
+    * **经验 (Experience - E):** 在主题适用的情况下（例如产品使用、服务体验、问题解决过程、地点探访等），在大纲中明确规划出需要融入**具体、生动的第一手经验**的部分。标注：`[E-E-A-T提示：此处需融入详细的第一手经验]`。
+    * **专业性 (Expertise - E):** 规划展示对主题**深度理解和专业知识**的部分，例如：深入的原理解释、对复杂概念的清晰拆解、专业的对比分析、行业背景或趋势解读等。
+    * **权威性 (Authoritativeness - A):**
+        * **关键事实与数据支撑：** 对于涉及事实、数据、统计的论点，在相应大纲节点下，简要列出需要包含的**核心事实或数据要点**（可从参考内容提炼，但鼓励验证其时效性或寻找更优来源）。标注：`[E-E-A-T提示：需包含事实/数据 - 说明具体内容，如：市场份额数据、关键统计年份等]`。
+    * **可信度 (Trustworthiness - T):**
+        * **准确、无误导的标题：** 大纲中的各级标题应清晰、准确地反映该部分内容，避免使用夸张、耸人听闻或与内容不符的标题（Clickbait）。
+        * **信息呈现优化（图表/列表）：** 识别大纲中至少一个适合通过**图表、表格、项目列表或步骤列表**等可视化或结构化形式呈现复杂信息、对比数据或操作流程的部分，以提高清晰度和用户体验。标注：`[E-E-A-T提示：建议使用图表/表格/列表展示 - 说明展示内容]`。
+
+4.  **避免"搜索引擎优先"的陷阱 (Avoid Search Engine-First Content):**
+    * **自然融入关键词：** `{main_keyword}` 和 `{secondary_keyword}` 应在文中**自然、有意义地使用**，作为表达相关概念的一部分，特别是在标题和讨论核心主题的部分。**无需强制规定每个段落的出现次数**，重点是语义相关和阅读流畅性。确保整体内容紧密围绕这些核心概念展开即可（例如，全文自然出现5次以上通常是合理的，但不必刻意追求）。
+    * **价值驱动的结构与深度：** 大纲的结构（章节数量、层级）和各部分的详略程度应由**内容的逻辑、用户需求和信息的重要性**决定，而非固定的段落数或字数分配。
+
+## 输出格式要求：
+
+1.  **文章标题 (Title):** 提供1-2个建议的 {language} 标题，要求：吸引点击 (High CTR)，准确反映核心内容和用户价值，自然包含核心关键词。
+2.  **目标受众与语言风格 (Audience & Tone):** 基于之前的分析，用1-2句话明确描述目标受众画像，并据此建议最合适的语言风格（例如：面向初学者的通俗易懂、面向专业人士的严谨精确、友好对话式、客观中立的教学式等）。
+3.  **内容大纲 (Outline):**
+    * 使用层级清晰的Markdown格式（例如 H1, H2, H3...）。
+    * **H1:** 应为最终采纳的文章标题。
+    * **H2 (主要章节):** 每个H2下应有简短说明，阐述该章节的**核心目的 (Purpose)** 和**为用户提供的关键价值 (Value for User)**。
+    * **H3 (及以下子节):** 具体的论点、信息点、步骤等。
+    * **篇幅/重要性指导:** 在每个H2章节旁，用括号标注其大致重要性或建议的深度（例如：(核心章节，需深度阐述)、(关键补充，中等篇幅)、(背景信息，简要介绍)），替代固定字数。
+    * **嵌入E-E-A-T提示:** 在大纲的相应位置，清晰地插入之前定义的各种 `[E-E-A-T提示：...]` 标注。
+    * **确保逻辑流畅:** 整体结构应能有效引导用户，从引出问题到深入分析再到提供解决方案或结论。
+4.  核心关键词等不需要进行特殊的样式处理，保持和正文一致就可以
+5.  确保文章最后的链接只给到前文的推荐产品上，不要给其他网站任何链接。
+
+你必须在大纲的每一大段中告知这段的具体写作需求。
+你不需要在文章中增加FAQ的部分。
+在每一大段之后告知这段要写预估多少字！
+
+不需要考虑写meta description，不需要写meta title。
+
+不要采用"I"作为第一人称，需要的时候采用"We"
+
+思考每一段可以用什么样的格式展示更清晰易懂，避免让文章出现多段纯文字摞在一起的情况。
+大纲要求文章每段可以多使用富文本格式，多使用富文本格式（如列表、表格、粗体、斜体）目的是易于读者阅读，结构清晰。
+注意，不要设计任何内部或者外部链接！
+注意，不要设计任何内部或者外部链接！
+注意，不要设计任何内部或者外部链接！
+注意，不要设计任何内部或者外部链接！
 
 ---
 
-## ⚠️ 必须严格遵守的两条硬性结构约束
-
-### 硬约束 1: 所有 H1/H2/H3 标题必须是疑问句
-- **H1 主标题**: 8-15 个英文单词,围绕主关键词
-- **H2/H3 子标题**: 简洁问句,4-7 个英文单词以内
-
-### 硬约束 2: 黄金答案句(每个 H2/H3 下方必须规划)
-- 紧跟标题之后的第一句话必须用 1-2 句直接回答标题提出的问题
-- 在大纲中标注: `[黄金答案句:......]`
-- 文章正文除此之外不使用粗体
+## 参考的高排名内容 (用于理解、补充和超越)：
+`{main_search_results}`
+`{secondary_search_results}`
+**重要使用说明：** 这些内容仅供您**理解当前已存在的信息格局、识别用户可能未被满足的需求（信息缺口）、提取可验证的事实与数据、以及寻找可引用的权威来源**。您的核心任务是基于这些理解，**创造出更新颖、更深入、更实用、或提供更独特视角的内容**，从而实现显著的附加价值。**严禁直接复制、简单改写或仅仅对这些内容进行摘要总结。**
 
 ---
+**请直接用 {language} 输出完整大纲，不要添加任何额外的解释或开场白。**"""
 
-## 其他方面全部自由发挥
 
----
+# 推荐产品上下文（用户原版：三档详细度，由 Tavily/Exa 抓产品页得到信息）
+PRODUCT_DETAIL_LEVELS = {
+    "简短提及": "在文章中自然地简短提及产品，1-2句话即可",
+    "中等介绍": "在相关章节中用3-4句话介绍产品的主要优势和特点",
+    "详细介绍": "专门设置一个小节，用5-7句话详细介绍产品的功能、优势和适用场景",
+}
+DEFAULT_PRODUCT_LEVEL = "中等介绍"
 
-## 字数分配
-- 在每个 H2 下标注 `[预估字数: XXX 字]`
-- 各章节字数加起来接近 {wordcounts}
+PRODUCT_CONTEXT = """
 
----
+## 产品推荐要求：
+- 产品名称：{product_title}
+- 产品URL：{product_url}
+- 产品信息：{product_content}
+- 推荐详细程度：{level} - {level_instruction}
 
-## 大纲格式
-1. **文章标题 (H1)**: 1-2 个候选,8-15 个英文单词,围绕主关键词,**无年份**
-2. **目标受众与语言风格**: 1-2 句话
-3. **内容大纲**: Markdown 格式 (H1, H2, H3)
-4. **结尾**: 行动建议或行业展望收尾
-
----
-
-## 严格约束
-- 严禁出现年份(2024/2025/2026 等)
-- 不需要 FAQ 部分
-- 不需要 meta description 和 meta title
-
----
-
-## 红海参考(避开同质化)
-
-{main_search_results}
-
-{secondary_search_results}
-
-严禁直接复制这些内容。
-
-{specific_reminder}
-
----
-
-请用中文输出完整大纲(便于用户审批),但所有 H1/H2/H3 标题本身必须用 {language} 书写(因为标题会直接用于最终文章)。不要添加任何额外解释或开场白。
+请在大纲中合适的位置规划产品推荐内容，确保与文章主题自然融合。标注：[产品推荐：此处需要融入产品介绍和链接]
 """
+
+# 正文写作时的产品指令（与大纲那份不同：这里要求真的写出锚文本链接）
+PRODUCT_INSTRUCTIONS = """
+
+## 产品推荐具体要求：
+- 产品名称：{product_title}
+- 产品URL：{product_url}
+- 在文章中自然地融入产品推荐，使用Markdown锚文本格式
+- 推荐详细程度：{level}
+- 确保产品推荐与文章内容自然衔接，不要显得突兀
+"""
+
+# Reddit 真实讨论上下文（可选）：让大纲能吃到"真人到底在抱怨什么"
+REDDIT_CONTEXT = """
+## 社媒真实讨论（Reddit，用于挖未被满足的需求）
+{reddit}
+**使用说明：** 这是真实用户的原话。请从中识别 **高频痛点、被反复问但没被好好回答的问题、以及现有内容普遍忽略的角度**，
+并在大纲里至少规划一个专门回应它们的章节（标注【独特价值点】）。严禁直接复制原话。
+"""
+
 
 IMAGE_CONTEXT = """
 ## 图片配图规划
@@ -277,117 +331,98 @@ IMAGE_INSTRUCTION = """
 总数恰好 {images_per_article} 张
 """
 
-ARTICLE_PROMPT = """# 任务: 根据大纲撰写 {language} SEO 文章
+ARTICLE_PROMPT = """你为{main_keyword}关键词写SEO文章
 
-{specific_block}
+你需要知道写到这个字数：{wordcounts}
 
-## 关键词配置
-- **主关键词(文章核心)**: {main_keyword}
-- **次关键词**: {secondary_keyword}(自然出现 2-3 次)
+不要超过这个字数的30%以上！！！！
 
-## 基本参数
-- 主题: {topic}
-- 目标字数: {wordcounts}
-- 输出语言: {language}
+你的写作风格是简练，高信息密度，具备第一手经验的行业专家。你输出{language}。
 
-## 必须严格遵循的大纲
-{outline}
+你严格遵从这个大纲：{outline}同时 遵守特殊要求：{specific}
 
-## 可参考的搜索结果(仅用于事实补充,不要直接复制)
-{main_search_results}
+{product_instructions}
 
-{secondary_search_results}
+目前的这个关键词的排名靠前的内容供你参考:{main_search_results}{secondary_search_results}
 
----
+把大纲中的属于你负责段落的事实性内容自然的融入。
 
-## 字数控制
-- 目标: {wordcounts},下限 {wc_min},上限 {wc_max}
-- 宁可写长也不要写短
+你输出的总字数应该在{wordcounts}左右。
 
----
+遵从大纲中的语言风格进行写作。遵从大纲中对关键词出现次数的需求。
 
-## 硬性结构约束
-### 硬约束 1: 所有 H1/H2/H3 标题必须是疑问句
-### 硬约束 2: 黄金答案句 — 每个 H2/H3 下第一句用 `**...**` 粗体,正文其他部分不用粗体
+你输出干净的可以直接发布的文本，所有不要有任何不适合发布的解释性内容。
 
----
+不要采用"I"作为第一人称，需要的时候采用"We"
 
-## 通用禁止事项
-- 严禁出现年份
-- 禁止 FAQ 格式
-- 禁止外部链接(特殊要求中明确指定的链接除外)
-- 直接从 H1 标题开始,不要前言
+输出Markdown格式
 
+核心关键词等不需要进行特殊的样式处理，保持和正文一致就可以
+
+如果有的数据非常适合使用图表展示，建立图表，否则就不要建立。
+
+直接开始正文
+
+H2及以下的子标题不要过长，最好控制在五个英文单词以内。
+H1文章标题可以更完整，充分体现文章核心内容和关键词。
+
+不要在正文中使用加粗的markdown标记。
 {image_instruction}
-
-{specific_reminder}
-
----
-
-**现在,直接用 {language} 输出完整文章正文(Markdown 格式),从 H1 标题开始。**
-"""
+直接输出结果，不要添加任何的解释或说明。"""
 
 
-# ============================================================
-# 润色（独立环节，写完之后单独跑）
-# ============================================================
-# 目标是"美国 12 年级学生能读懂"：Flesch-Kincaid 年级 9-12。
-# 不往更低压 —— 压太低会把专业内容写成小学作文，反而伤 SEO 与可信度。
-POLISH_PROMPT = """# 任务: 把下面这篇 {language} 文章润色到"美国 12 年级学生能读懂"的水平
+POLISH_PROMPT = """**Task: Rewrite the following text in {language}.**
 
-## 角色
-你是一位擅长把专业内容写得好读的编辑。你只改表达,不改事实、不改结构。
+你的目标是让文章使12年纪学生可以流利阅读。 Use clear, accessible vocabulary for a general audience.
 
-## 可读性目标(核心)
-- 目标 Flesch-Kincaid 阅读年级: **9-12**(高中生能顺畅读完)
-- 不要压到 9 以下 —— 过度简化会让专业内容显得幼稚,反而降低可信度
-
-## 具体手法
-1. 拆长句: 超过 25 个词的句子拆成两三句。一句话只讲一件事
-2. 换词: 能用常见词就不用生僻词/学术词(utilize→use, facilitate→help)
-3. 主动语态优先: 被动句改成"谁做了什么"
-4. 术语必须解释: 第一次出现的行业术语、缩写,就地用一个短句说清楚
-5. 删冗余: 去掉套话、同义反复、"值得注意的是"这类废话铺垫
-6. 段落变短: 一段不超过 4 句
-
-## ‼️ 必须原样保留(改动这些等于毁掉这篇文章)
-1. **所有 H1/H2/H3 标题保持疑问句**,数量、顺序、层级都不能变(用词可微调,语义不能变)
-2. **每个 H2/H3 下面的第一句黄金答案句仍然用 `**...**` 粗体**,正文其他地方不许出现粗体
-3. **`[IMAGE: ...]` 占位符一字不改,位置不动**
-4. **Markdown 链接 `[锚文本](URL)` 全部保留**,URL 不能改
-5. 表格、列表等 Markdown 结构保留
-6. 严禁出现年份
-7. 输出语言仍然是 {language}
-
-## 字数
-原文约 {actual} 词,润色后保持在 {wc_min}-{wc_max} 之间。是改写不是缩写,不要删内容,把话说清楚就行。
-
-## 原文
+**Original Text (in {language}):**
 {article}
 
----
+**Instructions:**
+1.  **Output Language: Strictly use {language}.** Do not switch to English or any other language.
+2.  **Preserve Structure — this is the hardest rule:** Keep EVERY markdown heading exactly as it is.
+    Same count, same level (`#`, `##`, `###`), same order, same position. Do not delete a single one,
+    do not demote or promote levels, do not merge sections. Keep the original paragraph breaks too.
+3.  **Retain Keywords:** Keep the keywords "{main_keyword}" and "{secondary_keyword}" in the text.
+4.  **Keep Elements:** Preserve any links, tables and list items from the original text.
+5.  **Format:** Output in clean Markdown format. Keep all existing headings (rule 2);
+    just do not wrap the KEYWORDS themselves in headings or bold — the keywords stay as plain body text.
+6.  **句式节奏：使用长短交错的句式** —— 不是严格一长一短，而是让长句与短句自然交替出现：
+    用短句制造停顿和强调，用长句承载完整的因果与条件。避免通篇长度相近的句子，那读起来像机器写的。
+{preserve_instructions}
 
-**直接输出润色后的完整文章(Markdown),从 H1 标题开始,不要任何解释或开场白。**
-"""
+**Begin rewriting in {language} directly. Do not add any explanations or introductory phrases.**"""
+
+# 保留链接的附加指令（有产品链接时才加）
+POLISH_PRESERVE_LINKS = "7.  **Preserve all links.**"
+
+# 第一次润色破坏了结构时追加的强制指令
+POLISH_STRICT_RETRY = """
+
+---
+⚠️ YOUR PREVIOUS ATTEMPT DELETED MARKDOWN HEADINGS. That is a fatal error.
+Before you output, copy every heading line from the original text verbatim
+(`# ...`, `## ...`, `### ...`) into your output at the same position, in the same order.
+Rewrite only the paragraphs BETWEEN headings. The heading lines themselves must appear
+in your output unchanged. Count them before you finish: the number of `##` lines in your
+output must equal the number in the original."""
 
 
 # ============================================================
 # SEO 元数据
 # ============================================================
-SEO_PROMPT = """根据下面的文章内容,输出 {language} 的 SEO Title 和 Description。
+SEO_PROMPT = """根据我给你的文章内容，输出 {language} 的SEO Title和Description。
 
-- **文章主标题 H1**: {h1}
-- **核心关键词**: {main_keyword}
-- **文章开头节选**: {excerpt}...
+要求：
+- Title: 少于70字符，吸引人点击，必须包含关键词"{main_keyword}"
+- Description: 少于170字符，准确描述文章内容，必须包含关键词"{main_keyword}"
+请严格按照以下格式输出（不要添加任何其他内容）：
 
-Title: 少于 70 字符,包含 "{main_keyword}"
-Description: 少于 170 字符,包含 "{main_keyword}"
-禁用开头词: Discover / Uncover / Unlock / Explore / Dive into / Delve into
-严禁出现年份
-
-输出格式:
 Title: [你的标题]
 Description: [你的描述]
-"""
+
+不要提及年份，需要非常吸引读者点开，避免俗套的题目，例如ultimate，guide这种词都要避免
+
+这是文章：{excerpt}..."""
 
 BANNED_DESC_STARTS = ["discover", "uncover", "unlock", "explore", "dive into", "delve into"]

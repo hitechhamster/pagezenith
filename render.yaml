@@ -1,23 +1,25 @@
-# Render Blueprint。在 Render 上 New + → Blueprint，连这个仓库即可。
-# Chromium 吃内存，用 standard（≥2GB）；free/starter 会 OOM。
+# Render Blueprint（保留可用，但 2026-08 起主部署在自有服务器上：
+# 卡密库是 SQLite，需要持久盘；Render 免费/入门盘易失。见 README「部署」。
 services:
   - type: web
-    name: seo-tools
+    name: pagezenith
     runtime: docker
-    plan: standard
+    plan: starter          # 不再需要 standard —— 已砍掉 Chromium
     healthCheckPath: /api/seo-gap/health
+    disk:
+      name: data
+      mountPath: /data     # 卡密/用量/生成结果都在这里
+      sizeGB: 1
     envVars:
       - key: USE_MOCKS
         value: "false"
       - key: SERP_PROVIDER
-        value: serpapi
-      - key: BROWSER_CHANNEL          # 容器内用 Playwright 自带 Chromium
-        value: ""
-      - key: FETCH_MODE               # 服务器 IP 干净，浏览器抓取过反爬最稳
-        value: browser
-      - key: LLM_MODEL
-        value: google/gemini-3.1-flash-lite
+        value: serper
+      - key: FETCH_MODE
+        value: httpx
+      - key: BILLING_DB
+        value: /data/billing.db
       - key: MAX_CONCURRENT_RUNS
         value: "2"
-      # 用户自带 key（前端传入），服务器无需配 OpenRouter/SerpApi key。
-      # 如需服务器兜底 key 做演示，在 Render 控制台把它们设为 Secret，别写进本文件。
+      # 三个付费 key 在 Render 控制台设为 Secret，别写进本文件：
+      # OPENROUTER_API_KEY / SERPER_KEY / EXA_KEY

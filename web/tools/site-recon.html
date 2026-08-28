@@ -29,10 +29,13 @@
 <div class="nav">
   <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
   <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a>
+  <button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 <div class="wrap">
   <h1 style="font-size:22px;margin:0 0 4px">站点情报侦察</h1>
-  <div class="sub">输入任意网址，检测建站平台、是否 Shopify（含主题/产品/价格情报）、域名年龄与首次上线、营销技术栈、联系方式。无需 API Key。</div>
+  <div class="sub">输入任意网址，检测建站平台、是否 Shopify（含主题/产品/价格情报）、域名年龄与首次上线、营销技术栈、联系方式。</div>
   <div class="bar">
     <input id="url" placeholder="https://example.com" />
     <button id="run">检测</button>
@@ -41,6 +44,7 @@
   <div id="report"></div>
 </div>
 
+<script src="/shared/keys.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};

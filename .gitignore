@@ -21,3 +21,12 @@ Thumbs.db
 
 # 本地开发助手（含机器特定路径）
 .claude/launch.json
+
+# 🚨 卡密相关：明文卡号与余额库绝不能进仓库
+#    造卡脚本输出的 CSV 里是**可直接使用的明文卡号**，提交 = 白送点数
+cards-*.csv
+*cards*.csv
+data/
+*.db
+*.db-wal
+*.db-shm

@@ -8,6 +8,8 @@ SEO 元数据 →（可选）配图。大纲和正文都是流式产出，router
 
 from __future__ import annotations
 
+import logging
+
 import asyncio
 import logging
 import re
@@ -117,6 +119,18 @@ def _h2_count(wordcounts: int) -> str:
 # --------------------------------------------------------------------------- #
 # 工作流
 # --------------------------------------------------------------------------- #
+def _product_instructions(ctx: dict[str, Any]) -> str:
+    """正文里的产品推荐指令。没填产品就返回空串（prompt 里那一段直接消失）。"""
+    url = (ctx.get("product_url") or "").strip()
+    if not url:
+        return ""
+    return P.PRODUCT_INSTRUCTIONS.format(
+        product_title=ctx.get("product_title") or "the product",
+        product_url=url,
+        level=ctx.get("product_level") or P.DEFAULT_PRODUCT_LEVEL,
+    )
+
+
 class SEOWriter:
     def __init__(self, settings: Settings, llm: LLM, search_provider: str = "tavily"):
         self.s = settings
@@ -147,6 +161,55 @@ class SEOWriter:
         )
         return main, sec
 
+    # ------------------------------------------------------- 社媒（Reddit）
+    async def reddit_context(self, main_keyword: str, limit: int | None = None) -> str:
+        """抓 Reddit 上关于这个关键词的真实讨论（帖子 + 高赞评论）。
+
+        为什么值得单独跑一路：全网搜索拿到的是**已经写好的竞品文章**，
+        它们彼此高度同质；Reddit 拿到的是**真人原话** —— 高频痛点、
+        被反复问却没人好好回答的问题，正是"独特价值点"的来源。
+        成本极低（搜索侧不计费），失败也不阻断流程。
+        """
+        try:
+            from ..seo_gap.clients.reddit import RedditClient
+            threads = await RedditClient(self.s).collect(main_keyword, limit=limit)
+        except Exception as exc:  # noqa: BLE001  社媒拿不到不该拖垮整篇文章
+            logger.warning("Reddit 抓取失败（已跳过）: %s", exc)
+            return ""
+        if not threads:
+            return ""
+        per = max(800, self.s.reddit_max_chars_per_thread // 2)
+        blocks = [t.as_text(per) for t in threads[: self.s.reddit_max_threads]]
+        return "\n\n---\n\n".join(b for b in blocks if b.strip())
+
+    # ------------------------------------------------------------ 产品信息
+    async def product_info(self, url: str) -> dict[str, str]:
+        """抓推荐产品页正文（原版用 Tavily extract，这里改 Serper /scrape）。"""
+        url = (url or "").strip()
+        if not url:
+            return {}
+        if self.s.use_mocks:
+            return {"title": "Mock Product", "content": "（mock 产品正文）", "url": url}
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
+                                         proxy=self.s.proxy_for("serper")) as c:
+                r = await c.post(f"{self.s.serper_base_url}/scrape",
+                                 headers={"X-API-KEY": self.s.serper_key,
+                                          "Content-Type": "application/json"},
+                                 json={"url": url})
+                r.raise_for_status()
+                j = r.json()
+            text = (j.get("text") or "")[:1000]
+            title = ((j.get("metadata") or {}).get("title")
+                     or (j.get("metadata") or {}).get("og:title") or "")
+            if not text:
+                return {}
+            return {"title": title, "url": url, "content": text}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("产品页抓取失败（已跳过）: %s", exc)
+            return {}
+
     # ------------------------------------------------------------ 主题分类
     async def classify_topic_type(self, main_keyword: str, topic: str) -> str:
         raw = await self.llm.complete(
@@ -161,8 +224,23 @@ class SEOWriter:
 
     # -------------------------------------------------------------- 大纲
     def outline_prompt(self, ctx: dict[str, Any]) -> str:
-        wc = ctx["wordcounts"]
+        """组装大纲 prompt（2026-08 换成用户实际在用的 EEAT 版）。
+
+        与旧版的差异：{specific} 直接注入（空则 prompt 内部自行忽略）、
+        新增 {product_context}/{reddit_context}、不再需要 wc_min/h2_count。
+        """
         specific = (ctx.get("specific") or "").strip()
+        reddit = (ctx.get("reddit_context") or "").strip()
+        product_block = ""
+        if (ctx.get("product_url") or "").strip():
+            lvl = ctx.get("product_level") or P.DEFAULT_PRODUCT_LEVEL
+            product_block = P.PRODUCT_CONTEXT.format(
+                product_title=ctx.get("product_title") or "Unknown",
+                product_url=ctx["product_url"],
+                product_content=(ctx.get("product_content") or "")[:500],
+                level=lvl,
+                level_instruction=P.PRODUCT_DETAIL_LEVELS.get(lvl, P.PRODUCT_DETAIL_LEVELS[P.DEFAULT_PRODUCT_LEVEL]),
+            )
         image_context = ""
         if ctx.get("enable_images"):
             image_context = P.IMAGE_CONTEXT.format(
@@ -170,12 +248,12 @@ class SEOWriter:
                 image_style_hint=P.get_type_profile(ctx["topic_type"])["image_style_hint"])
         return P.OUTLINE_PROMPT.format(
             language=ctx["language"],
-            specific_block=P.SPECIFIC_BLOCK.format(specific=specific) if specific else "",
-            specific_reminder=P.SPECIFIC_REMINDER_OUTLINE.format(specific=specific) if specific else "",
-            main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
-            topic=ctx["topic"], wordcounts=wc,
-            wc_min=int(wc * 0.85), wc_max=int(wc * 1.15), h2_count=_h2_count(wc),
+            specific=specific,
+            product_context=product_block,
+            reddit_context=P.REDDIT_CONTEXT.format(reddit=reddit) if reddit else "",
             image_context=image_context,
+            main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
+            topic=ctx["topic"], wordcounts=ctx["wordcounts"],
             main_search_results=ctx.get("main_search", ""),
             secondary_search_results=ctx.get("sec_search", ""),
         )
@@ -207,10 +285,10 @@ class SEOWriter:
 
         return P.ARTICLE_PROMPT.format(
             language=ctx["language"],
-            specific_block=P.SPECIFIC_BLOCK.format(specific=specific) if specific else "",
-            specific_reminder=P.SPECIFIC_REMINDER_ARTICLE.format(specific=specific) if specific else "",
+            specific=specific or "（无）",
+            product_instructions=_product_instructions(ctx),
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
-            topic=ctx["topic"], wordcounts=wc, wc_min=int(wc * 0.9), wc_max=int(wc * 1.4),
+            wordcounts=wc,
             outline=ctx.get("outline", ""),
             main_search_results=ctx.get("main_search", ""),
             secondary_search_results=ctx.get("sec_search", ""),
@@ -221,12 +299,43 @@ class SEOWriter:
         return self.llm.stream(self.article_prompt(ctx), task="article")
 
     # -------------------------------------------------------------- 润色
-    def stream_polish(self, ctx: dict[str, Any], article: str) -> AsyncIterator[str]:
+    @staticmethod
+    def polish_broke_structure(before: str, after: str) -> str:
+        """润色是否破坏了结构？返回空串=没问题，否则返回人话原因。
+
+        只查**可数且必须守恒**的东西 —— 标题层级数、表格、链接、图片占位符。
+        字数和句子当然会变，那是润色的本职。"""
+        def counts(md: str) -> dict[str, int]:
+            return {
+                "H1": len(re.findall(r"^#\s", md, re.M)),
+                "H2": len(re.findall(r"^##\s", md, re.M)),
+                "H3": len(re.findall(r"^###\s", md, re.M)),
+                "表格行": md.count("\n|"),
+                "链接": len(re.findall(r"\[[^\]]+\]\(https?://", md)),
+                "图片占位符": len(IMAGE_TAG.findall(md)) if IMAGE_TAG else 0,
+            }
+        b, a = counts(before), counts(after)
+        bad = []
+        for k in ("H1", "H2", "H3"):
+            if a[k] < b[k]:                      # 只罚"丢失"，多了不算错
+                bad.append(f"{k} 从 {b[k]} 个变成 {a[k]} 个")
+        for k in ("表格行", "链接", "图片占位符"):
+            if b[k] and a[k] < b[k] * 0.8:       # 允许小幅波动（表格行会因换行差一两行）
+                bad.append(f"{k} 从 {b[k]} 掉到 {a[k]}")
+        return "；".join(bad)
+
+
+    def stream_polish(self, ctx: dict[str, Any], article: str,
+                      strict: bool = False) -> AsyncIterator[str]:
         """独立环节：整篇改写到「美国 12 年级学生能读懂」，结构一律不动。"""
-        actual = count_words(article)
         prompt = P.POLISH_PROMPT.format(
-            language=ctx.get("language", "English"), article=article, actual=actual,
-            wc_min=int(actual * 0.9), wc_max=int(actual * 1.15))
+            language=ctx.get("language", "English"), article=article,
+            main_keyword=ctx.get("main_keyword", ""),
+            secondary_keyword=ctx.get("secondary_keyword", ""),
+            preserve_instructions=(P.POLISH_PRESERVE_LINKS
+                                   if (ctx.get("product_url") or "").strip() else ""))
+        if strict:
+            prompt += P.POLISH_STRICT_RETRY
         return self.llm.stream(prompt, task="polish")
 
     # ----------------------------------------------------------- SEO 元数据
@@ -235,7 +344,7 @@ class SEOWriter:
         clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", article or "")
         clean = IMAGE_TAG.sub("", clean)[:1000]
         prompt = P.SEO_PROMPT.format(
-            language=language, h1=h1 or "(未提取到)", main_keyword=main_keyword, excerpt=clean)
+            language=language, main_keyword=main_keyword, excerpt=clean)
 
         seo: dict[str, str] = {}
         for _ in range(2):

@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ..seo_gap.clients.browser_fetch import BrowserFetcher
 from ..seo_gap.config import Settings, get_settings
 from ..seo_gap.security import assert_safe_url
 from .models import AgeInfo, ReconReport, ShopifyInfo
@@ -54,7 +53,12 @@ async def fetch_main(url: str, s: Settings):
         r = await _get(c, url)
     if r is not None and r.status_code < 400 and len(r.text) > 200:
         return r.text, {k.lower(): v for k, v in r.headers.items()}, str(r.url)
-    # 反爬 → 浏览器抓 HTML（无 headers）
+    # 反爬 → 退回浏览器抓 HTML。2026-08 起服务器默认不装 Playwright（内存有限），
+    # 惰性导入 + 装不上就老实返回空，让上层报"抓不到"而不是整个服务崩掉。
+    try:
+        from ..seo_gap.clients.browser_fetch import BrowserFetcher
+    except ImportError:
+        return "", {}, url
     bf = BrowserFetcher(s)
     try:
         page = await bf.fetch(url)

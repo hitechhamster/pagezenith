@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>我的记录 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .sub{color:var(--muted);font-size:14px;margin:0 0 20px;max-width:60ch;line-height:1.7}
+  .balance{display:flex;gap:22px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius-lg);padding:16px 20px;margin-bottom:22px}
+  .balance .b{min-width:88px}
+  .balance .k{font-size:12px;color:var(--muted);margin-bottom:3px}
+  .balance .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+  .balance .v.accent{color:var(--accent)}
+  .tabs{display:flex;gap:6px;margin-bottom:14px}
+  .tabs button{background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer}
+  .tabs button.on{background:var(--accentsoft);border-color:var(--accent);color:var(--accent)}
+  .item{display:flex;gap:14px;align-items:baseline;padding:13px 16px;border:1px solid var(--line);
+    border-radius:10px;background:var(--card);margin-bottom:8px;cursor:pointer;transition:border-color .15s}
+  .item:hover{border-color:var(--accent)}
+  .item .t{flex:1;font-size:14px;color:var(--text);line-height:1.5}
+  .item .s{font-size:12px;color:var(--muted);margin-top:2px}
+  .item .d{font-size:12px;color:var(--faint);white-space:nowrap}
+  .item .tag{font-size:11px;color:var(--accent);background:var(--accentsoft);border-radius:6px;
+    padding:2px 8px;white-space:nowrap}
+  .empty{color:var(--faint);font-size:14px;padding:30px 0;text-align:center}
+  .urow{display:flex;gap:14px;align-items:baseline;padding:9px 4px;border-bottom:1px solid var(--line);font-size:13px}
+  .urow .c{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .urow .c.plus{color:var(--muted)}
+  .urow .refunded{color:var(--muted);text-decoration:line-through}
+  #viewer{display:none;position:fixed;inset:0;z-index:40}
+  #viewer .vbg{position:absolute;inset:0;background:rgba(27,30,24,.45)}
+  #viewer .vcard{position:relative;max-width:860px;margin:5vh auto;height:88vh;display:flex;flex-direction:column;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px 24px;box-shadow:0 18px 50px rgba(0,0,0,.2)}
+  #viewer .vh{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  #viewer .vh .vt{font-family:var(--font-display);font-size:18px;font-weight:600;flex:1}
+  #viewer .vbody{flex:1;overflow:auto;font-family:var(--font-read);line-height:1.85;font-size:15px}
+  #viewer .vbody h1,#viewer .vbody h2,#viewer .vbody h3{font-family:var(--font-display);margin:1.2em 0 .5em}
+  #viewer .vbody pre{white-space:pre-wrap;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="nav">
+  <a class="logo" href="/" style="text-decoration:none">PZ</a><div class="brand">PageZenith</div>
+  <div class="grow"></div>
+  <a class="keybtn" href="/" style="text-decoration:none;margin-right:8px">回工具</a>
+  <button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
+</div>
+
+<div class="wrap">
+  <h1 style="font-size:28px;margin:26px 0 8px">我的记录</h1>
+  <p class="sub">卡密即身份 —— 余额、消费流水、生成结果都跟着这张卡走。换台电脑输入同一张卡，东西都在。
+    生成结果保留最近 50 条 / 90 天。</p>
+
+  <div class="balance" id="balance"><div class="empty" style="padding:6px 0">输入卡密后显示余额</div></div>
+
+  <div class="tabs">
+    <button id="tabResults" class="on">生成记录</button>
+    <button id="tabUsage">消费流水</button>
+  </div>
+  <div id="list"><div class="empty">请先在右上角输入卡密。</div></div>
+</div>
+
+<div id="viewer">
+  <div class="vbg" onclick="closeViewer()"></div>
+  <div class="vcard">
+    <div class="vh">
+      <div class="vt" id="vTitle"></div>
+      <button class="btn ghost" id="vCopy">复制</button>
+      <button class="btn ghost" onclick="closeViewer()">关闭</button>
+    </div>
+    <div class="vbody" id="vBody"></div>
+  </div>
+</div>
+
+<script src="/shared/keys.js"></script>
+<script src="/shared/md.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const TOOL_NAME={"seo-writer":"SEO 文章","seo-gap":"内容差距","article-quality":"质量检测",
+                 "reddit-research":"Reddit 选题","outreach":"外链拓客","site-recon":"站点侦察"};
+const ACT_NAME={outline:"大纲",article:"正文",polish:"润色",revise:"改大纲",check:"检测",
+                analyze:"分析",run:"运行",image:"配图"};
+let tab="results", current=null;
+
+function fmt(ts){
+  const d=new Date(ts*1000), p=n=>String(n).padStart(2,"0");
+  return `${d.getMonth()+1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function loadBalance(){
+  if(!CARD.has()){ return; }
+  const b=await CARD.refresh();
+  if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">卡密无效</div>'; return; }
+  $("balance").innerHTML=`
+    <div class="b"><div class="k">剩余点数</div><div class="v accent">${b.remaining}</div></div>
+    <div class="b"><div class="k">已使用</div><div class="v">${b.used}</div></div>
+    <div class="b"><div class="k">卡面总额</div><div class="v">${b.total}</div></div>
+    <div class="b"><div class="k">今日已用</div><div class="v">${b.spent_today}</div></div>
+    ${b.label?`<div class="b"><div class="k">卡种</div><div class="v" style="font-size:16px">${b.label}</div></div>`:""}`;
+}
+
+async function loadList(){
+  if(!CARD.has()){ $("list").innerHTML='<div class="empty">请先在右上角输入卡密。</div>'; return; }
+  $("list").innerHTML='<div class="empty">加载中…</div>';
+  try{
+    if(tab==="results"){
+      const r=await fetch("/api/billing/history"); const j=await r.json();
+      const items=j.items||[];
+      if(!items.length){ $("list").innerHTML='<div class="empty">还没有生成记录。</div>'; return; }
+      $("list").innerHTML="";
+      items.forEach(it=>{
+        const d=document.createElement("div"); d.className="item";
+        d.innerHTML=`<div class="t">${esc(it.title||"(无标题)")}
+            ${it.summary?`<div class="s">${esc(it.summary)}</div>`:""}</div>
+          <div class="tag">${TOOL_NAME[it.tool]||it.tool}</div>
+          <div class="d">${fmt(it.ts)}</div>`;
+        d.onclick=()=>openResult(it.id);
+        $("list").append(d);
+      });
+    }else{
+      const r=await fetch("/api/billing/usage"); const j=await r.json();
+      const items=j.items||[];
+      if(!items.length){ $("list").innerHTML='<div class="empty">还没有消费流水。</div>'; return; }
+      $("list").innerHTML="";
+      items.forEach(u=>{
+        const d=document.createElement("div"); d.className="urow";
+        const refunded=u.status==="refunded";
+        d.innerHTML=`<div class="d" style="color:var(--faint);width:78px">${fmt(u.ts)}</div>
+          <div style="flex:1">${TOOL_NAME[u.tool]||u.tool} · ${ACT_NAME[u.action]||u.action}
+            ${u.tier?`<span style="color:var(--faint)">（${u.tier}）</span>`:""}
+            ${refunded?'<span style="color:var(--muted)">— 已退点</span>':""}</div>
+          <div class="c ${refunded?"refunded":(u.credits?"":"plus")}">${u.credits?("-"+u.credits):"免费"}</div>`;
+        $("list").append(d);
+      });
+    }
+  }catch(e){ $("list").innerHTML='<div class="empty">加载失败：'+esc(e.message)+'</div>'; }
+}
+
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function openResult(id){
+  try{
+    const r=await fetch("/api/billing/result/"+id);
+    if(!r.ok){ CARD.toast("取不到这条记录", true); return; }
+    const j=await r.json(); current=j;
+    $("vTitle").textContent=j.title||"结果";
+    const p=j.payload||{};
+    const text=p.article||p.outline||"";
+    $("vBody").innerHTML = text ? MD.render(text)
+      : "<pre>"+esc(JSON.stringify(p,null,2)).slice(0,20000)+"</pre>";
+    $("viewer").style.display="block";
+  }catch(e){ CARD.toast("打开失败："+e.message, true); }
+}
+function closeViewer(){ $("viewer").style.display="none"; }
+$("vCopy").onclick=()=>{
+  const p=(current&&current.payload)||{};
+  const t=p.article||p.outline||JSON.stringify(p,null,2);
+  navigator.clipboard.writeText(t).then(()=>CARD.toast("已复制"));
+};
+
+$("tabResults").onclick=()=>{tab="results";$("tabResults").classList.add("on");$("tabUsage").classList.remove("on");loadList();};
+$("tabUsage").onclick=()=>{tab="usage";$("tabUsage").classList.add("on");$("tabResults").classList.remove("on");loadList();};
+window.addEventListener("pz-card-updated",()=>{loadBalance();loadList();});
+document.addEventListener("DOMContentLoaded",()=>{ loadBalance(); loadList(); });
+</script>
+</body>
+</html>

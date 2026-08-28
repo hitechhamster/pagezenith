@@ -15,6 +15,7 @@ from .clients.fetch import PageFetcher, looks_blocked
 from .clients.llm import LLMClient
 from .clients.reddit import RedditClient
 from .clients.serpapi import SerpApiClient
+from .clients.serper import SerperClient
 from .clients.tavily import TavilyClient
 from .config import Settings, get_settings
 from .extraction.extractor import Extractor
@@ -57,7 +58,8 @@ class ReportV2Builder:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()
         self.llm = LLMClient(self.s)
-        self.serp = SerpApiClient(self.s)
+        self.serp = (SerpApiClient(self.s) if self.s.serp_provider == 'serpapi'
+                     else SerperClient(self.s))
         self.extractor = Extractor(self.llm, PageFetcher(self.s))
         self.deduper = SemanticDeduper(self.llm)
         self.reddit = RedditClient(self.s)

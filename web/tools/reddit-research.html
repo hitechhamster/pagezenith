@@ -51,7 +51,7 @@
   <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
   <a class="navlink" href="/">← 全部工具</a>
   <div class="grow"></div>
-  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 <div class="wrap" style="max-width:820px">
   <h1 style="font-size:22px;margin:0 0 4px">Reddit 选题研究</h1>
@@ -75,8 +75,8 @@ const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
 const REGION={"us-en":[2840,"en"],"uk-en":[2826,"en"]};
 
-function syncKeyBtn(){ const b=$("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
-syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
+syncKeyBtn(); 
 
 function setStatus(m,e,spin){ const s=$("status"); s.innerHTML=(spin?'<span class="spin"></span>':"")+(m||""); s.className=e?"err":""; }
 
@@ -86,13 +86,13 @@ $("kw").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
 async function run(){
   const kw=$("kw").value.trim();
   if(!kw){ setStatus("请输入关键词。",true); return; }
-  if(!SEOKEYS.hasKeys()){ setStatus("请先设置 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+  if(!CARD.has()){ CARD.toast("请先输入卡密", true); CARD.open(); return; }
   const [location_code,language_code]=REGION[$("region").value];
   $("run").disabled=true; $("out").innerHTML="";
   setStatus("正在从 Reddit 找帖并读取全部评论，再做分析（约 15–30 秒）…",false,true);
   try{
     const resp=await fetch("/api/reddit-research/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keyword:kw,location_code,language_code,...SEOKEYS.get()})});
+      body:JSON.stringify({keyword:kw,location_code,language_code})});
     if(!resp.ok){ const t=await resp.json().catch(()=>({detail:resp.status})); throw new Error(t.detail||resp.status); }
     render(await resp.json());
     setStatus("");

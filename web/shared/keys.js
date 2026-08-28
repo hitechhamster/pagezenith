@@ -1,69 +1,166 @@
 "use strict";
-// 全站共享的 API Key 管理：存浏览器 localStorage，发请求时带上。
-// key 只存在用户本机浏览器，不上传服务器存储。
+/* 卡密管理（2026-08 取代原来的「用户自带 API Key」）。
+ *
+ * 设计要点：
+ * 1. **卡密即身份**：卡号存本机 localStorage，每次请求自动带 X-Card-Key 头。
+ *    不需要注册登录；换台电脑输入同一张卡，余额和历史记录都在。
+ * 2. **fetch 挂钩**：拦截所有 /api/ 请求自动加头 —— 六个工具页原有的 fetch
+ *    代码一行都不用改。401/402/429 也在这里统一提示，省得每页各写一套。
+ * 3. 文件名保留 keys.js、全局仍叫 SEOKEYS：老页面的 <script src> 和
+ *    SEOKEYS.open()/hasKeys() 调用继续可用（内部语义已换成卡密）。
+ */
 (function () {
-  const LS = "seo_tools_keys";
-  const FIELDS = ["openrouter_key", "serpapi_key", "tavily_key", "deepseek_key", "exa_key"];
-  function read() { try { return JSON.parse(localStorage.getItem(LS) || "{}"); } catch (e) { return {}; } }
-  function write(o) { localStorage.setItem(LS, JSON.stringify(o)); }
+  const LS = "pz_card_key";
+  let balance = null;                 // {remaining,total,used} 或 null
 
-  function get() {
-    const k = read(), out = {};
-    FIELDS.forEach(f => out[f] = k[f] || "");
-    return out;
+  const read = () => (localStorage.getItem(LS) || "").trim();
+  const write = (v) => localStorage.setItem(LS, (v || "").trim().toUpperCase());
+
+  /* ---------- 请求挂钩：自动带卡密 ---------- */
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = async function (input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const isApi = url.startsWith("/api/") || url.includes("//") === false && url.startsWith("api/");
+    if (isApi) {
+      init = init || {};
+      const h = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined) || {});
+      const key = read();
+      if (key) h.set("X-Card-Key", key);
+      init.headers = h;
+    }
+    const resp = await rawFetch(input, init);
+    if (isApi && (resp.status === 401 || resp.status === 402)) {
+      // 卡密无效 / 点数不足：统一弹窗，避免每个工具页各写一遍提示
+      resp.clone().json().then(j => toast(j.detail || "请检查卡密", true)).catch(() => {});
+      if (resp.status === 401) openModal();
+      refresh();
+    } else if (isApi && resp.ok) {
+      // 花过点的请求顺手刷一下余额（成本可忽略：一个 GET）
+      if ((init && init.method === "POST") || (typeof input !== "string" && input.method === "POST")) {
+        setTimeout(refresh, 800);
+      }
+    }
+    return resp;
+  };
+
+  /* ---------- 余额 ---------- */
+  async function refresh() {
+    if (!read()) { balance = null; paintBadge(); return null; }
+    try {
+      const r = await rawFetch("/api/billing/balance", { headers: { "X-Card-Key": read() } });
+      balance = r.ok ? await r.json() : null;
+    } catch (e) { balance = null; }
+    paintBadge();
+    window.dispatchEvent(new CustomEvent("pz-card-updated", { detail: balance }));
+    return balance;
   }
-  // 老工具（内容差距分析等）的门槛：OpenRouter + SerpApi。语义不要动，多个页面依赖它。
-  function hasKeys() { const k = get(); return !!(k.openrouter_key && k.serpapi_key); }
-  function hasTavily() { return !!get().tavily_key; }
-  function has(name) { return !!get()[name.endsWith("_key") ? name : name + "_key"]; }
 
+  function paintBadge() {
+    document.querySelectorAll("[data-card-badge]").forEach(el => {
+      if (!read()) { el.textContent = "① 输入卡密"; el.classList.add("warn"); return; }
+      el.classList.toggle("warn", !balance);
+      el.textContent = balance ? `余额 ${balance.remaining} 点` : "卡密无效";
+    });
+    // 兼容老页面的按钮 id
+    const b = document.getElementById("keybtn");
+    if (b) {
+      b.classList.toggle("warn", !balance);
+      b.textContent = balance ? `余额 ${balance.remaining} 点` : (read() ? "卡密无效" : "① 输入卡密");
+    }
+  }
+
+  /* ---------- 弹窗 ---------- */
   function modal() {
-    let m = document.getElementById("keys-modal");
+    let m = document.getElementById("card-modal");
     if (m) return m;
     m = document.createElement("div");
-    m.id = "keys-modal";
+    m.id = "card-modal";
     m.innerHTML = `
       <div class="km-bg"></div>
       <div class="km-card">
-        <div class="km-h">API Key 设置</div>
-        <p class="km-sub">key 只保存在你本机浏览器，请求时直接发给对应服务商，本站不存储。按需填，用哪个工具填哪个。</p>
-        <label>OpenRouter API Key <a href="https://openrouter.ai/keys" target="_blank">获取</a></label>
-        <input id="km-or" type="password" placeholder="sk-or-..." />
-        <label>SerpApi Key <a href="https://serpapi.com/manage-api-key" target="_blank">获取</a></label>
-        <input id="km-serp" type="password" placeholder="..." />
-        <label>Tavily Key（解析竞品正文 / 文章生成的搜索源）<a href="https://app.tavily.com" target="_blank">获取</a></label>
-        <input id="km-tavily" type="password" placeholder="tvly-..." />
-        <label>DeepSeek Key（文章生成可选的 LLM，便宜）<a href="https://platform.deepseek.com/api_keys" target="_blank">获取</a></label>
-        <input id="km-deepseek" type="password" placeholder="sk-..." />
-        <label>Exa Key（文章生成可选的搜索源）<a href="https://dashboard.exa.ai/api-keys" target="_blank">获取</a></label>
-        <input id="km-exa" type="password" placeholder="..." />
-        <div class="km-btns"><button id="km-cancel" class="km-ghost">取消</button><button id="km-save">保存</button></div>
+        <div class="km-h">输入卡密</div>
+        <p class="km-sub">卡密即身份：余额、生成记录都跟着这张卡走，换设备输入同一张卡即可。
+          卡密只保存在你本机浏览器。</p>
+        <label>卡密</label>
+        <input id="card-input" placeholder="PZ-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+        <div id="card-msg" class="km-msg"></div>
+        <div class="km-actions">
+          <a class="km-buy" href="/#pricing">还没有卡密？看套餐 →</a>
+          <span style="flex:1"></span>
+          <button id="card-cancel" class="btn ghost">取消</button>
+          <button id="card-save" class="btn">保存</button>
+        </div>
       </div>`;
-    document.body.appendChild(m);
-    const close = () => { m.style.display = "none"; };
-    m.querySelector(".km-bg").onclick = close;
-    m.querySelector("#km-cancel").onclick = close;
-    m.querySelector("#km-save").onclick = () => {
-      write({ openrouter_key: m.querySelector("#km-or").value.trim(),
-              serpapi_key: m.querySelector("#km-serp").value.trim(),
-              tavily_key: m.querySelector("#km-tavily").value.trim(),
-              deepseek_key: m.querySelector("#km-deepseek").value.trim(),
-              exa_key: m.querySelector("#km-exa").value.trim() });
-      close();
-      window.dispatchEvent(new Event("seo-keys-updated"));
+    document.body.append(m);
+    m.querySelector(".km-bg").onclick = () => (m.style.display = "none");
+    m.querySelector("#card-cancel").onclick = () => (m.style.display = "none");
+    m.querySelector("#card-save").onclick = async () => {
+      const v = m.querySelector("#card-input").value.trim();
+      const msg = m.querySelector("#card-msg");
+      if (!v) { msg.textContent = "请输入卡密。"; return; }
+      write(v);
+      msg.textContent = "校验中…";
+      const b = await refresh();
+      if (b) {
+        msg.textContent = "";
+        m.style.display = "none";
+        toast(`卡密已保存，余额 ${b.remaining} 点`);
+      } else {
+        msg.textContent = "卡密无效或已停用，请核对后重试。";
+      }
     };
+    m.querySelector("#card-input").addEventListener("keydown", e => {
+      if (e.key === "Enter") m.querySelector("#card-save").click();
+    });
     return m;
   }
 
-  function open() {
-    const m = modal(); const k = get();
-    m.querySelector("#km-or").value = k.openrouter_key;
-    m.querySelector("#km-serp").value = k.serpapi_key;
-    m.querySelector("#km-tavily").value = k.tavily_key;
-    m.querySelector("#km-deepseek").value = k.deepseek_key;
-    m.querySelector("#km-exa").value = k.exa_key;
+  function openModal() {
+    const m = modal();
+    m.querySelector("#card-input").value = read();
+    m.querySelector("#card-msg").textContent = "";
     m.style.display = "block";
+    setTimeout(() => m.querySelector("#card-input").focus(), 30);
   }
 
-  window.SEOKEYS = { get, hasKeys, hasTavily, has, open };
+  /* ---------- 轻提示 ---------- */
+  function toast(text, isErr) {
+    let t = document.getElementById("pz-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "pz-toast";
+      document.body.append(t);
+    }
+    t.textContent = text;
+    t.className = isErr ? "err show" : "show";
+    clearTimeout(t._h);
+    t._h = setTimeout(() => (t.className = ""), 3600);
+  }
+
+  /* ---------- 对外接口（保留旧名，语义已换）---------- */
+  window.CARD = {
+    get: read,
+    set: write,
+    has: () => !!read(),
+    headers: () => (read() ? { "X-Card-Key": read() } : {}),
+    balance: () => balance,
+    refresh,
+    open: openModal,
+    toast,
+  };
+  // 老页面兼容层：不再有任何 API key，get() 返回空对象即可
+  window.SEOKEYS = {
+    get: () => ({}),
+    hasKeys: () => !!read(),
+    has: () => !!read(),
+    hasTavily: () => false,
+    open: openModal,
+    refresh,
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("[data-card-open], #keybtn").forEach(el => (el.onclick = openModal));
+    paintBadge();
+    if (read()) refresh();
+  });
 })();

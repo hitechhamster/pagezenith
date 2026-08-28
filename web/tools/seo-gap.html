@@ -111,7 +111,7 @@
   <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
   <a class="navlink" href="/">← 全部工具</a>
   <div class="grow"></div>
-  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 <div class="wrap">
   <div class="head">
@@ -218,14 +218,14 @@ async function run(){
   const fetch_mode=$("browser").checked?"browser":"httpx";
   if(!/^https?:/.test(target_url)) return setStatus("目标网址需为 http/https。",true);
   if(!keyword) return setStatus("请填写关键词。",true);
-  if(!SEOKEYS.hasKeys()){ setStatus("请先在右上角「API Key 设置」填写 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+  if(!CARD.has()){ CARD.toast("请先输入卡密", true); CARD.open(); return; }
 
   $("run").disabled=true; skeleton();
   setStatus("分析中…结果会逐块出现，请勿关闭本页。",false,true);
   let total=0, got=0;
   try{
     const resp=await fetch("/api/seo-gap/report_stream",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked,...SEOKEYS.get()})});
+      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
     while(true){
@@ -276,13 +276,13 @@ async function runBatch(){
   const fetch_mode=$("browser").checked?"browser":"httpx";
   if(!/^https?:/.test(target_url)) return setStatus("目标网址需为 http/https。",true);
   if(!keywords.length) return setStatus("请至少输入一个关键词（每行一个）。",true);
-  if(!SEOKEYS.hasKeys()){ setStatus("请先在右上角「API Key 设置」填写 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+  if(!CARD.has()){ CARD.toast("请先输入卡密", true); CARD.open(); return; }
 
   $("run").disabled=true; skeletonBatch();
   setStatus(`批量分析 ${keywords.length} 个关键词…结果逐块出现，请勿关闭本页。`,false,true);
   try{
     const resp=await fetch("/api/seo-gap/batch_stream",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked,...SEOKEYS.get()})});
+      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
     while(true){
@@ -470,8 +470,8 @@ function handleSupp(sp){
 </script>
 <script src="/shared/keys.js"></script>
 <script>
-  function syncKeyBtn(){ const b=document.getElementById("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
-  syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+  function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
+  syncKeyBtn(); 
 </script>
 </body>
 </html>

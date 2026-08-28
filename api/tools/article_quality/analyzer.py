@@ -7,7 +7,6 @@ import re
 
 import textstat
 
-from ..seo_gap.clients.browser_fetch import BrowserFetcher
 from ..seo_gap.clients.fetch import PageFetcher, looks_blocked
 from ..seo_gap.config import Settings, get_settings
 from ..seo_gap.clients.llm import LLMClient
@@ -109,7 +108,7 @@ def _readability_score(stat: ReadabilityStat) -> int:
 # --------------------------------------------------------------------------- #
 async def fetch_article(url: str, fetch_mode: str | None, s: Settings) -> tuple[str, str]:
     """抓取网址正文，返回 (title, text)。供「粘贴链接」用。"""
-    fetcher = BrowserFetcher(s) if (fetch_mode or "browser") == "browser" else PageFetcher(s)
+    fetcher = _browser(s) if (fetch_mode or "httpx") == "browser" else PageFetcher(s)
     try:
         page = await fetcher.fetch(url)
     finally:
@@ -128,7 +127,7 @@ class ArticleAnalyzer:
         if req.text and req.text.strip():
             return req.text
         if req.url:
-            fetcher = BrowserFetcher(self.s) if (req.fetch_mode or "browser") == "browser" else PageFetcher(self.s)
+            fetcher = _browser(self.s) if (req.fetch_mode or "httpx") == "browser" else PageFetcher(self.s)
             try:
                 page: PageContent = await fetcher.fetch(req.url)
             finally:
@@ -216,3 +215,9 @@ class ArticleAnalyzer:
             else:
                 items.append(f"标题吸引力偏弱（{title.score}）：从下方改写建议里挑一个更具体的")
         return items[:3]
+
+
+def _browser(s):
+    """惰性导入 Playwright（默认部署不装它，见 requirements 注释）。"""
+    from ..seo_gap.clients.browser_fetch import BrowserFetcher
+    return BrowserFetcher(s)

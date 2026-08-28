@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from ..config import Settings, get_settings
 from .serpapi import SerpApiClient
+from .serper import SerperClient
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,8 @@ class RedditThread(BaseModel):
 class RedditClient:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()
-        self.serp = SerpApiClient(self.s)
+        self.serp = (SerpApiClient(self.s) if self.s.serp_provider == 'serpapi'
+                     else SerperClient(self.s))
 
     # ------------------------------------------------------------------ #
     # 发现：SerpApi site:reddit.com
@@ -74,8 +76,13 @@ class RedditClient:
             return [{"id": f"id{i}", "subreddit": "test",
                      "url": f"https://www.reddit.com/r/test/comments/id{i}/{slug}/",
                      "title": f"{keyword} discussion {i}"} for i in range(1, limit + 1)]
+        # ⚠️ 不能用 `site:reddit.com` —— Serper **免费账户禁用 site: 等高级语法**
+        #    （实测返回 400 "Query pattern not allowed for free accounts"）。
+        #    改成普通查询 "<关键词> reddit"，再按 URL 过滤出真帖：实测同样能拿到
+        #    6/10 条 reddit 结果，质量甚至更好（Google 会把讨论度高的帖排前面）。
+        #    Reddit 官方 search.json 也试过，数据中心/代理 IP 一律 403，不可用。
         items = await self.serp.fetch_serp(
-            f"{keyword} site:reddit.com", location_code, language_code, depth=20
+            f"{keyword} reddit", location_code, language_code, depth=20
         )
         seen, out = set(), []
         for it in items:
@@ -163,6 +170,7 @@ class RedditClient:
 
         headers = {"User-Agent": self.s.reddit_user_agent, "Accept": "application/json"}
         async with httpx.AsyncClient(timeout=self.s.reddit_timeout, follow_redirects=True,
+                                     trust_env=False, proxy=self.s.proxy_for("reddit"),
                                      headers=headers) as client:
             meta = await self._fetch_meta(client, [r["id"] for r in refs])
             sem = asyncio.Semaphore(self.s.reddit_concurrency)

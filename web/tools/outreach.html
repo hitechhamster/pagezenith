@@ -53,7 +53,7 @@
   <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
   <a class="navlink" href="/">← 全部工具</a>
   <div class="grow"></div>
-  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 <div class="wrap" style="max-width:920px">
   <h1 style="font-size:22px;margin:0 0 4px">外链拓客</h1>
@@ -118,8 +118,8 @@ const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=nul
 const LANG={en:[2840,"en"],zh:[2156,"zh"],es:[2724,"es"],de:[2276,"de"],fr:[2250,"fr"],ja:[2392,"ja"],pt:[2076,"pt"],it:[2380,"it"]};
 let LAST=null, tbody=null;
 
-function syncKeyBtn(){ const b=$("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
-syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
+syncKeyBtn(); 
 function setStatus(m,e){ $("status").textContent=m||""; $("status").className=e?"err":""; }
 function relColor(v){ return v>=70?"#137333":v>=45?"#b06000":"#c5221f"; }
 function relBg(v){ return v>=70?"#e6f4ea":v>=45?"#fef7e0":"#fce8e6"; }
@@ -131,10 +131,10 @@ async function run(){
   const keyword=$("kw").value.trim();
   const your_url=$("yourl").value.trim();
   if(!keyword && !your_url){ setStatus("请填写主题关键词或你的网址。",true); return; }
-  if(!SEOKEYS.hasKeys()){ setStatus("请先设置 OpenRouter 与 SerpApi key。",true); SEOKEYS.open(); return; }
+  if(!CARD.has()){ CARD.toast("请先输入卡密", true); CARD.open(); return; }
   const [location_code,language_code]=LANG[$("lang").value];
   const body={keyword,your_url,your_brief:$("brief").value.trim(),location_code,language_code,
-    generate_emails:$("genmail").checked,breadth:$("breadth").value,...SEOKEYS.get()};
+    generate_emails:$("genmail").checked,breadth:$("breadth").value};
 
   $("run").disabled=true; $("dlbar").style.display="none"; LAST=null;
   $("tableWrap").innerHTML=""; $("legalNote").style.display="none";

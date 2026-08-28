@@ -19,6 +19,24 @@
   .tool.main .tt:after{content:"主推";font-size:11px;color:#F6F3EA;background:var(--accent);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
   .tool.soon{opacity:.55;pointer-events:none}
   .tool.soon .tt:after{content:"即将上线";font-size:11px;color:var(--amber);background:var(--amberbg);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
+  .pricing{margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
+  .pricing h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 10px}
+  .pricing .p-lead{font-family:var(--font-read);font-size:15px;color:var(--muted);line-height:1.8;margin:0 0 18px;max-width:60ch}
+  .pricing .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;max-width:640px}
+  .pcard{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);padding:18px}
+  .pcard.best{border-color:var(--accent);background:linear-gradient(180deg,var(--accentsoft),var(--card) 62%)}
+  .pcard .pn{font-size:13px;color:var(--muted);margin-bottom:4px}
+  .pcard .pp{font-family:var(--font-display);font-size:28px;font-weight:600;margin-bottom:4px}
+  .pcard .pu{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;min-height:34px}
+  .pcard .pbtn{display:inline-block;background:var(--accent);color:#F6F3EA;border-radius:8px;
+    padding:7px 18px;font-size:13px;text-decoration:none}
+  .pcard .pbtn:hover{opacity:.9}
+  .ptable{margin:22px 0 8px;max-width:640px;font-size:13px}
+  .ptable table{width:100%;border-collapse:collapse}
+  .ptable th,.ptable td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  .ptable th{color:var(--muted);font-weight:500;font-size:12px}
+  .ptable td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .pricing .p-note{font-size:13px;color:var(--muted);line-height:1.8;margin:10px 0 0;max-width:60ch}
   .about{margin-top:48px;padding-top:24px;border-top:1px solid var(--line);max-width:60ch}
   .about h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 10px}
   .about p{font-family:var(--font-read);font-size:15px;color:var(--muted);line-height:1.8;margin:0 0 8px}
@@ -46,7 +64,7 @@
 <div class="nav">
   <div class="logo">PZ</div><div class="brand">PageZenith</div>
   <div class="grow"></div>
-  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 
 <div class="wrap home-wrap">
@@ -54,7 +72,8 @@
   <div class="main">
   <div class="hero">
     <h1>AI 跨境营销工具集</h1>
-    <p>PageZenith · AI 驱动的跨境营销工具。自带 API Key，浏览器里直接用，结果不存服务器。
+    <p>PageZenith · AI 驱动的跨境营销工具。<b>不用配 API Key、不用梯子、不用外币卡</b> ——
+      买张卡密就能直接用，生成记录云端保存 90 天，换设备插卡即取。
       主推 <a href="/tools/seo-writer">SEO 文章生成</a>：关键词进，可审批大纲，Word 出。</p>
   </div>
 
@@ -62,7 +81,7 @@
     <a class="tool main" href="/tools/seo-writer">
       <div class="ic">✍</div>
       <div class="tt">SEO 文章生成</div>
-      <div class="td">填关键词 → 搜同类内容避开同质化 → 出大纲给你审批（可反复改）→ 写整篇长文，出 SEO 标题描述、可选配图，导出 Word。</div>
+      <div class="td">填关键词 → <b>全网搜索 + Reddit 真实讨论</b>挖真人痛点 → 出 <b>EEAT 大纲</b>给你审批（可反复改）→ 写整篇长文 → 可选<b>可读性润色</b>，导出 Word。</div>
     </a>
     <a class="tool" href="/tools/seo-gap">
       <div class="ic">◎</div>
@@ -77,7 +96,7 @@
     <a class="tool" href="/tools/site-recon">
       <div class="ic">◈</div>
       <div class="tt">站点情报侦察</div>
-      <div class="td">输网址即查：建站平台、是否 Shopify（主题/产品/价格）、域名年龄、营销技术栈、联系方式。无需 Key。</div>
+      <div class="td">输网址即查：建站平台、是否 Shopify（主题/产品/价格）、域名年龄、营销技术栈、联系方式。</div>
     </a>
     <a class="tool" href="/tools/reddit-research">
       <div class="ic">◇</div>
@@ -94,6 +113,32 @@
       <div class="tt">更多工具</div>
       <div class="td">敬请期待。</div>
     </div>
+  </div>
+
+  <div class="pricing" id="pricing">
+    <h3>怎么收费</h3>
+    <p class="p-lead">按<b>点数</b>计费，不是订阅 —— 用多少扣多少，卡里的点不过期。
+      服务端统一出 API Key，你不用注册任何海外服务。</p>
+    <div class="cards">
+      <div class="pcard">
+        <div class="pn">体验卡</div><div class="pp">¥19.9</div>
+        <div class="pu">20 点 · 约 3 篇基础档文章</div>
+        <a class="pbtn" href="#buy">购买</a>
+      </div>
+      <div class="pcard best">
+        <div class="pn">标准卡</div><div class="pp">¥49</div>
+        <div class="pu">60 点 · 约 10 篇基础档文章</div>
+        <a class="pbtn" href="#buy">购买</a>
+      </div>
+      <div class="pcard">
+        <div class="pn">大卡</div><div class="pp">¥99</div>
+        <div class="pu">140 点 · 约 23 篇基础档文章</div>
+        <a class="pbtn" href="#buy">购买</a>
+      </div>
+    </div>
+    <div class="ptable" id="ptable"></div>
+    <p class="p-note" id="buy">购买后立即获得卡密，在右上角输入即可使用。
+      基础档与高级档的区别只在写作模型：<b>基础档</b>快而省，适合批量产出；<b>高级档</b>文笔与逻辑更强，适合重点页面。</p>
   </div>
 
   <div class="about">
@@ -116,8 +161,21 @@
 
 <script src="/shared/keys.js"></script>
 <script>
-  function syncKeyBtn(){ const b=document.getElementById("keybtn"); if(SEOKEYS.hasKeys()){b.classList.remove("warn");b.textContent="API Key ✓";}else{b.classList.add("warn");b.textContent="① 先设置 API Key";} }
-  syncKeyBtn(); window.addEventListener("seo-keys-updated", syncKeyBtn);
+  // 余额徽标由 keys.js 统一维护；这里只负责渲染价目表
+  const TOOLN={"seo-writer":"SEO 文章生成","seo-gap":"内容差距分析","article-quality":"文章质量检测",
+               "reddit-research":"Reddit 选题","outreach":"外链拓客","site-recon":"站点侦察"};
+  const ACTN={outline:"大纲（含搜索/判字数/分类）",article:"正文 + SEO 元数据",polish:"润色一遍",
+              image:"AI 配图（每张）",revise:"改大纲",analyze:"一次分析",check:"单篇检测",run:"一次运行"};
+  fetch("/api/billing/pricing").then(r=>r.json()).then(j=>{
+    const rows=(j.prices||[]).filter(p=>p.action!=="revise").map(p=>
+      `<tr><td>${TOOLN[p.tool]||p.tool}</td><td>${ACTN[p.action]||p.action}</td>
+       <td class="n">${p.basic}</td><td class="n">${p.pro===p.basic?"—":p.pro}</td></tr>`).join("");
+    document.getElementById("ptable").innerHTML=
+      `<table><tr><th>工具</th><th>动作</th><th style="text-align:right">基础档</th>
+       <th style="text-align:right">高级档</th></tr>${rows}</table>
+       <div style="color:var(--faint);font-size:12px;margin-top:8px">
+       单位：点。改大纲每篇前 ${j.revise_free??3} 次免费。生成失败自动退点。</div>`;
+  }).catch(()=>{});
 
   (async()=>{
     const body=document.getElementById("nb-body");

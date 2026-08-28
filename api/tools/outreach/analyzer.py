@@ -15,6 +15,7 @@ from openpyxl.utils import get_column_letter
 from ..seo_gap.clients.fetch import PageFetcher, looks_blocked
 from ..seo_gap.clients.llm import LLMClient
 from ..seo_gap.clients.serpapi import SerpApiClient
+from ..seo_gap.clients.serper import SerperClient
 from ..seo_gap.config import Settings, get_settings
 from .emails import extract_emails, find_contact_links, has_contact_form
 from .footprints import build_footprints
@@ -47,7 +48,8 @@ _CLS_MOCK = {"site_type": "博客", "relevance": 72, "opportunity": "投稿",
 class OutreachFinder:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()
-        self.serp = SerpApiClient(self.s)
+        self.serp = (SerpApiClient(self.s) if self.s.serp_provider == 'serpapi'
+                     else SerperClient(self.s))
         self.llm = LLMClient(self.s)
         self.fetcher = PageFetcher(self.s)
 

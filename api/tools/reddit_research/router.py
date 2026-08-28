@@ -1,11 +1,13 @@
-"""独立 Reddit 研究 API（前缀 /api/reddit-research）。key 按请求传，用完即弃。"""
+"""独立 Reddit 研究 API（前缀 /api/reddit-research）。凭 X-Card-Key 卡密鉴权 + 按点计费。"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from billing.deps import Card, charge, require_card
 
 from ..seo_gap.config import get_settings
 from .analyzer import RedditResearcher
@@ -17,12 +19,12 @@ _sema = asyncio.Semaphore(get_settings().max_concurrent_runs)
 
 
 def _settings_for(req: RedditResearchRequest):
-    s = get_settings().with_keys(req.openrouter_key, req.serpapi_key)
+    s = get_settings()
     if not s.use_mocks:
         if not s.openrouter_api_key:
-            raise HTTPException(status_code=400, detail="缺少 OpenRouter API Key，请在设置里填写。")
-        if not s.serpapi_key:
-            raise HTTPException(status_code=400, detail="缺少 SerpApi Key（用于发现 Reddit 帖子），请在设置里填写。")
+            raise HTTPException(status_code=500, detail="服务端未配置 OPENROUTER_API_KEY。")
+        if not s.serp_key():
+            raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY。")
     return s
 
 
@@ -34,17 +36,22 @@ async def health() -> dict:
 
 
 @router.post("/analyze", response_model=RedditResearch)
-async def analyze(req: RedditResearchRequest) -> RedditResearch:
+async def analyze(req: RedditResearchRequest,
+                  card: Card = Depends(require_card)) -> RedditResearch:
     if not req.keyword.strip():
         raise HTTPException(status_code=400, detail="请输入关键词。")
     s = _settings_for(req)
     if _sema.locked():
         raise HTTPException(status_code=429, detail="服务繁忙，请稍后重试。")
     async with _sema:
-        try:
-            return await RedditResearcher(s).research(req)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.exception("reddit research failed")
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        async with charge(card, "reddit-research", "run") as tx:
+            try:
+                out = await RedditResearcher(s).research(req)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.exception("reddit research failed")
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            tx.set_result(title=f"Reddit 选题：{req.keyword}", summary="",
+                          payload={"kind": "reddit-research", **out.model_dump()})
+            return out

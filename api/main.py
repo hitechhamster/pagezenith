@@ -21,6 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from billing import store as billing_store
+from billing.router import router as billing_router
+
 from tools.article_quality.router import router as article_quality_router
 from tools.outreach.router import router as outreach_router
 from tools.reddit_research.router import router as reddit_research_router
@@ -34,6 +37,10 @@ app = FastAPI(title="PageZenith — AI 跨境营销工具")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# ---- 计费（卡密）----
+billing_store.conn()          # 启动即建表，别等第一个请求
+app.include_router(billing_router)
 
 # ---- 工具 API ----
 app.include_router(seo_writer_router)
@@ -54,6 +61,12 @@ async def home():
 @app.get("/news")
 async def news():
     return FileResponse(WEB / "news.html")
+
+
+@app.get("/history")
+async def history_page():
+    """我的记录（卡密即身份：余额 / 流水 / 生成结果）。"""
+    return FileResponse(WEB / "history.html")
 
 
 @app.get("/tools/{name}")

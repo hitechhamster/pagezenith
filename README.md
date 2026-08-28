@@ -1,6 +1,6 @@
 # PageZenith — AI 跨境营销工具
 
-自带 API Key 的 AI 跨境营销工具集。主推 **SEO 文章生成**：填关键词 → 搜同类内容避开同质化 →
+**卡密制**的 AI 跨境营销工具集（2026-08 改造：从 BYO-key 切成服务端统一出 key、按点数计费）。主推 **SEO 文章生成**：填关键词 → 搜同类内容避开同质化 →
 出大纲给你审批（可反复改）→ 按大纲写整篇长文，出 SEO 标题描述、可选 AI 配图，导出 Word；
 写完还可以单独跑一次**润色**，把全文改写到「美国 12 年级学生能读懂」（FK 阅读年级 9–12）。
 另有内容差距分析、文章质量检测、站点情报侦察、Reddit 选题研究、外链拓客。
@@ -34,19 +34,23 @@ Dockerfile                # Playwright 官方镜像（自带 Chromium）
 render.yaml               # Render Blueprint
 ```
 
-## API Key 与供应商
+## 卡密与计费（2026-08 起）
 
-key 全部由用户在浏览器里填，按请求传给后端，用完即弃。各工具需要的 key：
+**用户只输卡密，不再自带任何 API Key。** 卡密即身份：余额、消费流水、生成结果都挂在卡上，
+换设备输入同一张卡即可取回（`/history`）。
 
-| Key | 用途 |
-|---|---|
-| OpenRouter | 全站 LLM；SEO 文章生成的默认写作模型；**AI 配图只有它能做** |
-| DeepSeek | SEO 文章生成里可替代 OpenRouter 的写作模型（便宜，但不能出图） |
-| SerpApi | 内容差距分析 / Reddit 选题 / 外链拓客的 SERP 数据 |
-| Tavily | 竞品正文解析；SEO 文章生成的搜索源之一 |
-| Exa | SEO 文章生成的另一个搜索源 |
+- **服务端三个 key**（`.env`）：`OPENROUTER_API_KEY`（全站 LLM + embeddings + 配图）、
+  `SERPER_KEY`（SERP）、`EXA_KEY`（搜索与竞品正文）。Tavily / SerpApi / DeepSeek 已下线。
+- **点数制**罩住全部 AI 端点，价目见 `api/billing/pricing.py`（前端从 `/api/billing/pricing` 实时读）。
+- **模型选择权在服务端**：用户只选 `basic` / `pro` 档，映射在 `TIERS`。放开自选 = 用户人均 Opus。
+- **护栏**：单卡日限 / 全局日成本熔断（读 usage 表真实成本）/ 无效卡密限流 / 生成失败自动退点。
+- **造卡**：`python scripts/mint_cards.py --count 20 --credits 60 --label 标准卡`
+  → 输出 CSV 传发卡平台；库里只存 sha256，明文卡号只在造卡那一刻出现。
 
-SEO 文章生成页面顶部可以手动切「写作模型供应商 + 模型」和「搜索源」，没填 key 的选项会自动置灰。
+### 断线不丢
+干活的是后台 Job（`api/billing/jobs.py`），SSE 只是订阅者。用户关标签页 / 断网，
+任务照跑照落库 —— 不会出现"钱扣了、文章没了"。重连用 `/api/billing/job/{id}`，
+或直接去「我的记录」取。
 
 ### 润色是独立环节，要手动点
 
@@ -61,9 +65,8 @@ SEO 文章生成页面顶部可以手动切「写作模型供应商 + 模型」�
 ## 本地运行
 
 ```bash
-# 1) 装依赖（含 Chromium）
+# 1) 装依赖（不再需要 Chromium）
 pip install -r api/requirements.txt
-python -m playwright install chromium
 
 # 2) 配 .env（复制 .env.example），本地可填兜底 key 方便自测
 #    BROWSER_CHANNEL=chrome 用系统 Chrome，免下载
@@ -92,7 +95,9 @@ python -m uvicorn main:app --app-dir api --port 8000
 - **并发上限**：`MAX_CONCURRENT_RUNS` 限制同时分析数，超出返回 429，防资源/账单失控。
 
 ## 数据库
-当前无需数据库（工具无状态、key 在浏览器）。要做账号/历史/用量/计费时再接 Supabase。
+SQLite 单文件（`BILLING_DB`，默认 `data/billing.db`），三张表：`cards` / `usage` / `results`。
+单机单进程 + 个位数并发，WAL 模式绰绰有余，一个文件就能 cron 备份走。
+**部署时务必放持久盘并每日备份** —— 丢了等于所有卡密余额归零。
 
 唯一的例外是 SEO 文章生成的三步向导：搜索结果上百 KB，来回传太重，所以第一步的参数/搜索上下文/大纲
 存在**进程内**的带 TTL 字典里（`seo_writer/session.py`，默认 2 小时、200 条上限），不落盘、不落库。

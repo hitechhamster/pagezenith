@@ -15,11 +15,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .clients.browser_fetch import BrowserFetcher
 from .clients.dataforseo import DataForSEOClient
 from .clients.fetch import PageFetcher
 from .clients.llm import LLMClient
 from .clients.serpapi import SerpApiClient
+from .clients.serper import SerperClient
 from .config import Settings, get_settings
 from .extraction.extractor import Extractor
 from .models import (
@@ -51,7 +51,9 @@ class AnalysisPipeline:
         self.s = settings or get_settings()
         self.dfs = DataForSEOClient(self.s)  # backlinks（SERP 可被 SerpApi 替代）
         # SERP 数据源按配置选择；backlinks 仍走 DataForSEO（无替代源，失败则标不可用）
-        self.serp = SerpApiClient(self.s) if self.s.serp_provider == "serpapi" else self.dfs
+        self.serp = (SerpApiClient(self.s) if self.s.serp_provider == "serpapi"
+                     else SerperClient(self.s) if self.s.serp_provider == "serper"
+                     else self.dfs)
         self.fetcher = PageFetcher(self.s)
         self.llm = LLMClient(self.s)
         self.extractor = Extractor(self.llm, self.fetcher)
@@ -59,8 +61,10 @@ class AnalysisPipeline:
 
     def _make_fetcher(self, req: AnalyzeRequest):
         """按生效抓取方式建抓取器（每个 run 一个，结束时关闭）。"""
+        # 2026-08：默认 httpx。Playwright 改惰性导入 —— 香港服务器与观象台共存只有 1.6G 内存，
+        # Chromium 峰值会把邻居 OOM 掉；竞品正文改走 Exa contents。
         mode = req.fetch_mode or self.s.fetch_mode
-        return BrowserFetcher(self.s) if mode == "browser" else PageFetcher(self.s)
+        return _browser_fetcher(self.s) if mode == "browser" else PageFetcher(self.s)
 
     async def run(self, req: AnalyzeRequest) -> AnalysisReport:
         fetcher = self._make_fetcher(req)
@@ -181,3 +185,9 @@ class AnalysisPipeline:
             *[self.dfs.fetch_backlinks(c.url) for c in competitors],
         )
         return results[0], list(results[1:])
+
+
+def _browser_fetcher(*args, **kwargs):
+    """惰性导入：只有真的选了 browser 模式才 import playwright（默认不装它）。"""
+    from .clients.browser_fetch import BrowserFetcher
+    return BrowserFetcher(*args, **kwargs)

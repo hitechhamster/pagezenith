@@ -58,37 +58,98 @@ LLM_MODELS = {
 }
 
 
+# 任务 → 模型槽位。用户实战分工:大纲要创意(Gemini Pro)、润色要听指令(Claude)、
+# 杂活(判字数/分类/SEO 元数据)不值得用贵模型。
+TASK_SLOT = {
+    "outline": "outline", "revise_outline": "outline",
+    "article": "article", "polish": "polish",
+}
+
+
 @dataclass
 class LLMTarget:
     provider: str
     base_url: str
     api_key: str
-    model: str
+    model: str          # 兜底模型(未命中槽位时用)
+    tier: str = "pro"
+
+    def model_for_task(self, task: str) -> str:
+        """按任务取模型;取不到就用兜底。"""
+        from billing.pricing import model_for
+        return model_for(TASK_SLOT.get(task, "utility"), self.tier) or self.model
 
 
-def resolve_llm(s: Settings, provider: str, model: Optional[str]) -> LLMTarget:
-    """把「供应商 + 模型」解析成一次具体调用需要的三件套，并校验 key 是否齐。"""
+def provider_of(model: str) -> str:
+    """从模型名推断供应商。三家都是 OpenAI 兼容,只有 base_url/key 不同。"""
+    if model.startswith("deepseek"):
+        return "deepseek"
+    if model.startswith("gemini") or model.startswith("google/"):
+        return "gemini"
+    return "openrouter"
+
+
+def endpoint_of(s: Settings, provider: str) -> tuple[str, str]:
     if provider == "deepseek":
-        if not s.deepseek_key and not s.use_mocks:
-            raise ProviderError("缺少 DeepSeek API Key，请在右上角「API Key 设置」里填写。")
-        return LLMTarget("deepseek", s.deepseek_base_url, s.deepseek_key,
-                         model or s.writer_deepseek_model)
-    if not s.openrouter_api_key and not s.use_mocks:
-        raise ProviderError("缺少 OpenRouter API Key，请在右上角「API Key 设置」里填写。")
-    return LLMTarget("openrouter", s.openrouter_base_url, s.openrouter_api_key,
-                     model or s.writer_llm_model)
+        return s.deepseek_base_url, s.deepseek_key
+    if provider == "gemini":
+        return s.gemini_base_url, s.gemini_api_key
+    return s.openrouter_base_url, s.openrouter_api_key
+
+
+def resolve_llm(s: Settings, tier: str = "pro", model: Optional[str] = None) -> LLMTarget:
+    """解析一次调用需要的三件套。
+
+    2026-08 两处结构变化：
+    1. 模型选择权在服务端（billing.pricing.TIERS 按**任务**映射），用户只选档位；
+    2. 不再绑死 OpenRouter —— 大纲/正文走 Gemini 直连、润色走 DeepSeek 直连，
+       少一层加价，key 也都是现成的。供应商由模型名自动推断。
+    """
+    from billing.pricing import model_for as _model_for  # 延迟导入，避免循环依赖
+
+    m = model or _model_for("article", tier)
+    prov = provider_of(m)
+    base, key = endpoint_of(s, prov)
+    if not key and not s.use_mocks:
+        raise ProviderError(f"服务端未配置 {prov} 的 API Key，请联系站长。")
+    return LLMTarget(prov, base, key, m, tier=tier)
 
 
 class LLM:
     """一次请求内复用的 LLM 客户端。complete() 拿完整文本，stream() 逐块吐字。"""
 
-    def __init__(self, target: LLMTarget, settings: Settings):
+    def __init__(self, target: LLMTarget, settings: Settings, usage_sink=None):
         self.t = target
         self.s = settings
+        # usage_sink(model, tokens_in, tokens_out)：把真实用量报给计费层，
+        # 熔断和对账都读它（不是估的）。None = 不计费的场景（本地跑脚本）。
+        self.usage_sink = usage_sink
+        self._last_task_model = ""
+
+    def _report(self, data: dict) -> None:
+        if not self.usage_sink:
+            return
+        u = (data or {}).get("usage") or {}
+        try:
+            # 用响应里回报的真实 model 名(OpenRouter 会带),拿不到再退回槽位模型
+            m = (data or {}).get("model") or self._last_task_model or self.t.model
+            self.usage_sink(m, int(u.get("prompt_tokens") or 0),
+                            int(u.get("completion_tokens") or 0))
+        except Exception:  # noqa: BLE001  计费统计绝不能影响主流程
+            logger.warning("usage_sink failed", exc_info=True)
 
     # ---------------------------------------------------------------- 内部
-    def _headers(self) -> dict[str, str]:
-        h = {"Authorization": f"Bearer {self.t.api_key}", "Content-Type": "application/json"}
+    def _route(self, task: str) -> tuple[str, str, str]:
+        """按任务取 (model, base_url, api_key) —— 一次生成里会跨供应商：
+        大纲/正文 Gemini、润色 DeepSeek、杂活 Gemini flash-lite。"""
+        model = self.t.model_for_task(task)
+        prov = provider_of(model)
+        base, key = endpoint_of(self.s, prov)
+        return model, (base or self.t.base_url), (key or self.t.api_key)
+
+    def _headers(self, task: str = "general") -> dict[str, str]:
+        _, _, key = self._route(task)
+        h = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         if self.t.provider == "openrouter":
             # OpenRouter 用这两个头做用量归属统计
             h["HTTP-Referer"] = "https://pagezenith.onrender.com"
@@ -96,8 +157,9 @@ class LLM:
         return h
 
     def _payload(self, prompt: str, task: str, temperature: float, stream: bool) -> dict:
+        model, _, _ = self._route(task)
         payload: dict = {
-            "model": self.t.model,
+            "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "max_tokens": TOKEN_LIMITS.get(task, 6000),
@@ -105,6 +167,10 @@ class LLM:
         }
         if self.t.provider == "openrouter" and task in LOW_REASONING_TASKS:
             payload["reasoning"] = {"effort": "low", "exclude": True}
+        if stream:
+            # 让流式也返回 usage（最后一个 chunk），否则长文这一大笔成本统计不到
+            payload["stream_options"] = {"include_usage": True}
+        self._last_task_model = payload["model"]
         return payload
 
     # ------------------------------------------------------------- 非流式
@@ -124,10 +190,12 @@ class LLM:
 
     async def _complete_once(self, prompt: str, task: str, temperature: float) -> str:
         try:
-            async with httpx.AsyncClient(timeout=self.s.writer_timeout) as client:
+            _, base, _ = self._route(task)
+            async with httpx.AsyncClient(timeout=self.s.writer_timeout, trust_env=False,
+                                         proxy=self.s.proxy_for(base)) as client:
                 resp = await client.post(
-                    f"{self.t.base_url}/chat/completions",
-                    headers=self._headers(),
+                    f"{base}/chat/completions",
+                    headers=self._headers(task),
                     json=self._payload(prompt, task, temperature, stream=False),
                 )
                 resp.raise_for_status()
@@ -136,6 +204,7 @@ class LLM:
             raise ProviderError(_http_error(exc)) from exc
         except Exception as exc:
             raise ProviderError(f"{self.t.provider} 调用异常: {exc}") from exc
+        self._report(data)
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -176,10 +245,15 @@ class LLM:
     async def _stream_once(self, prompt: str, task: str,
                            temperature: float) -> AsyncIterator[str]:
         payload = self._payload(prompt, task, temperature, stream=True)
+        _, base, _ = self._route(task)
+        last_usage: dict | None = None
         try:
-            async with httpx.AsyncClient(timeout=self.s.writer_timeout) as client:
-                async with client.stream("POST", f"{self.t.base_url}/chat/completions",
-                                         headers=self._headers(), json=payload) as resp:
+            # trust_env=False + 显式 proxy：本机有个全局 SOCKS 代理会被 httpx 自动捡走，
+            # 而它对 DeepSeek 是坏的 —— 必须按供应商显式决定走不走代理。
+            async with httpx.AsyncClient(timeout=self.s.writer_timeout, trust_env=False,
+                                         proxy=self.s.proxy_for(base)) as client:
+                async with client.stream("POST", f"{base}/chat/completions",
+                                         headers=self._headers(task), json=payload) as resp:
                     if resp.status_code >= 400:
                         body = (await resp.aread()).decode("utf-8", "ignore")
                         raise ProviderError(_status_error(resp.status_code, body))
@@ -193,6 +267,10 @@ class LLM:
                             obj = json.loads(data)
                         except json.JSONDecodeError:
                             continue
+                        # ⚠️ 不能在这里 _report：Gemini 兼容层每个 chunk 都带**累计** usage，
+                        #    逐块上报会把用量放大几十倍（实测 1 万 → 66 万）。只记下最后一次。
+                        if obj.get("usage"):
+                            last_usage = obj
                         choices = obj.get("choices") or []
                         if not choices:
                             continue
@@ -203,6 +281,10 @@ class LLM:
             raise
         except Exception as exc:
             raise ProviderError(f"{self.t.provider} 流式调用异常: {exc}") from exc
+        finally:
+            # 整条流结束才上报一次（正常结束、报错、被取消都会走到这里）
+            if last_usage:
+                self._report(last_usage)
 
 
 def _http_error(exc: httpx.HTTPStatusError) -> str:
@@ -219,10 +301,16 @@ def _status_error(status: int, body: str) -> str:
 # 搜索（"红海参考"：给大纲和正文提供竞品语境）
 # --------------------------------------------------------------------------- #
 async def search(s: Settings, provider: str, query: str) -> str:
-    """返回归一化后的搜索文本块；失败不抛异常，返回提示串让流程继续走。"""
+    """返回归一化后的搜索文本块；失败不抛异常，返回提示串让流程继续走。
+
+    2026-08：默认 serper —— 它的 /search 找竞品页、/scrape 抓全文（实测一页 1.4 万字符），
+    一家就顶掉了原来 Tavily+Exa 两家，而且额度便宜一个数量级。
+    """
     if s.use_mocks:
         return _mock_search(query)
     try:
+        if provider in ("serper", "auto"):
+            return await _search_serper(s, query)
         if provider == "exa":
             return await _search_exa(s, query)
         if provider == "tavily":
@@ -231,6 +319,33 @@ async def search(s: Settings, provider: str, query: str) -> str:
         logger.warning("搜索失败 (%s / %s): %s", provider, query, exc)
         return f"（{provider} 搜索失败：{exc}）"
     return ""
+
+
+async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
+    """Serper 搜索 + 抓正文。只对前 n_scrape 条抓全文（抓取比搜索贵，且前几名才是"红海"）。"""
+    if not s.serper_key:
+        raise ProviderError("服务端未配置 SERPER_KEY")
+    headers = {"X-API-KEY": s.serper_key, "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=s.request_timeout, trust_env=False,
+                                 proxy=s.proxy_for("serper")) as client:
+        r = await client.post(f"{s.serper_base_url}/search",
+                              headers=headers, json={"q": query, "num": 10})
+        r.raise_for_status()
+        items = (r.json().get("organic") or [])[: max(n_scrape, 1)]
+
+        async def one(it: dict) -> dict:
+            text = it.get("snippet") or ""
+            try:
+                sr = await client.post(f"{s.serper_base_url}/scrape",
+                                       headers=headers, json={"url": it.get("link", "")})
+                if sr.status_code == 200:
+                    text = (sr.json().get("text") or text)[:4000]
+            except Exception:  # noqa: BLE001  单页抓不到不影响其他
+                pass
+            return {"title": it.get("title", ""), "url": it.get("link", ""), "content": text}
+
+        out = await asyncio.gather(*[one(it) for it in items])
+    return _fmt(list(out))
 
 
 def _fmt(results: list[dict]) -> str:

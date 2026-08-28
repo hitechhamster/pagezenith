@@ -55,3 +55,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 #keys-modal input{width:100%}
 #keys-modal .km-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 #keys-modal .km-ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+
+/* ── 卡密弹窗 / 轻提示（2026-08 卡密化）── */
+#card-modal{display:none;position:fixed;inset:0;z-index:50}
+#card-modal .km-bg{position:absolute;inset:0;background:rgba(27,30,24,.42)}
+#card-modal .km-card{position:relative;max-width:440px;margin:10vh auto;background:var(--card);
+  border-radius:var(--radius-lg);border:1px solid var(--line);padding:22px 24px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+#card-modal .km-h{font-family:var(--font-display);font-size:19px;font-weight:600;margin-bottom:6px}
+#card-modal .km-sub{color:var(--muted);font-size:12px;margin:0 0 16px;line-height:1.6}
+#card-modal label{display:block;font-size:12px;font-weight:500;margin:12px 0 5px}
+#card-modal input{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em}
+#card-modal .km-msg{min-height:18px;font-size:12px;color:var(--red);margin-top:8px}
+#card-modal .km-actions{display:flex;align-items:center;gap:8px;margin-top:18px}
+#card-modal .km-buy{font-size:12px}
+#card-modal .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+#pz-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;
+  pointer-events:none;transition:.25s;background:var(--text);color:#fff;padding:10px 18px;border-radius:8px;
+  font-size:13px;z-index:60;max-width:80vw}
+#pz-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#pz-toast.err{background:var(--red)}
+.pz-balance{font-variant-numeric:tabular-nums}

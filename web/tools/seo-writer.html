@@ -25,6 +25,9 @@
   .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text)}
   .chk input{width:auto}
   .chk.dim{color:var(--faint)}
+  .costbox{padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--soft);font-size:14px;line-height:1.5}
+  .costbox b{font-size:17px;color:var(--accent)}
+  .costbox .dim{color:var(--muted);font-size:12px}
   #status{margin:12px 2px;color:var(--muted);font-size:13px;min-height:20px}
   #status.err{color:var(--red)}
   .log{font-size:12.5px;color:var(--muted);line-height:1.9;margin:4px 0 10px}
@@ -64,24 +67,23 @@
   <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
   <a class="navlink" href="/">← 全部工具</a>
   <div class="grow"></div>
-  <button class="keybtn" id="keybtn" onclick="SEOKEYS.open()">API Key 设置</button>
+  <a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.open()">① 输入卡密</button>
 </div>
 
 <div class="wrap" style="max-width:860px">
   <h1 style="font-size:22px;margin:0 0 4px">SEO 文章生成</h1>
-  <div class="sub">填关键词 → AI 搜同类内容避开同质化 → 出大纲给你审批（可反复改）→ 按大纲写整篇长文，
+  <div class="sub">填关键词 → <b>全网搜索 + Reddit 真实讨论</b> → 出 EEAT 大纲给你审批（可反复改）→ 按大纲写整篇长文，
     出 SEO 标题描述、可选配图，最后导出 Word。标题全用疑问句 + 黄金答案句结构。</div>
 
   <!-- 供应商 -->
   <div class="sec">
     <div class="row" style="margin-bottom:0">
-      <div class="f"><label>写作模型供应商</label>
-        <select id="llmProvider"><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option></select></div>
-      <div class="f"><label>模型</label><select id="llmModel"></select></div>
-      <div class="f"><label>搜索源（给大纲提供竞品语境）</label>
-        <select id="searchProvider">
-          <option value="tavily">Tavily</option><option value="exa">Exa</option><option value="none">不搜索</option>
+      <div class="f"><label>写作档位</label>
+        <select id="tier">
+          <option value="basic">基础档</option>
+          <option value="pro">高级档</option>
         </select></div>
+      <div class="f"><label>本次消耗</label><div class="costbox" id="costBox">—</div></div>
     </div>
     <div class="hint" id="provHint" style="margin-top:8px;margin-bottom:0"></div>
   </div>
@@ -104,6 +106,15 @@
       <div class="f narrow"><label>字数</label><input id="wordcounts" type="number" min="0" max="5000" value="0" /></div>
       <div class="f"><label>语言</label><select id="language"></select></div>
     </div>
+    <div class="row">
+      <div class="f"><label>推荐产品页（可选，文末唯一允许的链接）</label>
+        <input id="productUrl" placeholder="https://… 留空则全文不带任何链接" /></div>
+      <div class="f narrow"><label>推荐详细度</label>
+        <select id="productLevel">
+          <option>简短提及</option><option selected>中等介绍</option><option>详细介绍</option>
+        </select></div>
+    </div>
+    <div class="hint">填了产品页会自动读取它的正文：大纲规划推荐位置，正文写成自然的锚文本链接。</div>
     <div class="hint">字数填 0 = 让 AI 按主题复杂度自己判断（800–3000）。</div>
     <div class="row">
       <div class="f">
@@ -157,59 +168,47 @@
 const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
 const S={sessionId:"",outline:"",article:"",docx:"",filename:"article.docx",images:{},info:{},pre:null};
-let MODELS={},DEFAULTS={};
+let MODELS={},DEFAULTS={};   /* 兼容残留，不再使用 */
 
-/* ---------- key / 供应商可用性 ---------- */
-function syncKeyBtn(){
-  const b=$("keybtn"), k=SEOKEYS.get();
-  const ok=(k.openrouter_key||k.deepseek_key);
-  b.classList.toggle("warn",!ok);
-  b.textContent=ok?"API Key ✓":"① 先设置 API Key";
+/* ---------- 档位与价目（卡密制：模型由服务端按档位映射）---------- */
+let TIERS=[], PRICES={}, REVISE_FREE=3;
+function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
+function tier(){ return $("tier").value; }
+function updateCost(){
+  const t=tier(), p=PRICES||{};
+  const n=$("enableImages").checked?parseInt($("imagesPer").value,10):0;
+  const outline=(p.outline||{})[t]??"?", article=(p.article||{})[t]??"?";
+  const img=((p.image||{})[t]||0)*n;
+  const total=(typeof outline==="number"&&typeof article==="number")?(outline+article+img):"?";
+  $("costBox").innerHTML=`<b>${total}</b> 点 <span class="dim">= 大纲 ${outline} + 正文 ${article}`
+    + (n?` + 配图 ${img}`:"") + `</span>`;
+  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；润色另计 ${(p.polish||{})[t]??"?"} 点。`
+    + " 档位只影响写作模型，其余流程一致。";
 }
 function syncProviders(){
-  const k=SEOKEYS.get();
-  const set=(sel,val,has)=>{const o=[...$(sel).options].find(o=>o.value===val); if(o){o.disabled=!has; o.textContent=o.textContent.replace(/（未填 key）$/,"")+(has?"":"（未填 key）");}};
-  set("llmProvider","openrouter",!!k.openrouter_key);
-  set("llmProvider","deepseek",!!k.deepseek_key);
-  set("searchProvider","tavily",!!k.tavily_key);
-  set("searchProvider","exa",!!k.exa_key);
-  // 当前选中的不可用就自动跳到可用的那个
-  const pick=(sel,fallback)=>{const s=$(sel); if(s.selectedOptions[0]&&s.selectedOptions[0].disabled){
-    const ok=[...s.options].find(o=>!o.disabled); s.value=ok?ok.value:fallback;}};
-  pick("llmProvider","openrouter"); pick("searchProvider","none");
-
-  const hasOR=!!k.openrouter_key;
-  $("enableImages").disabled=!hasOR;
-  if(!hasOR) $("enableImages").checked=false;
   $("imagesPer").disabled=!$("enableImages").checked;
-  $("imgLabel").classList.toggle("dim",!hasOR);
-  $("imgHint").textContent=hasOR?"配图会按正文里的 [IMAGE:] 占位符逐张生成，比较慢，也比较贵。"
-                                :"配图需要 OpenRouter key（只有它有文生图模型），DeepSeek 不支持。";
-  fillModels();
-  $("provHint").textContent = $("searchProvider").value==="none"
-    ? "不搜索：大纲少了竞品语境，容易写得同质化，建议至少配一个搜索源。" : "";
+  $("imgHint").textContent="配图按正文里的 [IMAGE:] 占位符逐张生成，比较慢，也按张扣点。";
+  updateCost();
 }
-function fillModels(){
-  const p=$("llmProvider").value, sel=$("llmModel"), prev=sel.value;
-  sel.innerHTML="";
-  (MODELS[p]||[]).forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;sel.append(o);});
-  if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
-  else if(DEFAULTS[p]) sel.value=DEFAULTS[p];
-}
-$("llmProvider").onchange=fillModels;
-$("searchProvider").onchange=syncProviders;
-$("enableImages").onchange=()=>{$("imagesPer").disabled=!$("enableImages").checked;};
-window.addEventListener("seo-keys-updated",()=>{syncKeyBtn();syncProviders();});
+$("tier").onchange=updateCost;
+$("imagesPer").onchange=updateCost;
+$("enableImages").onchange=()=>{$("imagesPer").disabled=!$("enableImages").checked; updateCost();};
+window.addEventListener("pz-card-updated",()=>{});
 
 (async()=>{
   try{
     const h=await (await fetch("/api/seo-writer/health")).json();
-    MODELS=h.models||{}; DEFAULTS=h.defaults||{};
+    TIERS=h.tiers||[]; PRICES=h.prices||{}; REVISE_FREE=h.revise_free??3;
+    if(TIERS.length){
+      const sel=$("tier"); sel.innerHTML="";
+      TIERS.forEach(t=>{const o=document.createElement("option");o.value=t.key;
+        o.textContent=`${t.label} — ${t.desc}`; sel.append(o);});
+    }
     (h.languages||["English"]).forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
   }catch(e){
     ["English","Chinese (Simplified)"].forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
   }
-  syncKeyBtn(); syncProviders();
+  syncProviders();
 })();
 
 /* ---------- SSE ---------- */
@@ -233,10 +232,7 @@ async function sse(url,body,onEvent){
 }
 function setStatus(m,err,spin){ const s=$("status"); s.innerHTML=(spin?'<span class="spin"></span>':"")+(m||""); s.className=err?"err":""; }
 function logTo(id,msg){ const l=$(id); l.append(E("div",null,msg)); }
-function baseBody(){
-  return {...SEOKEYS.get(), llm_provider:$("llmProvider").value, llm_model:$("llmModel").value,
-          search_provider:$("searchProvider").value};
-}
+function baseBody(){ return {tier: tier()}; }
 // 流式渲染节流：每 120ms 重排一次，避免长文一边写一边把页面卡住
 function throttleRender(box,getText){
   let last=0,timer=null;
@@ -253,8 +249,7 @@ function throttleRender(box,getText){
 $("btnOutline").onclick=async()=>{
   const mainKw=$("mainKw").value.trim(), secKw=$("secKw").value.trim(), topic=$("topic").value.trim();
   if(!mainKw||!secKw||!topic){ setStatus("主关键词 / 次关键词 / 主题 都要填。",true); return; }
-  const k=SEOKEYS.get();
-  if(!k.openrouter_key&&!k.deepseek_key){ setStatus("请先设置 OpenRouter 或 DeepSeek key。",true); SEOKEYS.open(); return; }
+  if(!CARD.has()){ setStatus("请先输入卡密。",true); CARD.open(); return; }
 
   $("btnOutline").disabled=true;
   $("sec2").style.display=""; $("sec3").style.display="none";
@@ -265,6 +260,7 @@ $("btnOutline").onclick=async()=>{
   try{
     await sse("/api/seo-writer/outline",{...baseBody(),
       main_keyword:mainKw, secondary_keyword:secKw, topic,
+      product_url:$("productUrl").value.trim(), product_level:$("productLevel").value,
       specific:$("specific").value, wordcounts:parseInt($("wordcounts").value||"0",10),
       language:$("language").value, enable_images:$("enableImages").checked,
       images_per_article:parseInt($("imagesPer").value,10)},
