@@ -42,6 +42,10 @@ app.add_middleware(
 billing_store.conn()          # 启动即建表，别等第一个请求
 app.include_router(billing_router)
 
+# 免签支付（静态收款码 + 金额尾数匹配；商户号下来后整块可删）
+from billing.pay_router import router as pay_router  # noqa: E402
+app.include_router(pay_router)
+
 # ---- 工具 API ----
 app.include_router(seo_writer_router)
 app.include_router(seo_gap_router)
@@ -67,6 +71,18 @@ async def news():
 async def history_page():
     """我的记录（卡密即身份：余额 / 流水 / 生成结果）。"""
     return FileResponse(WEB / "history.html")
+
+
+@app.get("/buy")
+async def buy_page():
+    """购买页：下单 → 扫静态码按精确金额付款 → 轮询自动出卡密。"""
+    return FileResponse(WEB / "buy.html")
+
+
+@app.get("/payadmin")
+async def payadmin_page():
+    """店主兜底页：到账通知漏了时人工确认订单。有 token 才能操作。"""
+    return FileResponse(WEB / "payadmin.html")
 
 
 @app.get("/tools/{name}")

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
+<title>收款兜底 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css?v=aca3b1d6" />
+<style>
+  .lead{color:var(--muted);font-size:14px;line-height:1.8;max-width:56ch;margin:0 0 18px}
+  .tokrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .tokrow input{flex:1;min-width:200px;font-family:var(--font-mono)}
+  table{width:100%;border-collapse:collapse;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px dashed var(--line);font-size:13.5px}
+  tr:last-child td{border-bottom:0}
+  th{font-size:11.5px;color:var(--muted);font-weight:500;background:var(--soft)}
+  td.m{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  td.amt{font-family:var(--font-mono);font-size:16px;font-weight:500}
+  .old{color:var(--seal)}
+  button.mini{padding:7px 15px;font-size:12.5px}
+  #msg{margin:14px 0;font-size:13.5px;min-height:18px}
+  .empty{color:var(--faint);font-size:13.5px;padding:20px;text-align:center;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg)}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><span class="brand">收款兜底</span>
+  <div class="grow"></div>
+  <a class="navlink" href="/">返回站点</a>
+</div>
+
+<div class="wrap" style="max-width:720px">
+  <h1 style="font-size:22px;margin:0 0 8px">待付订单</h1>
+  <p class="lead">正常情况下手机到账通知会自动发卡，这页用不上。
+    只有通知漏了、或者买家付了整数金额匹配不上时，才来这里：
+    <b>对着支付宝账单核对金额</b>，确认收到了再点「已到账」。</p>
+
+  <div class="tokrow">
+    <input id="tok" type="password" placeholder="口令（PAY_NOTIFY_TOKEN）" />
+    <button onclick="load()">刷新列表</button>
+  </div>
+
+  <div id="msg"></div>
+  <div id="list"><div class="empty">填口令后点刷新。</div></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>{const d=document.createElement("div");d.textContent=s??"";return d.innerHTML;};
+
+// 口令存 localStorage，省得每次输；这页本来就只在店主自己设备上开
+try{ $("tok").value=localStorage.getItem("pz_pay_tok")||""; }catch(e){}
+
+function hdr(){
+  const t=$("tok").value.trim();
+  try{ localStorage.setItem("pz_pay_tok",t); }catch(e){}
+  return {"Content-Type":"application/json","X-Pay-Token":t};
+}
+
+function say(m,bad){ $("msg").style.color=bad?"var(--seal)":"var(--accent)"; $("msg").textContent=m; }
+
+async function load(){
+  say("");
+  try{
+    const r=await fetch("/api/pay/pending",{headers:hdr()});
+    if(r.status===401){ say("口令不对，或服务端没配 PAY_NOTIFY_TOKEN。",true); return; }
+    const j=await r.json();
+    const items=j.items||[];
+    if(!items.length){ $("list").innerHTML='<div class="empty">没有待付订单。</div>'; return; }
+    $("list").innerHTML=`<table><thead><tr>
+        <th>订单号</th><th>商品</th><th>应付金额</th><th>已等</th><th></th></tr></thead><tbody>`
+      + items.map(o=>{
+          const mins=Math.floor(o.age_secs/60);
+          return `<tr>
+            <td class="m">${esc(o.order_id)}</td>
+            <td>${esc(o.product)}</td>
+            <td class="amt">¥${esc(o.amount)}</td>
+            <td class="${mins>20?"old":""}">${mins} 分钟</td>
+            <td><button class="mini" onclick="confirmOne('${esc(o.order_id)}','${esc(o.amount)}')">已到账</button></td>
+          </tr>`;
+        }).join("") + "</tbody></table>";
+  }catch(e){ say(String(e),true); }
+}
+
+async function confirmOne(oid,amt){
+  // 确认即发卡、即扣库存，点错了没有撤销 —— 所以拦一道
+  if(!confirm(`确认已经收到 ¥${amt} 了吗？\n\n订单 ${oid}\n确认后立刻生成卡密交付给买家，无法撤销。`)) return;
+  try{
+    const r=await fetch("/api/pay/confirm",{method:"POST",headers:hdr(),
+      body:JSON.stringify({order_id:oid})});
+    const j=await r.json();
+    if(!r.ok){ say(j.detail||"确认失败",true); return; }
+    say(`${oid} 已发卡，买家页面会自动出现卡密。`);
+    load();
+  }catch(e){ say(String(e),true); }
+}
+
+if($("tok").value) load();
+</script>
+</body>
+</html>

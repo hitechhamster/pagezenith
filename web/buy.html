@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>购买点数卡 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css?v=aca3b1d6" />
+<style>
+  .lead{color:var(--muted);font-size:15px;line-height:1.8;max-width:52ch;margin:0 0 22px}
+  .packs{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:8px}
+  .pack{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);
+    padding:18px;box-shadow:var(--shadow);cursor:pointer;text-align:left;
+    transition:border-color .15s,transform .12s}
+  .pack:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .pack.best{border-color:var(--accent)}
+  .pack .pn{font-size:13px;color:var(--muted);margin-bottom:4px}
+  .pack .pp{font-family:var(--font-mono);font-size:30px;font-weight:500;line-height:1.15}
+  .pack .pp small{font-size:14px;color:var(--faint)}
+  .pack .pc{font-size:13px;color:var(--muted);margin:6px 0 14px}
+  .pack .pgo{display:inline-block;border-radius:999px;background:var(--accent);color:#fff;
+    padding:9px 20px;font-size:13.5px;font-weight:600}
+  .pack .tagbest{font-size:11px;color:#fff;background:var(--accent);border-radius:999px;
+    padding:2px 9px;margin-left:7px;vertical-align:2px}
+
+  /* 结账：小票感，跟站内其他长任务同一套语言 */
+  .checkout{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);
+    box-shadow:var(--shadow);overflow:hidden;margin-top:18px}
+  .co-head{display:flex;justify-content:space-between;align-items:center;gap:12px;
+    padding:13px 18px;border-bottom:1px dashed var(--line);font-size:13px;color:var(--muted)}
+  .co-body{padding:20px 18px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:start}
+  .qr{width:210px;height:210px;border:1px solid var(--line);border-radius:12px;
+    display:grid;place-items:center;background:#fff;overflow:hidden;flex-shrink:0}
+  .qr img{width:100%;height:100%;object-fit:contain;display:block}
+  .qr .noqr{font-size:12px;color:var(--faint);text-align:center;padding:14px;line-height:1.7}
+  .amt{font-family:var(--font-mono);font-size:40px;font-weight:500;line-height:1.1;
+    font-variant-numeric:tabular-nums}
+  .amt .cny{font-size:20px;color:var(--muted);margin-right:2px}
+  .warn{border-left:3px solid var(--seal);background:var(--redbg);border-radius:0 8px 8px 0;
+    padding:11px 14px;margin:14px 0;font-size:13px;line-height:1.75}
+  .warn b{color:var(--seal)}
+  .steps{margin:0;padding-left:19px;font-size:13px;color:var(--muted);line-height:2}
+  .oid{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+  .co-foot{padding:12px 18px;border-top:1px dashed var(--line);font-size:12px;color:var(--faint);
+    display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+  .waiting{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--muted);margin-top:4px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+
+  /* 出卡 */
+  .done{border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--card);
+    box-shadow:var(--shadow);padding:22px 20px;margin-top:18px;position:relative}
+  .done h2{margin:0 0 6px;font-size:19px}
+  .cardkey{font-family:var(--font-mono);font-size:22px;font-weight:500;letter-spacing:.06em;
+    background:var(--soft);border:1px dashed var(--line);border-radius:10px;
+    padding:15px 16px;margin:14px 0 10px;word-break:break-all;user-select:all}
+  .seal{position:absolute;right:16px;top:16px;width:52px;height:52px;display:grid;place-items:center;
+    border:2.5px solid var(--seal);border-radius:9px;color:var(--seal);
+    font-family:var(--font-display);font-weight:700;font-size:23px;transform:rotate(-8deg)}
+  #err{color:var(--seal);font-size:13.5px;margin-top:12px;min-height:18px}
+  @media(max-width:660px){ .co-body{grid-template-columns:1fr} .qr{width:100%;height:auto;aspect-ratio:1} }
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+  <a class="keybtn" href="/history" style="text-decoration:none">我的记录</a>
+</div>
+
+<div class="wrap" style="max-width:780px">
+  <h1 style="font-size:26px;margin:0 0 8px">购买点数卡</h1>
+  <p class="lead">点数不过期，用多少扣多少。一篇文章全套 10 点（大纲 2 + 正文 5 + 润色 3）。
+    付款后卡密立刻显示在本页，请自行保存 —— 它就是你的账户。</p>
+
+  <div class="packs" id="packs"></div>
+
+  <div id="checkout" style="display:none"></div>
+  <div id="err"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let TIMER=null, TICK=null;
+
+function esc(s){ const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; }
+
+async function loadPacks(){
+  try{
+    const list=await (await fetch("/api/pay/products")).json();
+    $("packs").innerHTML=list.map((p,i)=>`
+      <div class="pack${i===1?" best":""}" data-id="${esc(p.id)}">
+        <div class="pn">${esc(p.name)}${i===1?'<span class="tagbest">多数人选这张</span>':""}</div>
+        <div class="pp"><small>¥</small>${esc(p.price)}</div>
+        <div class="pc">${p.credits} 点 · 约 ${Math.floor(p.credits/10)} 篇全套文章</div>
+        <span class="pgo">购买</span>
+      </div>`).join("");
+    $("packs").querySelectorAll(".pack").forEach(el=>{
+      el.onclick=()=>startOrder(el.dataset.id);
+    });
+  }catch(e){ $("err").textContent="商品加载失败，请刷新重试。"; }
+}
+
+async function startOrder(pid){
+  $("err").textContent="";
+  try{
+    const r=await fetch("/api/pay/order",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({product:pid})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.detail||"下单失败");
+    renderCheckout(j);
+    poll(j.order_id);
+  }catch(e){ $("err").textContent=String(e.message||e); }
+}
+
+function renderCheckout(o){
+  $("packs").style.display="none";
+  const box=$("checkout"); box.style.display="";
+  box.innerHTML=`
+    <div class="checkout">
+      <div class="co-head">
+        <span>${esc(o.name)} · ${o.credits} 点</span>
+        <span class="oid">订单 ${esc(o.order_id)}</span>
+      </div>
+      <div class="co-body">
+        <div class="qr" id="qr"><div class="noqr">收款码未配置<br />请联系站长</div></div>
+        <div>
+          <div style="font-size:12.5px;color:var(--muted);margin-bottom:4px">请支付</div>
+          <div class="amt"><span class="cny">¥</span>${esc(o.amount)}</div>
+          <div class="warn">
+            <b>必须付这个金额，一分不差。</b>系统靠金额认单 —— 付整数或改金额会导致无法自动发卡。
+          </div>
+          <ol class="steps">
+            <li>支付宝扫左边的码</li>
+            <li>把金额改成 <b>${esc(o.amount)}</b></li>
+            <li>付款，本页会自动出现卡密</li>
+          </ol>
+          <div class="waiting"><span class="dot"></span><span id="wait">等待付款…</span></div>
+        </div>
+      </div>
+      <div class="co-foot">
+        <span>订单 <span id="left">${Math.floor(o.expires_in/60)}</span> 分钟内有效</span>
+        <span>付了没反应？截图找站长，报订单号 ${esc(o.order_id)}</span>
+      </div>
+    </div>`;
+  // 收款码图片没配置就保留占位文案，不报错
+  const img=new Image();
+  img.onload=()=>{ $("qr").innerHTML=""; $("qr").append(img); };
+  img.src="/assets/pay/alipay.png";
+
+  let left=o.expires_in;
+  clearInterval(TICK);
+  TICK=setInterval(()=>{
+    left--; const el=$("left"); if(el) el.textContent=Math.max(0,Math.ceil(left/60));
+    if(left<=0){ clearInterval(TICK); clearInterval(TIMER);
+      const w=$("wait"); if(w) w.textContent="订单已过期，请重新下单。"; }
+  },1000);
+}
+
+function poll(oid){
+  clearInterval(TIMER);
+  TIMER=setInterval(async()=>{
+    try{
+      const j=await (await fetch("/api/pay/order/"+encodeURIComponent(oid))).json();
+      if(j.status==="paid"){ clearInterval(TIMER); clearInterval(TICK); showKey(j); }
+      else if(j.status==="expired"){ clearInterval(TIMER); }
+    }catch(e){ /* 网络抖动不打断轮询 */ }
+  },3000);
+}
+
+function showKey(j){
+  $("checkout").innerHTML=`
+    <div class="done">
+      <div class="seal">付</div>
+      <h2>付款成功，这是你的卡密</h2>
+      <div style="font-size:13.5px;color:var(--muted)">${esc(j.name)} · ${j.credits} 点</div>
+      <div class="cardkey">${esc(j.card_key)}</div>
+      <div style="font-size:13px;color:var(--seal);line-height:1.8">
+        <b>请立刻保存这串卡密</b>（截图或存记事本）。它就是你的账户，不绑定设备也不绑手机号，
+        丢了无法找回。换电脑重新填一次即可取回余额和全部生成记录。
+      </div>
+      <div class="btns" style="margin-top:16px">
+        <button onclick="copyKey('${esc(j.card_key)}')">复制卡密</button>
+        <a class="keybtn" style="text-decoration:none;padding:11px 22px;border-radius:999px"
+           href="/tools/seo-writer">去写第一篇 →</a>
+      </div>
+    </div>`;
+}
+
+function copyKey(k){
+  navigator.clipboard.writeText(k).then(
+    ()=>{ $("err").style.color="var(--accent)"; $("err").textContent="已复制到剪贴板。"; },
+    ()=>{ $("err").textContent="复制失败，请手动选中上面的卡密。"; });
+}
+
+loadPacks();
+</script>
+</body>
+</html>

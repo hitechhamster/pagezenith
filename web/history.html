@@ -115,7 +115,7 @@ async function loadBalance(){
     <div class="b"><div class="k">本卡成品</div><div class="v" id="bWorks">—</div></div>
     ${b.label?`<div class="b"><div class="k">卡种</div>
       <div class="v" style="font-size:15px;font-family:var(--font-ui)">${b.label}</div></div>`:""}
-    <div class="buy"><a href="/#buy">${low?"点数不够了，续一张":"续一张"}</a></div>`;
+    <div class="buy"><a href="/buy">${low?"点数不够了，续一张":"续一张"}</a></div>`;
 }
 
 function setWorks(n){ const e=$("bWorks"); if(e) e.innerHTML=n+'<small> 条</small>'; }

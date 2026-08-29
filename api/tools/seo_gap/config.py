@@ -173,6 +173,8 @@ class Settings(BaseSettings):
     #   Gemini            → 走代理（唯一被地域封的）
     #   DeepSeek          → **必须直连**，走代理反而不通
     #   Serper / Reddit   → 香港直连正常，不进隧道（少一条依赖就少一个故障点）
+    # 免签支付：手机到账通知转发 与 /payadmin 管理页 共用的口令（见 billing/payorders.py）
+    pay_notify_token: str = ""
     outbound_proxy: str = ""
     # 需要走代理的目的地关键词；留空则用默认（只有 gemini/google）
     proxy_targets: str = "gemini,generativelanguage,googleapis"
