@@ -38,6 +38,41 @@ Clark 就是改造前那套原始 prompt，一个字没变 —— 选它 = 用�
 - 人称轴很干净：you 用量 3 → 13 → 30，正式到亲切单调排开
 - Martin 的"数字塌陷"不存在（23.1 vs 23.4），那是假象
 
+## 第二组受控数据（题材三 conceptual）与最终决策
+
+  写手        年级   句长   TTR    数字  we/you   禁用词
+  Clark 平衡  13.5   18.7   0.452  4.5   8/16     5
+  Martin 严谨 16.2   19.1   0.462  1.5   14/0     1   ← 全场禁用词最少
+  Dana 轻松    9.5   13.2   0.399  3.7   4/42     6
+
+**两组受控数据放在一起，得出这条产品结论：**
+
+  稳定成立的是**人称轴**，不是难度轴。
+  两个题材里 you 用量都是 Martin(3/0) → Clark(13/16) → Dana(30/42)，单调可复现。
+  而阅读年级只有 Dana 稳（8.4/9.5）；Martin 在两版句长规则之间从 10.5 弹到 16.2。
+
+  所以：**对外把这条轴讲成"口吻/语域"，不要讲成"难度"** —— 口吻控得死，难度控不稳。
+
+**Martin 的年级问题是结构性的，不是调参能解的**（2026-08-28 用户拍板方案 A）：
+  - 无句长下限 → 句长 11.0、年级 10.5，但那已经不是"严谨"了，是另一个 Dana
+  - 有句长下限 → 句长 19.1（达标）、年级 16.2
+  专业语域本来就需要完整的限定从句，句长和难度在这个声音上是绑死的。
+  **决策：保留句长下限，年级交给润色环节解决。**
+  别再来第三次盲调句长参数 —— 前两次一次过浅一次过难，参数不是问题所在。
+
+  ⚠️ 这个决策第一次验证是**失败**的：润色只把 Martin 从 16.2 降到 15.0（Clark 降 2.3）。
+  根因是 Martin 的 polish 块当时只写了约束（保住语域、别加俏皮话），
+  把润色的手脚捆住了 —— **它不敢动词汇**。已改成"先授权简化、再约束语域"，
+  并明确写上"语域 ≠ 难度：正式体现在人称与立场，不体现在用长词上"。
+  改 polish 块时别把授权那半段删了，删了就退回 15.0。
+
+  ✅ 改完复验通过（2026-08-28）：三个写手润色后全部落进 9–12，结构零破坏。
+       Martin  16.2 → 11.3   （改之前只到 15.0）
+       Clark   13.5 → 11.2
+       Dana     9.5 →  9.4
+     关键是**语域没被润掉**：Martin 润色后 you 仍为 0、we 12，依然是零人称的 B 端口吻。
+     方案 A 至此成立：正文阶段保语域，难度交给润色。
+
 三条结论直接决定了下面的规则怎么写：
 
 1. **「轻松」不能照教练那样做。** 教练的规则是"短句 + 假设读者是新手 +
@@ -139,12 +174,23 @@ VOICES: dict[str, dict[str, Any]] = {
   exceeds C"), rather than chopping them into three. If your sentences average under 14 words
   you have drifted out of this voice. Do not stack three clauses in one sentence.
 - Banned: superlatives with no support ("the best", "revolutionary"), and {_BANNED}.""",
+        # ⚠️ 这段刻意写成"先授权、再约束"。
+        # 上一版只写了约束（保住语域/限定词/不许俏皮），结果润色不敢动词汇：
+        # 实测 16.2 → 15.0，只降 1.2 级，而规则为空的 Clark 降了 2.3 级。
+        # 语域 ≠ 难度：正式体现在人称、立场、克制上，不体现在用长词上。
         "polish": (
-            "Preserve MARTIN's voice: finding-first paragraphs, every table, and the deliberate "
-            "hedging — keep words like 'some', 'often', 'unclear' exactly where they appear; "
-            "they are calibration, not padding. Never turn a measured statement into a "
-            "confident absolute. Keep the professional register: do not add jokes, slang, or "
-            "chatty asides while simplifying."
+            "MARTIN's article is the hardest of the three to read, so **simplifying it is your "
+            "main job here, not an optional extra.** Hit the readability target: replace every "
+            "Latinate word that has a plain equivalent (utilise→use, demonstrate→show, "
+            "necessitates→needs, facilitates→makes, consequently→so), and split any sentence "
+            "that runs past 28 words. Be aggressive about this. "
+            "What you must NOT change while doing it: the professional register (no jokes, no "
+            "slang, no chatty asides, no second-person cheerleading), the finding-first "
+            "paragraph order, every table, every figure, and the deliberate hedging — keep "
+            "'some', 'often', 'unclear' exactly where they appear; they are calibration, not "
+            "padding, and turning a measured statement into a confident absolute is a defect. "
+            "Formality lives in stance and word choice, not in difficulty. A short plain "
+            "sentence can be entirely formal."
         ),
     },
 

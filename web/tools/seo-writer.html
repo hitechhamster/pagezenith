@@ -21,6 +21,22 @@
   .f input,.f select,.f textarea{width:100%}
   .f textarea{min-height:74px;resize:vertical;line-height:1.6;font-family:var(--font-ui)}
   .f.narrow{flex:0 0 130px;min-width:130px}
+  /* 步骤轨 */
+  .track{display:flex;flex-wrap:wrap;gap:0;list-style:none;padding:0;margin:14px 0 4px;
+    border:1px solid var(--line);border-radius:999px;background:var(--card);overflow:hidden}
+  .track li{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:9px 10px;font-size:12px;color:var(--faint);white-space:nowrap;
+    border-right:1px dashed var(--line);transition:background .2s,color .2s}
+  .track li:last-child{border-right:0}
+  .track li b{font-family:var(--font-mono);font-size:11px;font-weight:500;opacity:.7}
+  .track li.on{background:var(--accentsoft);color:var(--text);font-weight:500}
+  .track li.on b{opacity:1}
+  .track li.done{color:var(--muted)}
+  .track li.done b:after{content:" ✓";color:var(--accent)}
+  /* 第 5 步是人工审批 —— 全程唯一需要用户动手的一步，用印泥红标出来 */
+  .track li.key.on{background:var(--redbg);color:var(--seal)}
+  .track li.key.on b{color:var(--seal)}
+  @media(max-width:700px){.track li{font-size:11px;padding:8px 6px}}
   .voices{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;margin-bottom:4px}
   .vo{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px;
     cursor:pointer;text-align:center;transition:border-color .15s,background .15s}
@@ -100,6 +116,17 @@
   <h1 style="font-size:22px;margin:0 0 4px">SEO 文章生成</h1>
   <div class="sub">填关键词 → <b>全网搜索 + Reddit 真实讨论</b> → 出 EEAT 大纲给你审批（可反复改）→ 按大纲写整篇长文，
     出 SEO 标题描述、可选配图，最后导出 Word。标题全用疑问句 + 黄金答案句结构。</div>
+
+  <!-- 七步动线：设计稿的步骤轨。用户随时知道走到哪、还剩几步、哪一步要他拍板 -->
+  <ol class="track" id="track">
+    <li data-k="wordcount"><b>01</b>定字数</li>
+    <li data-k="search"><b>02</b>搜全网</li>
+    <li data-k="reddit"><b>03</b>抓 Reddit</li>
+    <li data-k="classify"><b>04</b>定类型</li>
+    <li data-k="approve" class="key"><b>05</b>你来审批</li>
+    <li data-k="article"><b>06</b>写正文</li>
+    <li data-k="polish"><b>07</b>润色</li>
+  </ol>
 
   <!-- 供应商 -->
   <div class="sec">
@@ -328,6 +355,18 @@ function logTo(id,msg){
   row.append(t,m); l.append(row);
 }
 function logReset(id){ delete LOG_T0[id]; $(id).innerHTML=""; }
+
+/* 步骤轨：直接复用后端 step 事件里已有的 key，不为它另加一套事件。
+   顺序写死在前端，因为"第几步"是产品动线，不该由后端事件到达顺序决定。 */
+const TRACK=["wordcount","search","reddit","classify","approve","article","polish"];
+function trackTo(key){
+  const at=TRACK.indexOf(key); if(at<0) return;
+  [...$("track").children].forEach(li=>{
+    const i=TRACK.indexOf(li.dataset.k);
+    li.classList.toggle("on", i===at);
+    li.classList.toggle("done", i<at);
+  });
+}
 /* 审批章：大纲出来才盖。审批环节是本产品跟"一键出文"最大的区别，要看得见。
    剩余免费次数用服务端回传的 free_revises_left —— 前端不另记一份计数，
    否则两边算的必然会对不上（扣点以服务端为准）。 */
@@ -372,11 +411,11 @@ $("btnOutline").onclick=async()=>{
       images_per_article:parseInt($("imagesPer").value,10),
       voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
-        if(ev.type==="step") logTo("log1",ev.message);
+        if(ev.type==="step"){ logTo("log1",ev.message); trackTo(ev.key); }
         else if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
         else if(ev.type==="done"){
           S.sessionId=ev.session_id; S.outline=ev.outline; paint(true);
-          showSeal();
+          showSeal(); trackTo("approve");
           $("outlineMeta").textContent=`· 目标 ${ev.wordcounts} 词 · ${ev.topic_type}`;
           setStatus("大纲已生成，看一下：不满意就提修改意见，满意就点「通过」。");
         }
@@ -400,7 +439,7 @@ $("btnRevise").onclick=async()=>{
       {...baseBody(), session_id:S.sessionId, feedback:fb, outline:before},
       ev=>{
         if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
-        else if(ev.type==="done"){ S.outline=ev.outline; paint(true); $("feedback").value=""; showSeal(ev.free_revises_left);
+        else if(ev.type==="done"){ S.outline=ev.outline; paint(true); $("feedback").value=""; showSeal(ev.free_revises_left); trackTo("approve");
           setStatus("大纲已按意见修改。可以继续提意见，也可以点「通过」。"); }
         else if(ev.type==="error") throw new Error(ev.message);
       });
@@ -428,7 +467,7 @@ $("btnArticle").onclick=async()=>{
       enable_images:$("enableImages").checked, images_per_article:parseInt($("imagesPer").value,10),
       voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
-        if(ev.type==="step") logTo("log2",ev.message);
+        if(ev.type==="step"){ logTo("log2",ev.message); trackTo(ev.key==="images"?"article":ev.key); }
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
@@ -486,7 +525,7 @@ $("btnPolish").onclick=async()=>{
       article:S.pre.article, language:$("language").value,
       main_keyword:$("mainKw").value.trim(), voice:VOICE},
       ev=>{
-        if(ev.type==="step") logTo("log2",ev.message);
+        if(ev.type==="step"){ logTo("log2",ev.message); trackTo("polish"); }
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
         else if(ev.type==="done"){
