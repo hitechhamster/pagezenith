@@ -189,22 +189,36 @@ def logout(token: str) -> None:
 
 
 # ── 点数 ────────────────────────────────────────────────────────────
-def add_credits(account_id: int, credits: int, note: str = "") -> None:
-    """给账户钱包加点（购买成功、后台补偿都走这里）。"""
+def add_credits(account_id: int, credits: int, note: str = "", tries: int = 6) -> None:
+    """给账户钱包加点（购买成功、后台补偿、店主手动发放都走这里）。
+
+    ⚠️ 带重试：这个函数会在**网站正在跑的时候**被外部脚本调用（scripts/grant.py），
+    SQLite 同一时刻只允许一个写者，撞上服务自己的写入就会 database is locked。
+    加点是跟钱有关的操作，不能试一次失败就算了 —— 2026-08-29 就这么留下过一个
+    "账户建好了但点数没加上"的半截状态。
+    """
     if credits <= 0:
         return
-    with _LOCK:
-        _init()
-        row = conn().execute("SELECT wallet_hash FROM accounts WHERE id=?",
-                             (account_id,)).fetchone()
-        if row is None:
-            raise ValueError("账户不存在。")
-        conn().execute(
-            "UPDATE cards SET total_credits = total_credits + ?, "
-            "note = CASE WHEN ?='' THEN note ELSE note || ? || char(10) END "
-            "WHERE card_hash=?",
-            (credits, note, note, row["wallet_hash"]))
-        conn().commit()
+    import sqlite3 as _sq
+    for attempt in range(tries):
+        try:
+            with _LOCK:
+                _init()
+                row = conn().execute("SELECT wallet_hash FROM accounts WHERE id=?",
+                                     (account_id,)).fetchone()
+                if row is None:
+                    raise ValueError("账户不存在。")
+                conn().execute(
+                    "UPDATE cards SET total_credits = total_credits + ?, "
+                    "note = CASE WHEN ?='' THEN note ELSE note || ? || char(10) END "
+                    "WHERE card_hash=?",
+                    (credits, note, note, row["wallet_hash"]))
+                conn().commit()
+            return
+        except _sq.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == tries - 1:
+                raise
+            time.sleep(0.4 * (attempt + 1))      # 递增退避，总计约 8 秒
 
 
 def redeem_card(account_id: int, card_key: str) -> int:

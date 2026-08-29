@@ -35,7 +35,15 @@ def main() -> None:
 
     if row is None:
         pw = a.password or secrets.token_urlsafe(9)
-        out = accounts.register(em, pw)
+        import sqlite3 as _sq
+        import time as _t
+        for i in range(6):                      # 网站在跑时可能撞写锁，退避重试
+            try:
+                out = accounts.register(em, pw); break
+            except _sq.OperationalError as exc:
+                if "locked" not in str(exc).lower() or i == 5:
+                    raise
+                _t.sleep(0.4 * (i + 1))
         aid = out["id"]
         print(f"新建账户 #{aid}  {em}")
         print(f"  密码：{pw}      ← 只打印这一次，库里只有哈希")
