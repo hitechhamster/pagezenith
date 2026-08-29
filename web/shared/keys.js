@@ -1,13 +1,14 @@
 "use strict";
-/* 卡密管理（2026-08 取代原来的「用户自带 API Key」）。
+/* 身份与余额（2026-08-29：账户体系取代卡密，卡密降级成充值券）。
  *
  * 设计要点：
- * 1. **卡密即身份**：卡号存本机 localStorage，每次请求自动带 X-Card-Key 头。
+ * 1. **账户即身份**：会话走 HttpOnly cookie，前端读不到也不需要读。
+ *    本机 localStorage 里的卡号只作兼容路径保留，主流程用不到。
  *    不需要注册登录；换台电脑输入同一张卡，余额和历史记录都在。
  * 2. **fetch 挂钩**：拦截所有 /api/ 请求自动加头 —— 六个工具页原有的 fetch
  *    代码一行都不用改。401/402/429 也在这里统一提示，省得每页各写一套。
  * 3. 文件名保留 keys.js、全局仍叫 SEOKEYS：老页面的 <script src> 和
- *    SEOKEYS.open()/hasKeys() 调用继续可用（内部语义已换成卡密）。
+ *    SEOKEYS.open()/hasKeys() 调用继续可用（open 现在是跳登录页）。
  */
 (function () {
   const LS = "pz_card_key";
@@ -30,10 +31,21 @@
     }
     const resp = await rawFetch(input, init);
     if (isApi && (resp.status === 401 || resp.status === 402)) {
-      // 卡密无效 / 点数不足：统一弹窗，避免每个工具页各写一遍提示
-      resp.clone().json().then(j => toast(j.detail || "请检查卡密", true)).catch(() => {});
-      if (resp.status === 401) openModal();
-      refresh();
+      // 身份失效 / 点数不足：统一提示 + 送去登录，免得每个工具页各写一遍。
+      // ⚠️ 两类接口必须排除，它们的 401 有别的含义、也各自处理：
+      //   /api/auth/* —— 登录密码错也是 401，在登录页跳登录页会死循环
+      //   /api/pay/*  —— 店主页口令错是 401，跳走会把店主自己踢出 /payadmin
+      const selfHandled = url.includes("/api/auth/") || url.includes("/api/pay/");
+      if (!selfHandled) {
+        resp.clone().json().then(j => toast(j.detail || "请先登录", true)).catch(() => {});
+        if (resp.status === 401) {
+          setTimeout(() => {
+            location.href = "/login?next=" +
+              encodeURIComponent(location.pathname + location.search);
+          }, 1200);           // 留一点时间让用户看见提示，别闪一下就跳走
+        }
+        refresh();
+      }
     } else if (isApi && resp.ok) {
       // 花过点的请求顺手刷一下余额（成本可忽略：一个 GET）
       if ((init && init.method === "POST") || (typeof input !== "string" && input.method === "POST")) {
@@ -44,8 +56,8 @@
   };
 
   /* ---------- 身份与余额 ----------
-     两种身份：登录账户（主）与裸卡密（兼容旧用户 / 未注册直接用卡）。
-     账户优先 —— 登录着就走账户余额，不再看本地存的卡密。 */
+     账户是唯一的主路径。localStorage 里的卡号只在极老的浏览器会话里可能残留，
+     服务端仍认它（require_card 的兼容分支），但界面不再引导任何人去用。 */
   let account = null;                // {id,email} 或 null
 
   async function refresh() {
@@ -75,7 +87,7 @@
   function badgeText() {
     if (account) return balance ? `${balance.remaining} 点` : "已登录";
     if (!read())  return "登录";
-    return balance ? `余额 ${balance.remaining} 点` : "卡密无效";
+    return balance ? `余额 ${balance.remaining} 点` : "身份已失效";
   }
 
   function paintBadge() {
@@ -88,7 +100,7 @@
     if (b) { b.classList.toggle("warn", !!bad); b.textContent = badgeText(); }
   }
 
-  /* 点徽标：登录了进「我的记录」看账，没登录去登录页（卡密入口在那页下面） */
+  /* 点徽标：登录了进「我的记录」看账，没登录去登录页 */
   function onBadgeClick() {
     if (account) { location.href = "/history"; return; }
     location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
@@ -100,59 +112,13 @@
     location.href = "/";
   }
 
-  /* ---------- 弹窗 ---------- */
-  function modal() {
-    let m = document.getElementById("card-modal");
-    if (m) return m;
-    m = document.createElement("div");
-    m.id = "card-modal";
-    m.innerHTML = `
-      <div class="km-bg"></div>
-      <div class="km-card">
-        <div class="km-h">输入卡密</div>
-        <p class="km-sub">卡密即身份：余额、生成记录都跟着这张卡走，换设备输入同一张卡即可。
-          卡密只保存在你本机浏览器。</p>
-        <label>卡密</label>
-        <input id="card-input" placeholder="PZ-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
-        <div id="card-msg" class="km-msg"></div>
-        <div class="km-actions">
-          <a class="km-buy" href="/#pricing">还没有卡密？看套餐 →</a>
-          <span style="flex:1"></span>
-          <button id="card-cancel" class="btn ghost">取消</button>
-          <button id="card-save" class="btn">保存</button>
-        </div>
-      </div>`;
-    document.body.append(m);
-    m.querySelector(".km-bg").onclick = () => (m.style.display = "none");
-    m.querySelector("#card-cancel").onclick = () => (m.style.display = "none");
-    m.querySelector("#card-save").onclick = async () => {
-      const v = m.querySelector("#card-input").value.trim();
-      const msg = m.querySelector("#card-msg");
-      if (!v) { msg.textContent = "请输入卡密。"; return; }
-      write(v);
-      msg.textContent = "校验中…";
-      const b = await refresh();
-      if (b) {
-        msg.textContent = "";
-        m.style.display = "none";
-        toast(`卡密已保存，余额 ${b.remaining} 点`);
-      } else {
-        msg.textContent = "卡密无效或已停用，请核对后重试。";
-      }
-    };
-    m.querySelector("#card-input").addEventListener("keydown", e => {
-      if (e.key === "Enter") m.querySelector("#card-save").click();
-    });
-    return m;
+  /* 卡密弹窗已删除（2026-08-29 只留登录充值）。
+     open() 保留为跳登录页 —— 老调用点不用改，语义变成"去拿一个身份"。
+     兑换充值券的入口在「我的记录」页，不再全局弹窗。 */
+  function openModal() {
+    location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
   }
 
-  function openModal() {
-    const m = modal();
-    m.querySelector("#card-input").value = read();
-    m.querySelector("#card-msg").textContent = "";
-    m.style.display = "block";
-    setTimeout(() => m.querySelector("#card-input").focus(), 30);
-  }
 
   /* ---------- 轻提示 ---------- */
   function toast(text, isErr) {
