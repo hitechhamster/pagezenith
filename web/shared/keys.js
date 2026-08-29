@@ -59,6 +59,7 @@
      账户是唯一的主路径。localStorage 里的卡号只在极老的浏览器会话里可能残留，
      服务端仍认它（require_card 的兼容分支），但界面不再引导任何人去用。 */
   let account = null;                // {id,email} 或 null
+  let ready = null;                  // 首次 refresh 的 Promise；未完成前身份是「未知」不是「未登录」
 
   async function refresh() {
     // 先问账户；服务端认的是 HttpOnly cookie，前端读不到也不需要读
@@ -100,8 +101,13 @@
     if (b) { b.classList.toggle("warn", !!bad); b.textContent = badgeText(); }
   }
 
-  /* 点徽标：登录了进「我的记录」看账，没登录去登录页 */
-  function onBadgeClick() {
+  /* 点徽标：登录了进「我的记录」看账，没登录去登录页。
+
+     ⚠️ 必须先 await ready —— 页面刚加载时 refresh() 还没回来，account 是 null，
+     那是"还不知道"不是"没登录"。直接当没登录处理会把已登录的用户送去登录页，
+     登录页发现他已登录又弹回来，看起来就是"点登录被踢回首页"。2026-08-29 实测复现过。 */
+  async function onBadgeClick() {
+    try { await ready; } catch (e) {}
     if (account) { location.href = "/history"; return; }
     location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
   }
@@ -162,8 +168,15 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll("[data-card-open], #keybtn").forEach(el => (el.onclick = openModal));
+    // ⚠️ 别再把 onclick 覆盖成 openModal —— 页面里写的是 CARD.onBadgeClick()，
+    //    覆盖掉等于我改的行为全不生效（2026-08-29 踩过）。只给没写 onclick 的兜底。
+    document.querySelectorAll("[data-card-open], #keybtn").forEach(el => {
+      if (!el.getAttribute("onclick")) el.onclick = onBadgeClick;
+    });
     paintBadge();
-    if (read()) refresh();
+    // ⚠️ 无条件刷新。原来写的是 if (read()) —— 只有本地存了卡密才查身份，
+    //    于是账户用户的 account 永远是 null、徽标永远显示"登录"、点了就去登录页。
+    //    这是「已登录却被弹回首页」的真正根因。
+    ready = refresh();
   });
 })();

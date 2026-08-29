@@ -94,8 +94,29 @@ $("go").onclick=submit;
 $("pw").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
 $("email").addEventListener("keydown",e=>{ if(e.key==="Enter") $("pw").focus(); });
 
-// 已登录就别停在这页
-fetch("/api/auth/me").then(r=>r.json()).then(j=>{ if(j.account) location.href=next; }).catch(()=>{});
+// 已登录时不要静默弹走 —— 用户可能是自己点进来的，直接跳走会让人以为"被踢回去了"。
+// 说清楚状态，把去处交给他。
+fetch("/api/auth/me").then(r=>r.json()).then(j=>{
+  if(!j.account) return;
+  document.querySelector(".box").innerHTML=`
+    <h1>你已登录</h1>
+    <p class="sub">当前账户 <b>${j.account.email}</b>${
+      j.balance?` · 余额 ${j.balance.remaining} 点`:""}</p>
+    <div class="btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+      <a class="keybtn" style="text-decoration:none;padding:11px 20px;border-radius:999px;
+         background:var(--accent);color:#fff;border-color:var(--accent)" href="/tools/seo-writer">去写文章</a>
+      <a class="keybtn" style="text-decoration:none;padding:11px 20px;border-radius:999px"
+         href="/history">我的记录</a>
+      <a class="keybtn" style="text-decoration:none;padding:11px 20px;border-radius:999px"
+         href="/buy">充值</a>
+    </div>
+    <div class="swap" style="margin-top:18px">
+      <a id="out">退出登录</a>
+    </div>`;
+  document.getElementById("out").onclick=async()=>{
+    await fetch("/api/auth/logout",{method:"POST"}); location.reload();
+  };
+}).catch(()=>{});
 </script>
 </body>
 </html>
