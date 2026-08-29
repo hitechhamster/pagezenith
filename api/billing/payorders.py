@@ -63,7 +63,24 @@ def _init() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_pay_status ON pay_orders(status, amount_cents);
     """)
+    _migrate()
     conn().commit()
+
+
+# ⚠️ CREATE TABLE IF NOT EXISTS 不会给**已存在**的表补新列。
+# 2026-08-29 就栽在这：account_id 加进了建表语句，但线上表早就建好了，
+# 线上一点「购买」直接 500（table pay_orders has no column named account_id）。
+# 以后给这张表加列，只往下面的清单里加一行，别指望改建表语句能生效。
+_COLUMNS = [
+    ("account_id", "INTEGER"),
+]
+
+
+def _migrate() -> None:
+    have = {r[1] for r in conn().execute("PRAGMA table_info(pay_orders)")}
+    for name, decl in _COLUMNS:
+        if name not in have:
+            conn().execute(f"ALTER TABLE pay_orders ADD COLUMN {name} {decl}")
 
 
 def _expire_stale(now: int) -> None:
