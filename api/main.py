@@ -33,7 +33,7 @@ from tools.site_recon.router import router as site_recon_router
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 
-app = FastAPI(title="PageZenith — AI 跨境营销工具")
+app = FastAPI(title="页面科技 — AI 跨境营销工具")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )

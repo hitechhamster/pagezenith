@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     pay_notify_token: str = ""
     # 发信（Resend）。没配就不发信，只记日志 —— 见 billing/mailer.py
     resend_api_key: str = ""
-    mail_from: str = "PageZenith <noreply@pagezenith.com>"
+    mail_from: str = "页面科技 <noreply@pagezenith.com>"
     site_url: str = "https://pagezenith.com"
     outbound_proxy: str = ""
     # 需要走代理的目的地关键词；留空则用默认（只有 gemini/google）
