@@ -22,8 +22,11 @@ sys.path.insert(0, str(ROOT / "api"))
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("email")
-    ap.add_argument("credits", type=int)
-    ap.add_argument("--password", default="")
+    ap.add_argument("credits", type=int, nargs="?", default=0,
+                    help="要加的点数，只改密码时可省略")
+    ap.add_argument("--password", default="", help="新建账户时指定密码")
+    ap.add_argument("--set-password", default="",
+                    help="给已存在的账户重设密码（用户收不到邮件时的人工兜底）")
     ap.add_argument("--note", default="")
     ap.add_argument("--no-mail", action="store_true", help="不发欢迎信")
     a = ap.parse_args()
@@ -50,8 +53,11 @@ def main() -> None:
     else:
         aid = row["id"]
         print(f"账户已存在 #{aid}  {em}")
-        if a.password:
-            print("  （--password 对已存在的账户不生效，改密码请用 /forgot 或让用户自己改）")
+        if a.set_password:
+            accounts.set_password(aid, a.set_password)
+            print(f"  密码已重设为：{a.set_password}   （该账户所有会话已失效）")
+        elif a.password:
+            print("  （--password 只在新建时生效；给已有账户改密码用 --set-password）")
 
     accounts.add_credits(aid, a.credits, a.note or "店主手动发放")
 

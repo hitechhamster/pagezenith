@@ -148,6 +148,26 @@ def change_password(account_id: int, old: str, new: str) -> None:
         conn().commit()
 
 
+def set_password(account_id: int, new_password: str) -> None:
+    """店主直接设密码，不校验旧密码。
+
+    只给 scripts/grant.py 用 —— 它要求服务器 shell 权限，那已经是完全信任的环境。
+    **绝不要**把它接到任何 HTTP 端点上。
+    用途：用户收不到邮件时的人工兜底（邮件没配好、进了垃圾箱、企业邮箱拦截）。
+    """
+    if len(new_password or "") < 8:
+        raise ValueError("密码至少 8 位。")
+    with _LOCK:
+        _init()
+        salt = secrets.token_hex(16)
+        cur = conn().execute("UPDATE accounts SET pass_salt=?, pass_hash=? WHERE id=?",
+                             (salt, _hash_pw(new_password, salt), account_id))
+        if cur.rowcount == 0:
+            raise ValueError("账户不存在。")
+        conn().execute("DELETE FROM sessions WHERE account_id=?", (account_id,))
+        conn().commit()
+
+
 # ── 会话 ────────────────────────────────────────────────────────────
 def _new_session(account_id: int, ip: str = "") -> str:
     token = secrets.token_urlsafe(32)
