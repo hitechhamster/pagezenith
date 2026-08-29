@@ -17,7 +17,8 @@
 
 - 密码用 hashlib.scrypt（标准库，不引依赖），每个账户独立 salt
 - 会话 token 只存哈希；cookie 走 HttpOnly + SameSite=Lax
-- 没有邮件发送 → 暂无自助找回，忘记密码找站长。接了 SMTP 再补
+- 忘记密码走邮件自助重置（Resend，见 mailer.py）。令牌一次性、30 分钟过期、
+  用掉后踢掉该账户全部会话 —— 走到重置这一步，号本来就可能被人碰过
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from typing import Any, Optional
 from .store import _LOCK, conn, hash_card, mint
 
 SESSION_TTL = 60 * 60 * 24 * 30        # 30 天
+RESET_TTL = 30 * 60                    # 重置链接 30 分钟
 _SCRYPT = dict(n=2 ** 14, r=8, p=1, dklen=32)
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -58,6 +60,14 @@ def _init() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_sess_acct ON sessions(account_id);
         CREATE INDEX IF NOT EXISTS idx_sess_exp  ON sessions(expires_at);
+        CREATE TABLE IF NOT EXISTS resets (
+            token_hash  TEXT PRIMARY KEY,
+            account_id  INTEGER NOT NULL,
+            created_at  INTEGER NOT NULL,
+            expires_at  INTEGER NOT NULL,
+            used_at     INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_reset_exp ON resets(expires_at);
     """)
     conn().commit()
 
@@ -227,3 +237,49 @@ def redeem_card(account_id: int, card_key: str) -> int:
                   (left, wallet["wallet_hash"]))
         c.commit()
     return left
+
+
+# ── 密码重置 ────────────────────────────────────────────────────────
+def start_reset(email: str) -> Optional[tuple[str, str]]:
+    """发起重置。返回 (明文 token, 邮箱)；邮箱不存在时返回 None。
+
+    ⚠️ 调用方**不要**把"邮箱不存在"告诉用户 —— 那等于给人一个枚举注册用户的接口。
+    对外一律回"如果这个邮箱注册过，信已经发出去了"。
+    """
+    em = _norm_email(email)
+    with _LOCK:
+        _init()
+        row = conn().execute("SELECT id,email FROM accounts WHERE email=? AND status='active'",
+                             (em,)).fetchone()
+        if row is None:
+            return None
+        token = secrets.token_urlsafe(32)
+        now = int(time.time())
+        conn().execute("DELETE FROM resets WHERE expires_at<? OR account_id=?", (now, row["id"]))
+        conn().execute(
+            "INSERT INTO resets(token_hash,account_id,created_at,expires_at) VALUES(?,?,?,?)",
+            (_tok_hash(token), row["id"], now, now + RESET_TTL))
+        conn().commit()
+    return token, row["email"]
+
+
+def finish_reset(token: str, new_password: str) -> None:
+    """用重置令牌设新密码。令牌一次性，且会踢掉该账户全部会话。"""
+    if len(new_password or "") < 8:
+        raise ValueError("密码至少 8 位。")
+    now = int(time.time())
+    with _LOCK:
+        _init()
+        c = conn()
+        row = c.execute(
+            "SELECT * FROM resets WHERE token_hash=? AND used_at IS NULL AND expires_at>?",
+            (_tok_hash(token or ""), now)).fetchone()
+        if row is None:
+            raise ValueError("链接已失效或已使用，请重新申请。")
+        salt = secrets.token_hex(16)
+        c.execute("UPDATE accounts SET pass_salt=?, pass_hash=? WHERE id=?",
+                  (salt, _hash_pw(new_password, salt), row["account_id"]))
+        c.execute("UPDATE resets SET used_at=? WHERE token_hash=?", (now, row["token_hash"]))
+        # 重置密码 = 号可能被盗过，把所有会话都踢掉
+        c.execute("DELETE FROM sessions WHERE account_id=?", (row["account_id"],))
+        c.commit()

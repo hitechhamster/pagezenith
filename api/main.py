@@ -88,6 +88,18 @@ async def login_page():
     return FileResponse(WEB / "login.html")
 
 
+@app.get("/forgot")
+async def forgot_page():
+    """找回密码（带 token 进来时同一页切成"设新密码"）。"""
+    return FileResponse(WEB / "forgot.html")
+
+
+@app.get("/reset")
+async def reset_page():
+    """邮件里的重置链接指向这里，复用同一个页面。"""
+    return FileResponse(WEB / "forgot.html")
+
+
 @app.get("/buy")
 async def buy_page():
     """购买页：下单 → 扫静态码按精确金额付款 → 轮询自动出卡密。"""

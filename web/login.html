@@ -37,6 +37,8 @@
       <input id="email" type="email" autocomplete="email" placeholder="you@example.com" /></div>
     <div class="fld"><label>密码</label>
       <input id="pw" type="password" autocomplete="current-password" placeholder="至少 8 位" /></div>
+    <div class="fld" id="fld2" style="display:none"><label>再输一次密码</label>
+      <input id="pw2" type="password" autocomplete="new-password" placeholder="确认密码" /></div>
 
     <button id="go">登录</button>
     <div id="msg"></div>
@@ -46,9 +48,10 @@
       <a id="swap">注册一个</a>
     </div>
 
-    <div class="note" id="note">
-      忘记密码暂时需要联系站长找回 —— 邮件自助找回还没接上，这点先说在前面。
+    <div class="swap" id="forgot" style="margin-top:10px">
+      <a href="/forgot">忘记密码？</a>
     </div>
+    <div class="note" id="note" style="display:none"></div>
   </div>
 </div>
 
@@ -70,7 +73,10 @@ function setMode(m){
   $("swapText").textContent = reg?"已经有账户了？":"还没有账户？";
   $("swap").textContent = reg?"去登录":"注册一个";
   $("pw").autocomplete = reg?"new-password":"current-password";
-  $("note").style.display = reg?"none":"";
+  $("fld2").style.display = reg?"":"none";
+  $("forgot").style.display = reg?"none":"";
+  $("note").style.display = "none";
+  if(!reg) $("pw2").value="";
   say("");
 }
 $("swap").onclick=()=>setMode(MODE==="login"?"register":"login");
@@ -78,11 +84,18 @@ $("swap").onclick=()=>setMode(MODE==="login"?"register":"login");
 async function submit(){
   const email=$("email").value.trim(), password=$("pw").value;
   if(!email||!password) return say("邮箱和密码都要填。",true);
+  const body={email,password};
+  if(MODE==="register"){
+    const p2=$("pw2").value;
+    if(!p2) return say("请再输一次密码。",true);
+    if(p2!==password) return say("两次输入的密码不一样。",true);
+    body.password2=p2;
+  }
   $("go").disabled=true; say("处理中…");
   try{
     const r=await fetch("/api/auth/"+MODE,{method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({email,password})});
+      body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok) throw new Error(j.detail||"失败了");
     say("成功，正在跳转…");
@@ -91,7 +104,8 @@ async function submit(){
   finally{ $("go").disabled=false; }
 }
 $("go").onclick=submit;
-$("pw").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
+$("pw").addEventListener("keydown",e=>{ if(e.key==="Enter"){ if(MODE==="register") $("pw2").focus(); else submit(); } });
+$("pw2").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
 $("email").addEventListener("keydown",e=>{ if(e.key==="Enter") $("pw").focus(); });
 
 // 已登录时不要静默弹走 —— 用户可能是自己点进来的，直接跳走会让人以为"被踢回去了"。

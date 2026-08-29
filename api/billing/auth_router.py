@@ -8,11 +8,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from . import accounts, store
+from . import accounts, mailer, store
 from .deps import SESSION_COOKIE, _client_ip, _rate_limit_bad_key
+from tools.seo_gap.config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -25,6 +26,12 @@ class Creds(BaseModel):
     password: str
 
 
+class SignupReq(BaseModel):
+    email: str
+    password: str
+    password2: str = ""      # 二次确认；前端也校验，这里是最后一道
+
+
 def _issue(request: Request, response: Response, out: dict) -> dict:
     secure = request.url.scheme == "https"
     response.set_cookie(SESSION_COOKIE, out["token"], secure=secure, **COOKIE)
@@ -32,12 +39,17 @@ def _issue(request: Request, response: Response, out: dict) -> dict:
 
 
 @router.post("/register")
-async def register(req: Creds, request: Request, response: Response):
+async def register(req: SignupReq, request: Request, response: Response,
+                   bg: BackgroundTasks):
+    if req.password2 and req.password != req.password2:
+        raise HTTPException(status_code=400, detail="两次输入的密码不一样。")
     try:
         out = accounts.register(req.email, req.password, _client_ip(request))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("新账户 #%s %s", out["id"], out["email"])
+    # 后台发信：发不出去也不能挡住注册
+    bg.add_task(mailer.send_welcome, out["email"], 0)
     return _issue(request, response, out)
 
 
@@ -107,3 +119,44 @@ async def redeem(req: RedeemReq, request: Request):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("账户 #%s 兑换卡密 +%s 点", acct["id"], got)
     return {"ok": True, "credits": got}
+
+
+# ── 忘记密码 ────────────────────────────────────────────────────────
+class ForgotReq(BaseModel):
+    email: str
+
+
+@router.post("/forgot")
+async def forgot(req: ForgotReq, request: Request, bg: BackgroundTasks):
+    """申请重置链接。
+
+    ⚠️ 无论邮箱存不存在都返回同一句话 —— 否则这就是个枚举注册用户的接口。
+    """
+    ip = _client_ip(request)
+    _rate_limit_bad_key(ip)          # 跟撞密码共用限流，防有人拿它刷邮件
+    out = accounts.start_reset(req.email)
+    if out is not None:
+        token, email = out
+        link = f"{get_settings().site_url}/reset?token={token}"
+        bg.add_task(mailer.send_reset, email, link, accounts.RESET_TTL // 60)
+        logger.info("重置链接已发往 %s", email)
+    return {"ok": True,
+            "message": "如果这个邮箱注册过，重置链接已经发出去了，30 分钟内有效。"}
+
+
+class ResetReq(BaseModel):
+    token: str
+    password: str
+    password2: str = ""
+
+
+@router.post("/reset")
+async def reset(req: ResetReq, response: Response):
+    if req.password2 and req.password != req.password2:
+        raise HTTPException(status_code=400, detail="两次输入的密码不一样。")
+    try:
+        accounts.finish_reset(req.token, req.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True, "message": "密码已重设，请用新密码登录。"}

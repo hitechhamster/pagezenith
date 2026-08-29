@@ -25,6 +25,13 @@
     padding:9px 18px;font-size:13px;color:var(--text);white-space:nowrap}
   .balance .buy a:hover{border-color:var(--accent)}
   .balance .empty{padding:14px 18px}
+  /* 账户行：登出入口一直没有界面出口，用户没法换号 */
+  .whoami{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    font-size:13px;color:var(--muted);margin-bottom:10px}
+  .whoami .lnk{background:none;border:none;color:var(--muted);cursor:pointer;
+    text-decoration:underline;text-underline-offset:3px;font-size:13px;padding:0;
+    border-radius:0}
+  .whoami .lnk:hover{color:var(--seal);transform:none;box-shadow:none}
   /* 兑换：收进折叠区 —— 账户充值才是主路径，这个是给礼品券/补偿点数用的 */
   .redeem{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);
     padding:12px 16px;margin-bottom:14px}
@@ -76,6 +83,11 @@
   <p class="sub">余额、消费流水、生成结果都跟着你的账户走。换台电脑登录，东西都在。
     生成结果保留最近 50 条 / 90 天。</p>
 
+  <div class="whoami" id="whoami" style="display:none">
+    <span id="whoEmail"></span>
+    <button class="lnk" id="btnLogout">退出登录</button>
+  </div>
+
   <div class="balance" id="balance"><div class="empty" style="padding:6px 0">登录后显示余额与消费流水</div></div>
 
   <details class="redeem">
@@ -121,11 +133,19 @@ function fmt(ts){
   return `${d.getMonth()+1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+document.getElementById("btnLogout").onclick=()=>{
+  if(confirm("退出登录？点数留在账户里，下次登录还在。")) CARD.signOut();
+};
 function toggleRedeem(on){ const d=document.querySelector(".redeem"); if(d) d.style.display=on?"":"none"; }
 async function loadBalance(){
   // 没登录就把兑换区藏了 —— 兑换本来就要先有账户，露着只会让人白填一次
   if(!CARD.has()){ toggleRedeem(false); return; }
   toggleRedeem(true);
+  const acct = CARD.account && CARD.account();
+  if(acct){
+    $("whoami").style.display="flex";
+    $("whoEmail").textContent = "当前账户 " + acct.email;
+  }
   const b=await CARD.refresh();
   if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">身份已失效，请重新登录</div>'; return; }
   // 剩余不足一篇全套（10 点）就把数字标红 —— 提醒要早于用完那一刻
