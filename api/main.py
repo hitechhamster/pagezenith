@@ -46,6 +46,10 @@ app.include_router(billing_router)
 from billing.pay_router import router as pay_router  # noqa: E402
 app.include_router(pay_router)
 
+# 账户体系：登录后点数记在账户上，卡密降级成充值券
+from billing.auth_router import router as auth_router  # noqa: E402
+app.include_router(auth_router)
+
 # ---- 工具 API ----
 app.include_router(seo_writer_router)
 app.include_router(seo_gap_router)
@@ -71,6 +75,12 @@ async def news():
 async def history_page():
     """我的记录（卡密即身份：余额 / 流水 / 生成结果）。"""
     return FileResponse(WEB / "history.html")
+
+
+@app.get("/login")
+async def login_page():
+    """登录 / 注册。"""
+    return FileResponse(WEB / "login.html")
 
 
 @app.get("/buy")

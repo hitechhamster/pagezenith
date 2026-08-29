@@ -56,7 +56,8 @@ def _init() -> None:
             status       TEXT NOT NULL DEFAULT 'pending',  -- pending | paid | expired
             created_at   INTEGER NOT NULL,
             paid_at      INTEGER,
-            card_key     TEXT NOT NULL DEFAULT '',          -- 明文：买家凭订单号取回
+            card_key     TEXT NOT NULL DEFAULT '',          -- 明文：未登录买家凭订单号取回
+            account_id   INTEGER,                            -- 登录着买 → 点数直接进账户，不发卡
             via          TEXT NOT NULL DEFAULT '',           -- auto | manual
             ip           TEXT NOT NULL DEFAULT ''
         );
@@ -75,7 +76,8 @@ def _gen_id() -> str:
     return "P" + "".join(random.choice(_ID_ALPHABET) for _ in range(6))
 
 
-def create_order(product: str, ip: str = "") -> dict[str, Any]:
+def create_order(product: str, ip: str = "",
+                 account_id: Optional[int] = None) -> dict[str, Any]:
     """建订单：挑一个未占用的金额尾数。抛 ValueError 时把 .args[0] 直接给用户看。"""
     if product not in PRODUCTS:
         raise ValueError("没有这个商品。")
@@ -99,10 +101,11 @@ def create_order(product: str, ip: str = "") -> dict[str, Any]:
             raise ValueError("当前下单的人太多，请几分钟后再试。")
 
         oid = _gen_id()
-        c.execute("INSERT INTO pay_orders(id,product,amount_cents,created_at,ip) "
-                  "VALUES(?,?,?,?,?)", (oid, product, amount, now, ip))
+        c.execute("INSERT INTO pay_orders(id,product,amount_cents,created_at,ip,account_id) "
+                  "VALUES(?,?,?,?,?,?)", (oid, product, amount, now, ip, account_id))
         c.commit()
     return {"order_id": oid, "product": product, "name": name, "credits": credits,
+            "to_account": account_id is not None,
             "list_cents": base, "amount_cents": amount,
             "amount": f"{amount // 100}.{amount % 100:02d}",
             "expires_in": ORDER_TTL}
@@ -121,21 +124,40 @@ def get_order(oid: str) -> Optional[dict[str, Any]]:
            "amount": f"{row['amount_cents'] // 100}.{row['amount_cents'] % 100:02d}",
            "expires_in": max(0, row["created_at"] + ORDER_TTL - int(time.time()))}
     if row["status"] == "paid":
-        out["card_key"] = row["card_key"]      # 订单号就是取卡凭证
+        if row["account_id"]:
+            out["to_account"] = True           # 点数已进账户，没有卡密要保存
+        else:
+            out["card_key"] = row["card_key"]  # 订单号就是取卡凭证
     return out
 
 
 def _deliver(row, via: str) -> dict[str, Any]:
-    """造一张卡、写回订单。必须在 _LOCK 里调用。"""
+    """交付。必须在 _LOCK 里调用。
+
+    两条路：登录着下的单直接给账户加点（不产生卡密，用户也不用保存什么）；
+    未登录的单照旧造一张卡，买家凭订单号取回。
+    """
     name, _, credits = PRODUCTS[row["product"]]
-    key = mint(1, credits, batch=f"pay-{via}", label=name)[0]
+    key = ""
+    if row["account_id"]:
+        # 这里不能调 accounts.add_credits —— 它自己要拿 _LOCK，会死锁。
+        # 直接按 wallet_hash 加点，逻辑跟那边一致。
+        w = conn().execute("SELECT wallet_hash FROM accounts WHERE id=?",
+                           (row["account_id"],)).fetchone()
+        if w is None:
+            raise RuntimeError(f"订单 {row['id']} 指向的账户不存在")
+        conn().execute("UPDATE cards SET total_credits = total_credits + ? WHERE card_hash=?",
+                       (credits, w["wallet_hash"]))
+    else:
+        key = mint(1, credits, batch=f"pay-{via}", label=name)[0]
     conn().execute(
         "UPDATE pay_orders SET status='paid', paid_at=?, card_key=?, via=? "
         "WHERE id=? AND status='pending'",
         (int(time.time()), key, via, row["id"]))
     conn().commit()
     return {"order_id": row["id"], "amount_cents": row["amount_cents"],
-            "product": row["product"], "card_key": key}
+            "product": row["product"], "card_key": key,
+            "account_id": row["account_id"], "credits": credits}
 
 
 def match_amount(amount_cents: int) -> Optional[dict[str, Any]]:

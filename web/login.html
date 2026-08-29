@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>登录 · PageZenith</title>
+<link rel="stylesheet" href="/shared/app.css?v=aca3b1d6" />
+<style>
+  .box{max-width:400px;margin:38px auto 0;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:26px 24px}
+  .box h1{font-size:23px;margin:0 0 6px}
+  .box .sub{color:var(--muted);font-size:13.5px;line-height:1.75;margin:0 0 20px}
+  .fld{margin-bottom:14px}
+  .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .fld input{width:100%}
+  .box button{width:100%;margin-top:6px;padding:13px}
+  .swap{margin-top:16px;font-size:13px;color:var(--muted);text-align:center}
+  .swap a{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  #msg{font-size:13px;margin-top:12px;min-height:18px;line-height:1.7}
+  .note{font-size:12px;color:var(--faint);line-height:1.8;margin-top:18px;
+    border-top:1px dashed var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo">PZ</div><a class="brand" href="/" style="color:var(--text)">PageZenith</a>
+  <div class="grow"></div>
+  <a class="navlink" href="/">返回工具</a>
+</div>
+
+<div class="wrap" style="max-width:900px">
+  <div class="box">
+    <h1 id="title">登录</h1>
+    <p class="sub" id="sub">登录后点数记在账户上，换设备直接登录就能用。</p>
+
+    <div class="fld"><label>邮箱</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@example.com" /></div>
+    <div class="fld"><label>密码</label>
+      <input id="pw" type="password" autocomplete="current-password" placeholder="至少 8 位" /></div>
+
+    <button id="go">登录</button>
+    <div id="msg"></div>
+
+    <div class="swap">
+      <span id="swapText">还没有账户？</span>
+      <a id="swap">注册一个</a>
+    </div>
+
+    <div class="note" id="note">
+      忘记密码暂时需要联系站长找回 —— 邮件自助找回还没接上，这点先说在前面。
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let MODE="login";
+const next=new URLSearchParams(location.search).get("next")||"/";
+
+function say(m,bad){ $("msg").style.color=bad?"var(--seal)":"var(--accent)"; $("msg").textContent=m||""; }
+
+function setMode(m){
+  MODE=m;
+  const reg = m==="register";
+  $("title").textContent = reg?"注册":"登录";
+  $("sub").textContent = reg
+    ? "一个邮箱就能开始。点数记在账户上，不用保存任何卡号。"
+    : "登录后点数记在账户上，换设备直接登录就能用。";
+  $("go").textContent = reg?"注册并开始":"登录";
+  $("swapText").textContent = reg?"已经有账户了？":"还没有账户？";
+  $("swap").textContent = reg?"去登录":"注册一个";
+  $("pw").autocomplete = reg?"new-password":"current-password";
+  $("note").style.display = reg?"none":"";
+  say("");
+}
+$("swap").onclick=()=>setMode(MODE==="login"?"register":"login");
+
+async function submit(){
+  const email=$("email").value.trim(), password=$("pw").value;
+  if(!email||!password) return say("邮箱和密码都要填。",true);
+  $("go").disabled=true; say("处理中…");
+  try{
+    const r=await fetch("/api/auth/"+MODE,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email,password})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.detail||"失败了");
+    say("成功，正在跳转…");
+    location.href=next;
+  }catch(e){ say(String(e.message||e),true); }
+  finally{ $("go").disabled=false; }
+}
+$("go").onclick=submit;
+$("pw").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
+$("email").addEventListener("keydown",e=>{ if(e.key==="Enter") $("pw").focus(); });
+
+// 已登录就别停在这页
+fetch("/api/auth/me").then(r=>r.json()).then(j=>{ if(j.account) location.href=next; }).catch(()=>{});
+</script>
+</body>
+</html>

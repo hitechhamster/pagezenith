@@ -27,7 +27,11 @@ from typing import Any, Optional
 from fastapi import Header, HTTPException, Request
 
 from . import store
+from . import accounts
 from .pricing import est_cost_cny, est_image_cost_cny, price, tier_of
+
+# 会话 cookie 名。前端不读它（HttpOnly），只有服务端认。
+SESSION_COOKIE = "pz_session"
 
 logger = logging.getLogger(__name__)
 
@@ -66,18 +70,35 @@ class Card:
 
 async def require_card(request: Request,
                        x_card_key: str = Header(default="", alias="X-Card-Key")) -> Card:
-    """FastAPI 依赖：校验卡密 + 熔断检查。挂在每个花钱的端点上。"""
-    ip = _client_ip(request)
-    key = (x_card_key or "").strip()
-    if not key:
-        _rate_limit_bad_key(ip)
-        raise HTTPException(status_code=401, detail="请先输入卡密。")
+    """FastAPI 依赖：解析身份 + 熔断检查。挂在每个花钱的端点上。
 
-    h = store.hash_card(key)
-    st = store.card_state(h)
-    if st is None:
-        _rate_limit_bad_key(ip)
-        raise HTTPException(status_code=401, detail="卡密无效。")
+    两种身份，解析出来都是一个 card_hash，下游计费逻辑一律不区分：
+      1. **登录会话**（主路径）—— cookie 里的 token → 账户 → 它的钱包卡
+      2. **裸卡密**（兼容路径）—— X-Card-Key 请求头，给老用户和未登录直接用卡的场景
+
+    会话优先。名字还叫 require_card 是为了不动六个工具路由的签名，
+    它现在的语义是"要求一个能扣点的身份"。
+    """
+    ip = _client_ip(request)
+
+    acct = accounts.account_by_token(request.cookies.get(SESSION_COOKIE, ""))
+    if acct is not None:
+        h = acct["wallet_hash"]
+        st = store.card_state(h)
+        if st is None:                      # 钱包卡被人删了，属于数据损坏
+            logger.error("账户 #%s 的钱包卡不存在", acct["id"])
+            raise HTTPException(status_code=500, detail="账户数据异常，请联系站长。")
+    else:
+        key = (x_card_key or "").strip()
+        if not key:
+            _rate_limit_bad_key(ip)
+            raise HTTPException(status_code=401, detail="请先登录，或输入卡密。")
+        h = store.hash_card(key)
+        st = store.card_state(h)
+        if st is None:
+            _rate_limit_bad_key(ip)
+            raise HTTPException(status_code=401, detail="卡密无效。")
+
     if st["status"] != "active":
         raise HTTPException(status_code=403, detail="该卡密已停用。")
 

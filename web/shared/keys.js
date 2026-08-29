@@ -43,8 +43,25 @@
     return resp;
   };
 
-  /* ---------- 余额 ---------- */
+  /* ---------- 身份与余额 ----------
+     两种身份：登录账户（主）与裸卡密（兼容旧用户 / 未注册直接用卡）。
+     账户优先 —— 登录着就走账户余额，不再看本地存的卡密。 */
+  let account = null;                // {id,email} 或 null
+
   async function refresh() {
+    // 先问账户；服务端认的是 HttpOnly cookie，前端读不到也不需要读
+    try {
+      const r = await rawFetch("/api/auth/me");
+      const j = r.ok ? await r.json() : null;
+      account = j && j.account ? j.account : null;
+      if (account) {
+        balance = j.balance || null;
+        paintBadge();
+        window.dispatchEvent(new CustomEvent("pz-card-updated", { detail: balance }));
+        return balance;
+      }
+    } catch (e) { account = null; }
+
     if (!read()) { balance = null; paintBadge(); return null; }
     try {
       const r = await rawFetch("/api/billing/balance", { headers: { "X-Card-Key": read() } });
@@ -55,18 +72,32 @@
     return balance;
   }
 
+  function badgeText() {
+    if (account) return balance ? `${balance.remaining} 点` : "已登录";
+    if (!read())  return "登录 / 卡密";
+    return balance ? `余额 ${balance.remaining} 点` : "卡密无效";
+  }
+
   function paintBadge() {
+    const bad = !balance && (account || read());
     document.querySelectorAll("[data-card-badge]").forEach(el => {
-      if (!read()) { el.textContent = "① 输入卡密"; el.classList.add("warn"); return; }
-      el.classList.toggle("warn", !balance);
-      el.textContent = balance ? `余额 ${balance.remaining} 点` : "卡密无效";
+      el.classList.toggle("warn", !!bad);
+      el.textContent = badgeText();
     });
-    // 兼容老页面的按钮 id
     const b = document.getElementById("keybtn");
-    if (b) {
-      b.classList.toggle("warn", !balance);
-      b.textContent = balance ? `余额 ${balance.remaining} 点` : (read() ? "卡密无效" : "① 输入卡密");
-    }
+    if (b) { b.classList.toggle("warn", !!bad); b.textContent = badgeText(); }
+  }
+
+  /* 点徽标：登录了进「我的记录」看账，没登录去登录页（卡密入口在那页下面） */
+  function onBadgeClick() {
+    if (account) { location.href = "/history"; return; }
+    location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
+  }
+
+  async function signOut() {
+    try { await rawFetch("/api/auth/logout", { method: "POST" }); } catch (e) {}
+    account = null; balance = null; paintBadge();
+    location.href = "/";
   }
 
   /* ---------- 弹窗 ---------- */
@@ -141,13 +172,19 @@
   window.CARD = {
     get: read,
     set: write,
-    has: () => !!read(),
+    // has() = "有没有一个能扣点的身份"。登录了就算有 —— 工具页拿它决定
+    // 能不能提交，只看本地卡密会把登录用户挡在外面。
+    has: () => !!account || !!read(),
     headers: () => (read() ? { "X-Card-Key": read() } : {}),
     balance: () => balance,
+    account: () => account,
+    signOut,
+    onBadgeClick,
     refresh,
     open: openModal,
     toast,
   };
+
   // 老页面兼容层：不再有任何 API key，get() 返回空对象即可
   window.SEOKEYS = {
     get: () => ({}),

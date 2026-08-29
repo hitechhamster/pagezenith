@@ -16,7 +16,8 @@ from pydantic import BaseModel
 
 from tools.seo_gap.config import get_settings
 
-from . import payorders as P
+from . import accounts, payorders as P
+from .deps import SESSION_COOKIE
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pay", tags=["pay"])
@@ -44,8 +45,10 @@ class OrderReq(BaseModel):
 @router.post("/order")
 async def create_order(req: OrderReq, request: Request):
     ip = (request.client.host if request.client else "") or ""
+    # 登录着下单 → 点数直接进账户，不产生卡密（用户不用保存任何东西）
+    acct = accounts.account_by_token(request.cookies.get(SESSION_COOKIE, ""))
     try:
-        return P.create_order(req.product, ip)
+        return P.create_order(req.product, ip, acct["id"] if acct else None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
