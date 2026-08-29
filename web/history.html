@@ -7,12 +7,24 @@
 <link rel="stylesheet" href="/shared/app.css?v=aca3b1d6" />
 <style>
   .sub{color:var(--muted);font-size:14px;margin:0 0 20px;max-width:60ch;line-height:1.7}
-  .balance{display:flex;gap:22px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);
-    border-radius:var(--radius-lg);padding:16px 20px;margin-bottom:22px}
-  .balance .b{min-width:88px}
-  .balance .k{font-size:12px;color:var(--muted);margin-bottom:3px}
-  .balance .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+  /* 余额摘要条：让用户随时对得上账 —— 预付费模式下这是信任的地基。
+     末尾常驻续卡入口：点数见底的那一刻正是最该续的时候。 */
+  .balance{display:flex;flex-wrap:wrap;align-items:stretch;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);
+    overflow:hidden;margin-bottom:16px}
+  .balance .b{flex:1 1 128px;padding:14px 18px;border-right:1px dashed var(--line)}
+  .balance .b:last-of-type{border-right:0}
+  .balance .k{font-size:11.5px;color:var(--muted);margin-bottom:4px}
+  .balance .v{font-family:var(--font-mono);font-size:24px;font-weight:500;
+    font-variant-numeric:tabular-nums;line-height:1.2}
+  .balance .v small{font-size:13px;color:var(--faint);font-weight:400}
   .balance .v.accent{color:var(--accent)}
+  .balance .v.low{color:var(--seal)}
+  .balance .buy{display:flex;align-items:center;padding:14px 18px;border-left:1px dashed var(--line)}
+  .balance .buy a{display:inline-block;border:1px solid var(--line);border-radius:999px;
+    padding:9px 18px;font-size:13px;color:var(--text);white-space:nowrap}
+  .balance .buy a:hover{border-color:var(--accent)}
+  .balance .empty{padding:14px 18px}
   .tabs{display:flex;gap:6px;margin-bottom:14px}
   .tabs button{background:transparent;border:1px solid var(--line);color:var(--muted);
     border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer}
@@ -94,14 +106,19 @@ async function loadBalance(){
   if(!CARD.has()){ return; }
   const b=await CARD.refresh();
   if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">卡密无效</div>'; return; }
+  // 剩余不足一篇全套（10 点）就把数字标红 —— 提醒要早于用完那一刻
+  const low = b.remaining < 10;
   $("balance").innerHTML=`
-    <div class="b"><div class="k">剩余点数</div><div class="v accent">${b.remaining}</div></div>
-    <div class="b"><div class="k">已使用</div><div class="v">${b.used}</div></div>
-    <div class="b"><div class="k">卡面总额</div><div class="v">${b.total}</div></div>
-    <div class="b"><div class="k">今日已用</div><div class="v">${b.spent_today}</div></div>
-    ${b.label?`<div class="b"><div class="k">卡种</div><div class="v" style="font-size:16px">${b.label}</div></div>`:""}`;
+    <div class="b"><div class="k">剩余点数</div>
+      <div class="v ${low?"low":"accent"}">${b.remaining}<small> / ${b.total}</small></div></div>
+    <div class="b"><div class="k">今日已用</div><div class="v">${b.spent_today}<small> 点</small></div></div>
+    <div class="b"><div class="k">本卡成品</div><div class="v" id="bWorks">—</div></div>
+    ${b.label?`<div class="b"><div class="k">卡种</div>
+      <div class="v" style="font-size:15px;font-family:var(--font-ui)">${b.label}</div></div>`:""}
+    <div class="buy"><a href="/#buy">${low?"点数不够了，续一张":"续一张"}</a></div>`;
 }
 
+function setWorks(n){ const e=$("bWorks"); if(e) e.innerHTML=n+'<small> 条</small>'; }
 async function loadList(){
   if(!CARD.has()){ $("list").innerHTML='<div class="empty">请先在右上角输入卡密。</div>'; return; }
   $("list").innerHTML='<div class="empty">加载中…</div>';
@@ -109,6 +126,7 @@ async function loadList(){
     if(tab==="results"){
       const r=await fetch("/api/billing/history"); const j=await r.json();
       const items=j.items||[];
+      setWorks(items.length);   // 摘要条里的"本卡成品"用这份列表回填，不另发请求
       if(!items.length){ $("list").innerHTML='<div class="empty">还没有生成记录。</div>'; return; }
       $("list").innerHTML="";
       items.forEach(it=>{
