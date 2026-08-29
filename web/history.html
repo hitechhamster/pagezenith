@@ -25,6 +25,16 @@
     padding:9px 18px;font-size:13px;color:var(--text);white-space:nowrap}
   .balance .buy a:hover{border-color:var(--accent)}
   .balance .empty{padding:14px 18px}
+  /* 兑换：收进折叠区 —— 账户充值才是主路径，这个是给礼品券/补偿点数用的 */
+  .redeem{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);
+    padding:12px 16px;margin-bottom:14px}
+  .redeem summary{cursor:pointer;font-size:13px;color:var(--muted);list-style:none}
+  .redeem summary::-webkit-details-marker{display:none}
+  .redeem summary:before{content:"＋ ";color:var(--accent)}
+  .redeem[open] summary:before{content:"－ "}
+  .rd-row{display:flex;gap:8px;margin:12px 0 8px;flex-wrap:wrap}
+  .rd-row input{flex:1;min-width:200px;font-family:var(--font-mono)}
+  .rd-msg{font-size:12px;color:var(--faint);line-height:1.7}
   .tabs{display:flex;gap:6px;margin-bottom:14px}
   .tabs button{background:transparent;border:1px solid var(--line);color:var(--muted);
     border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer}
@@ -58,21 +68,30 @@
   <a class="logo" href="/" style="text-decoration:none">PZ</a><div class="brand">PageZenith</div>
   <div class="grow"></div>
   <a class="keybtn" href="/" style="text-decoration:none;margin-right:8px">回工具</a>
-  <button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录 / 卡密</button>
+  <button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录</button>
 </div>
 
 <div class="wrap">
   <h1 style="font-size:28px;margin:26px 0 8px">我的记录</h1>
-  <p class="sub">卡密即身份 —— 余额、消费流水、生成结果都跟着这张卡走。换台电脑输入同一张卡，东西都在。
+  <p class="sub">余额、消费流水、生成结果都跟着你的账户走。换台电脑登录，东西都在。
     生成结果保留最近 50 条 / 90 天。</p>
 
-  <div class="balance" id="balance"><div class="empty" style="padding:6px 0">输入卡密后显示余额</div></div>
+  <div class="balance" id="balance"><div class="empty" style="padding:6px 0">登录后显示余额</div></div>
+
+  <details class="redeem">
+    <summary>有充值券？兑换到账户</summary>
+    <div class="rd-row">
+      <input id="rdKey" placeholder="PZ-XXXX-XXXX-XXXX" />
+      <button id="rdGo">兑换</button>
+    </div>
+    <div class="rd-msg" id="rdMsg">充值券是不记名的一次性凭证，兑换后点数并入账户，券即作废。</div>
+  </details>
 
   <div class="tabs">
     <button id="tabResults" class="on">生成记录</button>
     <button id="tabUsage">消费流水</button>
   </div>
-  <div id="list"><div class="empty">请先在右上角输入卡密。</div></div>
+  <div id="list"><div class="empty">请先登录。</div></div>
 </div>
 
 <div id="viewer">
@@ -105,7 +124,7 @@ function fmt(ts){
 async function loadBalance(){
   if(!CARD.has()){ return; }
   const b=await CARD.refresh();
-  if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">卡密无效</div>'; return; }
+  if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">身份已失效，请重新登录</div>'; return; }
   // 剩余不足一篇全套（10 点）就把数字标红 —— 提醒要早于用完那一刻
   const low = b.remaining < 10;
   $("balance").innerHTML=`
@@ -118,9 +137,28 @@ async function loadBalance(){
     <div class="buy"><a href="/buy">${low?"点数不够了，续一张":"续一张"}</a></div>`;
 }
 
+/* 兑换充值券 */
+document.getElementById("rdGo").onclick=async()=>{
+  const key=$("rdKey").value.trim();
+  const msg=$("rdMsg");
+  if(!key){ msg.style.color="var(--seal)"; msg.textContent="请填写充值券号。"; return; }
+  $("rdGo").disabled=true;
+  try{
+    const r=await fetch("/api/auth/redeem",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({card_key:key})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.detail||"兑换失败");
+    msg.style.color="var(--accent)";
+    msg.textContent=`已兑换 ${j.credits} 点到账户。`;
+    $("rdKey").value="";
+    loadBalance();                       // 余额条立刻反映出来
+  }catch(e){ msg.style.color="var(--seal)"; msg.textContent=String(e.message||e); }
+  finally{ $("rdGo").disabled=false; }
+};
+
 function setWorks(n){ const e=$("bWorks"); if(e) e.innerHTML=n+'<small> 条</small>'; }
 async function loadList(){
-  if(!CARD.has()){ $("list").innerHTML='<div class="empty">请先在右上角输入卡密。</div>'; return; }
+  if(!CARD.has()){ $("list").innerHTML='<div class="empty">请先登录。</div>'; return; }
   $("list").innerHTML='<div class="empty">加载中…</div>';
   try{
     if(tab==="results"){

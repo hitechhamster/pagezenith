@@ -86,13 +86,13 @@ async function load(){
 
 async function confirmOne(oid,amt){
   // 确认即发卡、即扣库存，点错了没有撤销 —— 所以拦一道
-  if(!confirm(`确认已经收到 ¥${amt} 了吗？\n\n订单 ${oid}\n确认后立刻生成卡密交付给买家，无法撤销。`)) return;
+  if(!confirm(`确认已经收到 ¥${amt} 了吗？\n\n订单 ${oid}\n确认后点数立刻进买家账户，无法撤销。`)) return;
   try{
     const r=await fetch("/api/pay/confirm",{method:"POST",headers:hdr(),
       body:JSON.stringify({order_id:oid})});
     const j=await r.json();
     if(!r.ok){ say(j.detail||"确认失败",true); return; }
-    say(`${oid} 已发卡，买家页面会自动出现卡密。`);
+    say(`${oid} 已到账，买家页面会自动显示新余额。`);
     load();
   }catch(e){ say(String(e),true); }
 }

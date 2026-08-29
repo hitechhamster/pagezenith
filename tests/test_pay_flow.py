@@ -2,14 +2,16 @@
 
     python tests/test_pay_flow.py [base_url]
 
-覆盖：下单拿到唯一金额 / 同档并发下单金额不撞 / 未付时查不到卡密 /
-      到账通知自动发卡 / 卡密真能用（余额对得上）/ 金额撞车时拒绝自动发 /
-      人工兜底确认 / 无口令打不了店主接口 / 订单号即凭证。
+2026-08-29 起下单必须登录（只留登录充值），所以本测试先注册一个账号再跑。
+覆盖：匿名下单被拒 / 金额尾数唯一 / 同档不撞 / 未付时余额不变 /
+      到账通知自动到账 / 撞车时拒绝自动发 / 人工兜底 / 店主接口鉴权。
 """
 from __future__ import annotations
 
+import http.cookiejar
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -25,7 +27,12 @@ def ok(name, cond, extra=""):
     print(f"  {'PASS' if cond else 'FAIL'}  {name}{('  — ' + str(extra)) if extra else ''}")
 
 
-def call(path, data=None, tok=None, method=None):
+OP = urllib.request.build_opener(
+    urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+ANON = urllib.request.build_opener()      # 不带 cookie = 未登录
+
+
+def call(path, data=None, tok=None, method=None, op=None):
     req = urllib.request.Request(
         BASE + path,
         data=json.dumps(data).encode() if data is not None else None,
@@ -34,7 +41,7 @@ def call(path, data=None, tok=None, method=None):
     if tok:
         req.add_header("X-Pay-Token", tok)
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with (op or OP).open(req, timeout=30) as r:
             return r.status, json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
@@ -49,6 +56,13 @@ def main() -> None:
 
     st, prods = call("/api/pay/products")
     ok("商品列表可取", st == 200 and len(prods) == 3, [p["id"] for p in prods])
+
+    # 下单必须登录 —— 先验匿名被拒，再注册一个号往下跑
+    st, _ = call("/api/pay/order", {"product": "standard"}, op=ANON)
+    ok("匿名下单被拒", st == 401)
+    em = f"pay{int(time.time())}@example.com"
+    st, _ = call("/api/auth/register", {"email": em, "password": "paytest12345"})
+    ok("测试账号就绪", st == 200, em)
 
     # ── 下单 ────────────────────────────────────────────────────
     st, o1 = call("/api/pay/order", {"product": "standard"})
@@ -67,7 +81,8 @@ def main() -> None:
     # ── 未付时的状态 ────────────────────────────────────────────
     st, s1 = call(f"/api/pay/order/{o1['order_id']}")
     ok("未付时状态 pending", s1["status"] == "pending")
-    ok("未付时不泄露卡密", "card_key" not in s1)
+    st, me0 = call("/api/auth/me")
+    ok("未付时余额不动", me0["balance"]["remaining"] == 0, me0["balance"])
 
     st, _ = call("/api/pay/order/PZZZZZZ")
     ok("不存在的订单 404", st == 404)
@@ -83,15 +98,11 @@ def main() -> None:
     ok("到账通知自动匹配", st == 200 and n.get("matched") and n["order_id"] == o1["order_id"], n)
 
     st, s1b = call(f"/api/pay/order/{o1['order_id']}")
-    ok("买家轮询拿到卡密", s1b["status"] == "paid" and s1b.get("card_key", "").startswith("PZ-"),
-       s1b.get("card_key"))
+    ok("订单标记已付且入账户", s1b["status"] == "paid" and s1b.get("to_account") is True, s1b)
+    ok("已付订单不含卡密", "card_key" not in s1b)
 
-    # ── 发出去的卡真能用 ────────────────────────────────────────
-    req = urllib.request.Request(BASE + "/api/billing/balance")
-    req.add_header("X-Card-Key", s1b["card_key"])
-    with urllib.request.urlopen(req, timeout=30) as r:
-        bal = json.loads(r.read().decode())
-    ok("卡密可用且点数正确", bal["total"] == 60 and bal["remaining"] == 60, bal)
+    st, me1 = call("/api/auth/me")
+    ok("点数已进账户", me1["balance"]["remaining"] == 60, me1["balance"])
 
     # ── 重复通知不该再发一张 ────────────────────────────────────
     st, n2 = call("/api/pay/notify", {"amount": o1["amount"]}, tok=TOK)
@@ -110,7 +121,9 @@ def main() -> None:
     st, c = call("/api/pay/confirm", {"order_id": o2["order_id"]}, tok=TOK)
     ok("人工确认成功", st == 200 and c.get("ok"))
     st, s2 = call(f"/api/pay/order/{o2['order_id']}")
-    ok("人工确认后出卡", s2["status"] == "paid" and s2.get("card_key", "").startswith("PZ-"))
+    ok("人工确认后入账户", s2["status"] == "paid" and s2.get("to_account") is True)
+    st, me2 = call("/api/auth/me")
+    ok("人工确认的点数也到账", me2["balance"]["remaining"] == 120, me2["balance"])
 
     st, c2 = call("/api/pay/confirm", {"order_id": o2["order_id"]}, tok=TOK)
     ok("已处理订单不能重复确认", st == 404)

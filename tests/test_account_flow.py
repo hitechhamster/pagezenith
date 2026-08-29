@@ -18,6 +18,7 @@ import urllib.request
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8012").rstrip("/")
+DB = sys.argv[2] if len(sys.argv) > 2 else "/tmp/pz_acct_test.db"
 TOK = "testtok123"
 PASS, FAIL = [], []
 
@@ -97,13 +98,20 @@ def main() -> None:
     st, me3 = call(A, "/api/auth/me")
     ok("点数已进账户", me3["balance"]["remaining"] == 60, me3["balance"])
 
-    # ── 匿名买：照旧发卡密 ──────────────────────────────────────
-    st, o2 = call(B, "/api/pay/order", {"product": "trial"})
-    ok("匿名下单不标记入账户", not o2.get("to_account"))
-    st, _ = call(B, "/api/pay/notify", {"amount": o2["amount"]}, tok=TOK)
-    st, s2 = call(B, f"/api/pay/order/{o2['order_id']}")
-    ok("匿名单拿到卡密", s2.get("card_key", "").startswith("PZ-"), s2.get("card_key"))
-    anon_key = s2["card_key"]
+    # ── 匿名购买已关闭（2026-08-29 只留登录充值）────────────────
+    st, _ = call(B, "/api/pay/order", {"product": "trial"})
+    ok("匿名下单被拒", st == 401)
+
+    # 兑换券改由 mint 直接造 —— 它现在的用途是礼品卡 / 补偿点数，不再来自购买
+    import subprocess
+    voucher = subprocess.run(
+        [sys.executable, "-c",
+         "import os,sys;os.environ.setdefault('BILLING_DB',r'%s');"
+         "sys.path.insert(0,'api');from billing.store import mint;"
+         "print(mint(1,20,batch='gift',label='测试券')[0])" % DB],
+        capture_output=True, text=True, cwd=".").stdout.strip()
+    ok("造出一张兑换券", voucher.startswith("PZ-"), voucher)
+    anon_key = voucher
 
     # ── 兑换：把那张卡并进账户 ──────────────────────────────────
     st, rd = call(A, "/api/auth/redeem", {"card_key": anon_key})

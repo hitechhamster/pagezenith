@@ -74,7 +74,7 @@
 
   function badgeText() {
     if (account) return balance ? `${balance.remaining} 点` : "已登录";
-    if (!read())  return "登录 / 卡密";
+    if (!read())  return "登录";
     return balance ? `余额 ${balance.remaining} 点` : "卡密无效";
   }
 

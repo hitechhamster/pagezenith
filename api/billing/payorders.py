@@ -151,8 +151,10 @@ def get_order(oid: str) -> Optional[dict[str, Any]]:
 def _deliver(row, via: str) -> dict[str, Any]:
     """交付。必须在 _LOCK 里调用。
 
-    两条路：登录着下的单直接给账户加点（不产生卡密，用户也不用保存什么）；
-    未登录的单照旧造一张卡，买家凭订单号取回。
+    正常路径：给账户加点，不产生卡密。
+
+    else 分支（造卡）现在走不到 —— 下单已强制登录。留着是因为它是
+    "不记名充值券"的现成实现，将来做礼品卡或找人代销时直接复用。
     """
     name, _, credits = PRODUCTS[row["product"]]
     key = ""

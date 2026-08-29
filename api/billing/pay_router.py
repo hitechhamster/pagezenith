@@ -44,11 +44,18 @@ class OrderReq(BaseModel):
 
 @router.post("/order")
 async def create_order(req: OrderReq, request: Request):
-    ip = (request.client.host if request.client else "") or ""
-    # 登录着下单 → 点数直接进账户，不产生卡密（用户不用保存任何东西）
+    """下单必须登录 —— 点数记在账户上，不再发不记名卡密。
+
+    2026-08-29 砍掉匿名购买：一单未卖，没有老用户要兼容，
+    两套身份只会让文案、客服和用户心智都乱掉。
+    兑换接口（/api/auth/redeem）保留，留给礼品卡 / 代销 / 补偿点数。
+    """
     acct = accounts.account_by_token(request.cookies.get(SESSION_COOKIE, ""))
+    if acct is None:
+        raise HTTPException(status_code=401, detail="请先登录再购买。")
+    ip = (request.client.host if request.client else "") or ""
     try:
-        return P.create_order(req.product, ip, acct["id"] if acct else None)
+        return P.create_order(req.product, ip, acct["id"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
