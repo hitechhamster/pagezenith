@@ -40,6 +40,11 @@ app.add_middleware(
 
 # ---- 计费（卡密）----
 billing_store.conn()          # 启动即建表，别等第一个请求
+# 支付与账户的表/迁移也在启动时跑完 —— 别让第一个真实用户当迁移的小白鼠。
+# 2026-08-29 就是因为迁移只在首次调用时跑，线上第一次点购买直接 500。
+from billing import accounts as _accounts, payorders as _payorders  # noqa: E402
+_payorders._init()
+_accounts._init()
 app.include_router(billing_router)
 
 # 免签支付（静态收款码 + 金额尾数匹配；商户号下来后整块可删）
