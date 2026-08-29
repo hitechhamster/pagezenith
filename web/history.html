@@ -76,7 +76,7 @@
   <p class="sub">余额、消费流水、生成结果都跟着你的账户走。换台电脑登录，东西都在。
     生成结果保留最近 50 条 / 90 天。</p>
 
-  <div class="balance" id="balance"><div class="empty" style="padding:6px 0">登录后显示余额</div></div>
+  <div class="balance" id="balance"><div class="empty" style="padding:6px 0">登录后显示余额与消费流水</div></div>
 
   <details class="redeem">
     <summary>有充值券？兑换到账户</summary>
@@ -91,7 +91,7 @@
     <button id="tabResults" class="on">生成记录</button>
     <button id="tabUsage">消费流水</button>
   </div>
-  <div id="list"><div class="empty">请先登录。</div></div>
+  <div id="list"><div class="empty">登录后这里会显示你的生成记录。<br /><a class="keybtn" style="text-decoration:none;display:inline-block;margin-top:10px;padding:10px 22px;border-radius:999px;background:var(--accent);color:#fff;border-color:var(--accent)" href="/login?next=%2Fhistory">去登录</a></div></div>
 </div>
 
 <div id="viewer">
@@ -121,8 +121,11 @@ function fmt(ts){
   return `${d.getMonth()+1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function toggleRedeem(on){ const d=document.querySelector(".redeem"); if(d) d.style.display=on?"":"none"; }
 async function loadBalance(){
-  if(!CARD.has()){ return; }
+  // 没登录就把兑换区藏了 —— 兑换本来就要先有账户，露着只会让人白填一次
+  if(!CARD.has()){ toggleRedeem(false); return; }
+  toggleRedeem(true);
   const b=await CARD.refresh();
   if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">身份已失效，请重新登录</div>'; return; }
   // 剩余不足一篇全套（10 点）就把数字标红 —— 提醒要早于用完那一刻
@@ -158,7 +161,7 @@ document.getElementById("rdGo").onclick=async()=>{
 
 function setWorks(n){ const e=$("bWorks"); if(e) e.innerHTML=n+'<small> 条</small>'; }
 async function loadList(){
-  if(!CARD.has()){ $("list").innerHTML='<div class="empty">请先登录。</div>'; return; }
+  if(!CARD.has()){ $("list").innerHTML='<div class="empty">登录后这里会显示你的生成记录。<br /><a class="keybtn" style="text-decoration:none;display:inline-block;margin-top:10px;padding:10px 22px;border-radius:999px;background:var(--accent);color:#fff;border-color:var(--accent)" href="/login?next=%2Fhistory">去登录</a></div>'; return; }
   $("list").innerHTML='<div class="empty">加载中…</div>';
   try{
     if(tab==="results"){
