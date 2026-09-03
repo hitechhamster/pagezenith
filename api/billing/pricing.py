@@ -76,10 +76,14 @@ def utility_model(tier: str) -> str:
 # ── 价目（点）────────────────────────────────────────────────────────
 # key = (tool, action)。tier 不影响的功能两档同价。
 PRICES: dict[tuple[str, str], dict[str, int]] = {
-    ("seo-writer", "outline"):  {"pro": 2},     # 大纲（含判字数/全网搜索/Reddit/分类）
+    ("seo-writer", "outline"):  {"pro": 2},     # 大纲（含判字数/全网搜索/Reddit/事实清单/分类）
     ("seo-writer", "revise"):   {"pro": 0},     # 前 N 次免费，超出按 REVISE_EXTRA
-    ("seo-writer", "article"):  {"pro": 5},     # 正文 + SEO 元数据  → 一篇 = 2+5 = 7 点
-    ("seo-writer", "polish"):   {"pro": 3},     # 又一次整篇长文调用，独立收
+    ("seo-writer", "article"):  {"pro": 5},     # 正文 + SEO 元数据 + 交付前后处理
+    # 润色 2026-09-03 从 3 点降到 2 点：**一篇（不含配图）总价定死 9 点**（2+5+2）。
+    # 3 点是 DeepSeek 时代定的，那时假设"润色成本和写一篇差不多"；换 gemini-3.7-flash 后
+    # 实测润色成本 ¥0.086，只有正文（¥0.349）的 25%，3 点明显超收。降到 2 点该动作仍有 95.7% 毛利。
+    # 整篇成本 ¥0.80 → 9 点毛利 91.1%。改价前先跑一遍上面那段成本核算，别拍脑袋。
+    ("seo-writer", "polish"):   {"pro": 2},     # 正文写完自动跑（不再是可选按钮）
     ("seo-writer", "image"):    {"pro": 3},     # 每张配图（高质量档，见下方成本）
     ("seo-gap", "analyze"):     {"pro": 5},
     ("article-quality", "check"): {"pro": 1},
