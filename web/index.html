@@ -55,6 +55,26 @@
     .hero{grid-template-columns:1fr;gap:26px}
     .hero h1{font-size:34px;max-width:none}
   }
+  .cmp{margin:8px 0 40px}
+  .cmp h2{font-family:var(--font-display);font-size:21px;font-weight:600;margin:0 0 6px}
+  .cmp-lead{font-family:var(--font-read);font-size:14px;color:var(--muted);line-height:1.75;margin:0 0 16px;max-width:70ch}
+  .cmp-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);
+    background:var(--card);box-shadow:var(--shadow)}
+  .cmp-table{width:100%;border-collapse:collapse;min-width:560px;font-size:13px}
+  .cmp-table th,.cmp-table td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.5}
+  .cmp-table tr:last-child td{border-bottom:0}
+  .cmp-table thead th{font-weight:600;font-size:11.5px;color:var(--muted);padding-top:12px;padding-bottom:9px}
+  .cmp-table th.cmp-us,.cmp-table td.cmp-us{background:var(--accentsoft)}
+  .cmp-table th.cmp-us{color:var(--accent)}
+  .cmp-table td.feat{font-weight:600;color:var(--text);white-space:nowrap;font-size:12.5px}
+  .cmp-table .ic{display:inline-block;width:13px;text-align:center;font-weight:700;margin-right:5px}
+  .cmp-table td.no .ic{color:var(--faint)}
+  .cmp-table td.mid .ic{color:var(--amber,#b8873f)}
+  .cmp-table td.yes .ic{color:var(--accent)}
+  .cmp-table td.no{color:var(--faint)}
+  .cmp-table td.mid{color:var(--muted)}
+  .cmp-table td.yes{color:var(--text);font-weight:500}
+  @media(max-width:640px){ .cmp-table{font-size:12px} .cmp-table td.feat{white-space:normal;min-width:120px} }
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
   .tool{display:block;padding:20px;border-radius:var(--radius-lg);background:var(--card);border:1px solid var(--line);transition:border-color .15s,transform .08s}
   .tool:hover{border-color:var(--accent);transform:translateY(-1px)}
@@ -66,20 +86,6 @@
   .tool.main .tt:after{content:"主推";font-size:11px;color:#F6F3EA;background:var(--accent);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
   .tool.soon{opacity:.55;pointer-events:none}
   .tool.soon .tt:after{content:"即将上线";font-size:11px;color:var(--amber);background:var(--amberbg);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
-  .cmp{margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
-  .cmp h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 8px}
-  .cmp-lead{font-family:var(--font-read);font-size:15px;color:var(--muted);line-height:1.8;margin:0 0 18px;max-width:64ch}
-  .cmp-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card)}
-  .cmp-table{width:100%;border-collapse:collapse;min-width:640px;font-size:13.5px}
-  .cmp-table th,.cmp-table td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.55}
-  .cmp-table tr:last-child td{border-bottom:0}
-  .cmp-table th{font-weight:600;font-size:12.5px;color:var(--muted)}
-  .cmp-table th.cmp-us,.cmp-table td.cmp-us{background:var(--accentsoft)}
-  .cmp-table th.cmp-us{color:var(--accent)}
-  .cmp-table td.feat{font-weight:500;color:var(--text);white-space:nowrap}
-  .cmp-table td.no{color:var(--faint)}
-  .cmp-table td.mid{color:var(--muted)}
-  .cmp-table td.yes{color:var(--accent);font-weight:500}
   .pricing{margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
   .pricing h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 10px}
   .pricing .p-lead{font-family:var(--font-read);font-size:15px;color:var(--muted);line-height:1.8;margin:0 0 18px;max-width:60ch}
@@ -139,14 +145,14 @@
       <p class="sub">页面科技 · AI 驱动的跨境营销工具。<b>不用配 API Key、不用梯子、不用外币卡</b> ——
         注册充值就能直接用，生成记录云端保存 90 天，换设备登录即取。
         主推 <a href="/tools/seo-writer">SEO 文章生成</a>：关键词进，可审批大纲，Word 出。</p>
-      <!-- 2026-09-03 二次改：单篇成品页（/sample）被否掉了 —— 展示一篇文章等于藏起真正的
-           差异点（搜索/Reddit/事实核查/大纲审批这些环节看不出来）。改成指回下面的对比区块，
-           先让人看「和别的产品比差在哪」，价格留在次位。 -->
+      <!-- 2026-09-03 三次改：只留一个按钮，直接进工具页去试，别在首页先摆价格墙——
+           seo-writer.html 提交前本来就有 CARD.has() 门槛，没登录点「生成大纲」会弹
+           「请先登录」并跳转登录页（keys.js 全站统一处理 401/402），这条路现成，
+           不用另起一套「先看对比/先充值」的中间页。价格和支付方式留给登录后的 /buy 说。 -->
       <div class="cta-row">
-        <a class="btn-primary" href="#compare">和别的产品比差在哪</a>
-        <a class="btn-ghost" href="/buy">¥19.9 写两篇</a>
+        <a class="btn-primary" href="/tools/seo-writer">写两篇看看</a>
       </div>
-      <p class="cta-note">大纲你先审批，不点通过正文一个字不写、一点不扣 · 写完自动润色出 Word</p>
+      <p class="cta-note">先填关键词免费看到大纲，大纲你先审批，不点通过正文一个字不写、一点不扣</p>
     </div>
     <!-- 签名元素：真实任务流水。付款前唯一能看见「三到五分钟在干什么」的东西 -->
     <div class="live">
@@ -161,6 +167,25 @@
         </div>
       </div>
       <div class="seal" id="liveSeal">审</div>
+    </div>
+  </div>
+
+  <div class="cmp" id="compare">
+    <h2>和别的产品比，差在哪</h2>
+    <p class="cmp-lead">不是宣传话术 —— 这几条是生成过程里真实存在的环节，跑一次「SEO 文章生成」你能亲眼看到每一步。</p>
+    <div class="cmp-table-wrap">
+      <table class="cmp-table">
+        <thead><tr><th></th><th>通用 AI 对话工具</th><th>普通 SEO 文章生成器</th><th class="cmp-us">页面科技</th></tr></thead>
+        <tbody>
+        <tr><td class="feat">写之前搜不搜现有内容</td><td class="no"><span class="ic">✗</span>不搜，凭训练知识编</td><td class="mid"><span class="ic">~</span>少数搜，多数套模板</td><td class="yes cmp-us"><span class="ic">✓</span>搜 —— 实时抓 Google 前 10 名结构</td></tr>
+        <tr><td class="feat">会不会去 Reddit 挖真实讨论</td><td class="no"><span class="ic">✗</span>不会</td><td class="mid"><span class="ic">~</span>几乎没有</td><td class="yes cmp-us"><span class="ic">✓</span>会 —— 当独家信息源写进文章</td></tr>
+        <tr><td class="feat">数字 / 事实有没有出处</td><td class="no"><span class="ic">✗</span>没有，编造率高</td><td class="mid"><span class="ic">~</span>少见，出错不提醒</td><td class="yes cmp-us"><span class="ic">✓</span>有 —— 事实清单，清单外的会标出来</td></tr>
+        <tr><td class="feat">大纲按不按 EEAT（经验/专业/权威/可信）搭</td><td class="no"><span class="ic">✗</span>随手列几个小标题</td><td class="mid"><span class="ic">~</span>部分会，但拿到即定稿</td><td class="yes cmp-us"><span class="ic">✓</span>会，而且先给你看</td></tr>
+        <tr><td class="feat">大纲能不能改</td><td class="no"><span class="ic">✗</span>没有大纲这一步</td><td class="mid"><span class="ic">~</span>大多不能改</td><td class="yes cmp-us"><span class="ic">✓</span>能 —— 不通过不扣正文的点</td></tr>
+        <tr><td class="feat">有没有单独的润色环节</td><td class="no"><span class="ic">✗</span>没有</td><td class="mid"><span class="ic">~</span>少数有，基础同义替换</td><td class="yes cmp-us"><span class="ic">✓</span>有 —— 专门降低机翻感</td></tr>
+        <tr><td class="feat">能不能塞你自己的具体要求</td><td class="no"><span class="ic">✗</span>靠对话反复调</td><td class="mid"><span class="ic">~</span>模板固定，塞不进去</td><td class="yes cmp-us"><span class="ic">✓</span>专门输入框 —— 榜单/对比/教程都能装</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -202,25 +227,6 @@
       <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></div>
       <div class="tt">更多工具</div>
       <div class="td">敬请期待。</div>
-    </div>
-  </div>
-
-  <div class="cmp" id="compare">
-    <h3>和别的产品比，差在哪</h3>
-    <p class="cmp-lead">不是宣传话术 —— 这几条是生成过程里真实存在的环节，跑一次「SEO 文章生成」你能亲眼看到每一步。</p>
-    <div class="cmp-table-wrap">
-      <table class="cmp-table">
-        <thead><tr><th></th><th>通用 AI 对话工具</th><th>普通 SEO 文章生成器</th><th class="cmp-us">页面科技</th></tr></thead>
-        <tbody>
-        <tr><td class="feat">写之前搜不搜现有内容</td><td class="no">不搜，凭训练知识编，容易过时或张冠李戴</td><td class="mid">少数会搜，多数是同一套模板换词</td><td class="yes cmp-us">会 —— 实时抓 Google 前 10 名，分析人家的结构和覆盖点</td></tr>
-        <tr><td class="feat">会不会去 Reddit 挖真实讨论</td><td class="no">不会</td><td class="mid">几乎没有产品做这个</td><td class="yes cmp-us">会 —— 专门抓相关子版块真人讨论，当独家信息源写进文章</td></tr>
-        <tr><td class="feat">数字 / 事实有没有出处</td><td class="no">没有，张口就来，编造率高</td><td class="mid">少见，出错也不会提醒你</td><td class="yes cmp-us">有 —— 先出一份带来源的事实清单，正文只准用清单内的数字，清单外的会被标出来让你自己核实</td></tr>
-        <tr><td class="feat">大纲按不按 EEAT（经验/专业/权威/可信）搭</td><td class="no">不会，随手列几个小标题</td><td class="mid">部分会用模板套，但拿到就是定稿</td><td class="yes cmp-us">会，而且大纲先给你看</td></tr>
-        <tr><td class="feat">大纲能不能改</td><td class="no">没有大纲这一步</td><td class="mid">大多不能改，生成即定稿</td><td class="yes cmp-us">能 —— 不满意随便改，不点「通过」正文一个字不写、一点不扣</td></tr>
-        <tr><td class="feat">有没有单独的润色环节</td><td class="no">没有</td><td class="mid">少数有，基础替换同义词而已</td><td class="yes cmp-us">有 —— 写完整篇后再单独过一遍，专门降低机翻感、提升可读性</td></tr>
-        <tr><td class="feat">能不能塞你自己的具体要求</td><td class="no">靠你在对话里一句句反复调</td><td class="mid">模板固定，塞不进去</td><td class="yes cmp-us">有专门的「具体要求」输入框 —— 写榜单、对比、教程、FAQ 为主，几乎什么形式都能装</td></tr>
-        </tbody>
-      </table>
     </div>
   </div>
 

@@ -145,12 +145,21 @@ function loadDodo(url, cb){
           mode: host.indexOf('test.')===0?'test':'live',   // 从结账地址反推，前端不再存一份配置
           displayType:'overlay', linkType:'session',
           onEvent:function(e){
-            var t=e&&e.event_type;
-            // 关闭 ≠ 付款成功；三种事件都只做一件事：收起浮层，交给后端轮询判断
-            if(t==='checkout.status'||t==='checkout.redirect'||t==='checkout.closed'){
-              try{ D.Checkout.close(); }catch(e){}
-              if(dodoOnClose){ var f=dodoOnClose; dodoOnClose=null; f(); }
+            var t=e&&e.event_type, msg=(e&&e.data&&e.data.message)||{};
+            // 2026-09 修：checkout.status 会在整个付款过程里反复触发（processing/succeeded/
+            // failed…），不是只在付完才发一次。老代码把它和 closed/redirect 混在一起一律关窗口，
+            // 结果窗口刚弹出、用户还没扫码，第一条 status（大概率是 processing）就把窗口关了——
+            // 这就是"点一下就消失"的根因。现在只在真正的终态才关；checkout.redirect 这类事件
+            // SDK 自己会处理（比如整页跳转），我们不用再额外关一次。
+            // 关闭 ≠ 付款成功，实际到账仍然只认后端轮询（poll()）。
+            if(t==='checkout.status'){
+              var st=String(msg.status||"").toLowerCase();
+              if(st!=='succeeded'&&st!=='failed'&&st!=='cancelled'&&st!=='canceled') return;
+            } else if(t!=='checkout.closed'){
+              return;
             }
+            try{ D.Checkout.close(); }catch(e){}
+            if(dodoOnClose){ var f=dodoOnClose; dodoOnClose=null; f(); }
           }
         });
       }catch(e){ dodoState='failed'; }
