@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 
@@ -16,9 +17,11 @@ from pathlib import Path
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+import hashlib
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from billing import store as billing_store
@@ -32,6 +35,41 @@ from tools.seo_writer.router import router as seo_writer_router
 from tools.site_recon.router import router as site_recon_router
 
 WEB = Path(__file__).resolve().parent.parent / "web"
+
+# ---- HTML 防缓存 + 静态资源版本号自动化 ----
+# 2026-09-03 踩过：改完 md.js 和 seo-writer.html 部署后，浏览器仍显示旧页面，
+# 一度以为是部署没生效。根因是 HTML 没有 Cache-Control（浏览器按启发式缓存），
+# 而 /shared/md.js 又没有 ?v= 版本号（app.css/keys.js 有，但版本号是手写的，改了迟早忘）。
+# 现在：HTML 一律 no-cache（配 ETag，内容没变时返回 304，开销可以忽略）；
+# 返回 HTML 时按文件内容哈希自动给 /shared/*.js|css 加版本号，不用再手动维护。
+_ASSET_REF = re.compile(r'(?P<attr>src|href)="(?P<path>/shared/[^"?]+\.(?:js|css))(?:\?v=[^"]*)?"')
+_PAGE_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _asset_hash(rel: str) -> str:
+    f = WEB / rel.lstrip("/")
+    try:
+        return hashlib.sha1(f.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
+def page(path: Path) -> HTMLResponse:
+    """返回一个 HTML 页面：静态资源自动带上内容哈希，且本身不被浏览器缓存。"""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        path = WEB / "index.html"
+        mtime = path.stat().st_mtime
+    cached = _PAGE_CACHE.get(str(path))
+    if cached and cached[0] == mtime:
+        html = cached[1]
+    else:
+        html = _ASSET_REF.sub(
+            lambda m: f'{m["attr"]}="{m["path"]}?v={_asset_hash(m["path"])}"',
+            path.read_text(encoding="utf-8"))
+        _PAGE_CACHE[str(path)] = (mtime, html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 app = FastAPI(title="页面科技 — AI 跨境营销工具")
 app.add_middleware(
@@ -68,54 +106,54 @@ app.include_router(outreach_router)
 # ---- 前端（无 SEO 需求，纯静态由后端顺手返回）----
 @app.get("/")
 async def home():
-    return FileResponse(WEB / "index.html")
+    return page(WEB / "index.html")
 
 
 @app.get("/news")
 async def news():
-    return FileResponse(WEB / "news.html")
+    return page(WEB / "news.html")
 
 
 @app.get("/history")
 async def history_page():
     """我的记录（卡密即身份：余额 / 流水 / 生成结果）。"""
-    return FileResponse(WEB / "history.html")
+    return page(WEB / "history.html")
 
 
 @app.get("/login")
 async def login_page():
     """登录 / 注册。"""
-    return FileResponse(WEB / "login.html")
+    return page(WEB / "login.html")
 
 
 @app.get("/forgot")
 async def forgot_page():
     """找回密码（带 token 进来时同一页切成"设新密码"）。"""
-    return FileResponse(WEB / "forgot.html")
+    return page(WEB / "forgot.html")
 
 
 @app.get("/reset")
 async def reset_page():
     """邮件里的重置链接指向这里，复用同一个页面。"""
-    return FileResponse(WEB / "forgot.html")
+    return page(WEB / "forgot.html")
 
 
 @app.get("/buy")
 async def buy_page():
     """购买页：下单 → 扫静态码按精确金额付款 → 轮询自动出卡密。"""
-    return FileResponse(WEB / "buy.html")
+    return page(WEB / "buy.html")
 
 
 @app.get("/payadmin")
 async def payadmin_page():
     """店主兜底页：到账通知漏了时人工确认订单。有 token 才能操作。"""
-    return FileResponse(WEB / "payadmin.html")
+    return page(WEB / "payadmin.html")
 
 
 @app.get("/tools/{name}")
 async def tool_page(name: str):
     f = WEB / "tools" / f"{name}.html"
-    return FileResponse(f) if f.exists() else FileResponse(WEB / "index.html")
+    return page(f if f.exists() else WEB / "index.html")
 
 
 # 静态资源（/shared/app.css、/shared/keys.js 等）
