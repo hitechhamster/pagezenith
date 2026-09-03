@@ -129,7 +129,7 @@ class Charge:
     credits: int
     usage_id: Optional[int] = None
     result_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
-    # 按模型分桶：一次请求会跨模型（正文=pro，SEO 元数据=flash-lite，润色=deepseek），
+    # 按模型分桶：一次请求会跨模型（正文=pro，SEO 元数据=flash-lite，润色=3.7-flash），
     # 用单个字段记会被后来者覆盖，成本按错的单价算。
     _usage: dict[str, list[int]] = field(default_factory=dict)
     # 配图单独记：图片不按 token 计价，混进 _usage 会被按文本单价算错

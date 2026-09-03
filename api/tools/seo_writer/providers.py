@@ -13,6 +13,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 
@@ -39,9 +40,14 @@ TOKEN_LIMITS = {
     "revise_outline": 12000,
     "article": 24000,
     "polish": 24000,
+    "facts": 6000,       # 一份清单最多 25 条，给足余量
 }
-# 这些任务不需要模型长考，OpenRouter 上显式降低 reasoning 开销
-LOW_REASONING_TASKS = {"seo", "classify", "wordcount"}
+# 这些任务不需要模型长考，显式降低 reasoning 开销。
+# polish 在列的原因（2026-09-02 实测）：DeepSeek-v4-flash 不加限制时会把 24000 output token
+# **全部**烧在思考上，reasoning_tokens=24000 / content=0 / finish_reason=length —— 整篇润色
+# 直接失败，重试也一样。加 reasoning_effort=low 后能出正文，但思考仍占输出的 84%
+# （12629/15083）。润色是「照着规则改写」，本来就不需要长考。
+LOW_REASONING_TASKS = {"seo", "classify", "wordcount", "polish", "facts"}
 
 LLM_MODELS = {
     "openrouter": [
@@ -165,8 +171,15 @@ class LLM:
             "max_tokens": TOKEN_LIMITS.get(task, 6000),
             "stream": stream,
         }
-        if self.t.provider == "openrouter" and task in LOW_REASONING_TASKS:
-            payload["reasoning"] = {"effort": "low", "exclude": True}
+        if task in LOW_REASONING_TASKS:
+            # 三家的参数名不一样：OpenRouter 收 reasoning 字典，DeepSeek 和 Gemini 的
+            # OpenAI 兼容端点收 reasoning_effort 字符串。按**实际供应商**判断，
+            # 不能看 self.t.provider —— 一次生成里会跨供应商（见 _route）。
+            model, _, _ = self._route(task)
+            if provider_of(model) == "openrouter":
+                payload["reasoning"] = {"effort": "low", "exclude": True}
+            else:
+                payload["reasoning_effort"] = "low"
         if stream:
             # 让流式也返回 usage（最后一个 chunk），否则长文这一大笔成本统计不到
             payload["stream_options"] = {"include_usage": True}
@@ -348,9 +361,29 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
     return _fmt(list(out))
 
 
+#: 被讨论产品的官网 / 帮助中心 —— 这类页面的形容词是营销文案，不是事实。
+#: 实测教训：Klaviyo 官网的「350+ integrations」「整合 AI、营销与服务于一个平台」
+#: 被原样搬进了一篇 Klaviyo vs Mailchimp 的对比文，等于替一方念广告词。
+_VENDOR_HOST = re.compile(
+    r"(?i)//(?:www\.|help\.|support\.|docs\.)?"
+    r"(?:klaviyo|mailchimp|shopify|omnisend|mailerlite|etsy|hubspot|activecampaign|"
+    r"constantcontact|sendinblue|brevo|drip|convertkit)\.com")
+
+
+def _source_kind(url: str) -> str:
+    """标注来源类型，让大纲/正文知道哪些内容只能取事实、不能取措辞。"""
+    u = url or ""
+    if _VENDOR_HOST.search(u):
+        return "厂商官方（只可取事实：价格/限制/功能名；形容词与定位话术一律不要）"
+    if re.search(r"(?i)//(?:www\.)?(?:reddit|quora)\.com|community\.", u):
+        return "社区讨论（真人原话，但属个人经验，不等于平台官方口径）"
+    return "第三方内容"
+
+
 def _fmt(results: list[dict]) -> str:
     return "\n".join(
         f"Title: {r.get('title', '')}\nURL: {r.get('url', '')}\n"
+        f"SourceType: {_source_kind(r.get('url', ''))}\n"
         f"Content: {r.get('content', '')}\n---"
         for r in results
     )

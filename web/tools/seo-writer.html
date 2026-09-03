@@ -471,6 +471,7 @@ $("btnArticle").onclick=async()=>{
       ev=>{
         if(ev.type==="step"){ logTo("log2",ev.message); trackTo(ev.key==="images"?"article":ev.key); }
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
+        else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
         else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
@@ -529,6 +530,7 @@ $("btnPolish").onclick=async()=>{
       ev=>{
         if(ev.type==="step"){ logTo("log2",ev.message); trackTo("polish"); }
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
+        else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article-polished.docx";

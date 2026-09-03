@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import os
+
 # ── 模型档位 ────────────────────────────────────────────────────────
 # 全部走 OpenRouter（服务端 key）。用户只能看到 basic / pro。
 # 单一档位（2026-08-28 用户拍板：不做基础/进阶两档，太麻烦；就一档，按最好的配）。
@@ -21,19 +23,35 @@ from __future__ import annotations
 # 选型依据：3 题材 × 3 模型实测（work/bakeoff）。
 #   gemini-3.1-pro-preview 胜出：字数偏差极差仅 6%（两个 flash 分别破 30% 红线 / 在 ±25% 乱跳）、
 #   写出来就 11.5 阅读年级（flash 约 16）、真的执行"用 We"（51 次 vs flash 合计 23 次）。
-#   润色用 deepseek-v4-flash：13.4→12.6 只要 17 秒、结构零破坏，且**跨模型家族改写**
-#   顺带打散单一模型的文风指纹（deepseek-chat 实测几乎不干活，别用）。
+#   润色 2026-09-02 从 deepseek-v4-flash 换成 gemini-3.7-flash。换的理由不是省钱
+#   （润色只占单篇成本的 11%），是 **DeepSeek 根本不可用**：3 篇对拍里只有 1 篇成功，
+#   一篇返回空、一篇把 2228 词截成 280 词（在句子中间断掉，靠结构护栏才拦下）。
+#   根因见 providers.LOW_REASONING_TASKS 的注释——它把 max_tokens 全烧在思考上。
+#   对拍结果（同一份 prompt，3 篇，work/pz-polish-bakeoff）：
+#     deepseek-v4-flash       1/3 成功  127s  out 21841  FK 9.8
+#     gemini-3.1-pro-preview  3/3        60s  out  2475  FK 7.7  ← 爱剁短句、擅自加形容词
+#     gemini-3.7-flash        3/3        15s  out  2324  FK 8.6  ← 采用
+#     gemini-3.1-flash-lite   3/3        14s  out  2586  FK 9.9  ← 与原文 90-98% 雷同，等于没干活
+#   “跨模型家族改写打散文风指纹”那条旧理由随 DeepSeek 一起作废：正文用 pro、润色用
+#   flash，仍是跨型号，且实测文风指纹本来就不是靠这个压住的。
 TIERS: dict[str, dict[str, str]] = {
     "pro": {
         "label": "标准",
         "outline": "gemini-3.1-pro-preview",
         "article": "gemini-3.1-pro-preview",
-        "polish": "deepseek-v4-flash",
+        "polish": "gemini-3.7-flash",
         "utility": "gemini-3.1-flash-lite",
         "desc": "全网搜索 + Reddit 真实讨论 + EEAT 大纲 + 可读性润色",
     },
 }
 DEFAULT_TIER = "pro"
+
+# 润色模型可用环境变量覆盖，零代码切换/回滚（气流报告线同款做法）。
+# 背景：DeepSeek 偶尔把思考链当正文吐出来，且它的 reasoning token 占润色成本的九成以上。
+# 换 Gemini 前先跑 work/pz-polish-bakeoff 对拍，别凭感觉切。
+_POLISH_OVERRIDE = os.getenv("POLISH_MODEL", "").strip()
+if _POLISH_OVERRIDE:
+    TIERS["pro"]["polish"] = _POLISH_OVERRIDE
 
 
 def model_for(task: str, tier: str = DEFAULT_TIER) -> str:
@@ -92,17 +110,24 @@ def price_table() -> list[dict]:
 
 
 # ── 成本估算（¥/百万 token，用于熔断与对账，非精确账单）──────────────
-# 只需数量级正确：熔断阈值本身留了余量。汇率按 1 USD ≈ 7.2 CNY。
+# 汇率按 1 USD ≈ 7.2 CNY。
+#
+# 2026-09-02 按 ai.google.dev/gemini-api/docs/pricing 官方价全表回填。
+# 回填前这里是拍脑袋的估值，**低估了 2.9-4.9 倍**（flash 系列错得最狠），
+# 熔断阈值因此一直是虚的。以后加模型请查官方价，别照着相邻型号猜。
+#
+# ⚠️ gemini-3.7-flash 现在是促销价，**2027-01-01 起翻倍**到 (10.8, 54.0)。
+#    到期没改这里的话，实际支出会是账面的两倍。
 MODEL_COST_CNY_PER_MTOK: dict[str, tuple[float, float]] = {
-    # model: (输入, 输出)。⚠️ 估值，上线后按 usage 表真实回填校准。
-    "gemini-3.1-flash-lite": (0.5, 2.0),
-    "gemini-3.1-flash": (2.2, 8.6),
-    "gemini-3.7-flash": (2.2, 8.6),
-    "gemini-3.1-pro-preview": (18.0, 72.0),
-    "deepseek-v4-flash": (2.0, 8.0),
-    # 旧的 OpenRouter 命名保留，历史流水还查得到
-    "google/gemini-3.1-flash-lite": (0.5, 2.0),
-    "google/gemini-3.1-pro": (18.0, 72.0),
+    # model: (输入, 输出)。括号内是官方 USD/M 原值。
+    "gemini-3.1-flash-lite": (1.8, 10.8),    # $0.25 / $1.50
+    "gemini-3.7-flash": (5.4, 27.0),         # $0.75 / $3.75（促销，2027-01-01 起 $1.50/$7.50）
+    "gemini-3.1-pro-preview": (14.4, 86.4),  # $2.00 / $12.00（prompt ≤200k；超过则 $4/$18）
+    "deepseek-v4-flash": (2.0, 8.0),         # ⚠️ 未核实，仅历史流水用（已停用，见 TIERS 注释）
+    # 旧命名保留，历史流水还查得到
+    "gemini-3.1-flash": (5.4, 27.0),
+    "google/gemini-3.1-flash-lite": (1.8, 10.8),
+    "google/gemini-3.1-pro": (14.4, 86.4),
     "anthropic/claude-sonnet-5": (21.6, 108.0),
 }
 _FALLBACK_COST = (5.0, 20.0)

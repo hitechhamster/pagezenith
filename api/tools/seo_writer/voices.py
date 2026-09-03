@@ -125,7 +125,7 @@ VOICES: dict[str, dict[str, Any]] = {
     "clark": {
         "name": "Clark",
         "role": "平衡",
-        "blurb": "默认这个。信息密度高、有第一手经验的行业专家口吻，正式与亲切之间。",
+        "blurb": "默认这个。信息密度高、给判断给条件的行业专家口吻，正式与亲切之间。",
         "for_types": ["strategy_experience"],
         "portrait": "clark.png",
         # 三个都留空 —— workflow 会退回 prompts.ARTICLE_VOICE_DEFAULT，

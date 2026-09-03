@@ -30,6 +30,7 @@ from billing.deps import Card, InsufficientCredits, charge, require_card
 from billing.pricing import REVISE_EXTRA, REVISE_FREE, TIERS, price, tier_of
 
 from ..seo_gap.config import get_settings
+from . import postfix, prose_audit
 from .docx_export import build_docx, sanitize_filename
 from .models import ArticleRequest, LANGUAGES, OutlineRequest, PolishRequest, ReviseRequest
 from .providers import LLM, ProviderError, resolve_llm
@@ -154,6 +155,16 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                     else:
                         job.emit({"type": "step", "key": "product", "message": "产品页读取失败，已跳过"})
 
+                # 事实清单：锁定数字与专有名称的唯一来源。不锁的话同一系统对同一事实
+                # 每次给不同答案（实测「Shopify Email」被写成不存在的「Shopify Messaging」）。
+                job.emit({"type": "step", "key": "facts", "message": "从资料里抽取可核实的事实…"})
+                ctx["facts"] = await wf.extract_facts(ctx)
+                job.emit({"type": "step", "key": "facts",
+                          "message": (f"已锁定事实清单（{len(ctx['facts'].splitlines())} 行），"
+                                      f"正文只允许使用清单内的数字"
+                                      if ctx["facts"] else "资料里没抽到可核实事实，跳过"),
+                          "value": ctx["facts"]})
+
                 job.emit({"type": "step", "key": "classify", "message": "判断主题类型…"})
                 ctx["topic_type"] = await wf.classify_topic_type(ctx["main_keyword"], ctx["topic"])
                 job.emit({"type": "step", "key": "classify",
@@ -186,6 +197,7 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 )
                 job.emit({"type": "done", "session_id": sid, "outline": ctx["outline"],
                           "wordcounts": ctx["wordcounts"], "topic_type": ctx["topic_type"],
+                          "facts": ctx.get("facts", ""),
                           "result_id": tx.result_id, "charged": tx.credits})
 
     return _stream(jobs.start(card.key_hash, TOOL, work))
@@ -218,10 +230,19 @@ async def outline_revise(req: ReviseRequest, card: Card = Depends(require_card))
                     buf.append(piece)
                     job.emit({"type": "chunk", "text": piece})
                 new_outline = "".join(buf)
+                # 修订是整篇重生成，好的节会无声消失（实测三版连丢）。
+                # 锁定节功能上线前，先把「删了哪些节」摆到用户面前，让他能拒绝。
+                diff = wf.outline_section_diff(ctx.get("outline", ""), new_outline)
+                if diff["removed"]:
+                    job.emit({"type": "section_diff", "level": "warn", **diff,
+                              "message": (f"这次修订删掉了 {len(diff['removed'])} 个小节："
+                                          f"{'；'.join(diff['removed'][:4])}"
+                                          f"{'…' if len(diff['removed']) > 4 else ''}"
+                                          f"。如果其中有你想保留的，在修改意见里写明「保留 X 节」再改一次。")})
                 get_store().update(req.session_id, outline=new_outline, revise_count=used + 1)
                 left = max(0, REVISE_FREE - (used + 1))
                 job.emit({"type": "done", "session_id": req.session_id, "outline": new_outline,
-                          "charged": cost, "free_revises_left": left,
+                          "charged": cost, "free_revises_left": left, "section_diff": diff,
                           "message": (f"还可免费修改 {left} 次" if left
                                       else f"免费次数已用完，之后每次改大纲 {REVISE_EXTRA} 点")})
 
@@ -285,6 +306,14 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 g_level, g_msg = grade_verdict(grade)
                 job.emit({"type": "grade", "grade": grade, "level": g_level, "message": g_msg})
 
+                # 清单外的数字：提示不拦截 —— 清单不可能穷尽所有合理数字，交给人判断
+                unlisted = prose_audit.unlisted_numbers(text, ctx.get("facts", ""))
+                if unlisted:
+                    job.emit({"type": "facts_warn", "values": unlisted,
+                              "level": "warn",
+                              "message": (f"有 {len(unlisted)} 个数字不在事实清单里，"
+                                          f"发布前请核实：{'、'.join(unlisted[:6])}")})
+
                 job.emit({"type": "step", "key": "seo", "message": "生成 SEO 标题与描述…"})
                 seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])
                 job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
@@ -306,6 +335,18 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
 
                 if image_map and sum(len(v) for v in image_map.values()) <= MAX_SESSION_IMAGE_BYTES:
                     get_store().update(req.session_id, image_map=image_map)
+
+                # 交付前后处理：假经验句（纯代码三分支）+ 塞词（单句改写 + 检测闭环，两轮不过就删）。
+                # 这两件事 prompt 管了 5 轮没管住；检测器已 100% 命中，改为代码收口。
+                # 实测三篇：塞词 5/3/3→0，假经验 1→0，字数 -1%，¥0.004/篇。改了什么原样告诉用户。
+                text, fixes = await postfix.postfix(
+                    text, [ctx.get("main_keyword", ""), ctx.get("secondary_keyword", "")],
+                    ctx.get("facts", ""), wf.llm.complete)
+                if fixes:
+                    job.emit({"type": "step", "key": "postfix",
+                              "message": (f"交付前修正 {len(fixes)} 处："
+                                          + "；".join(f[:44] for f in fixes[:3])
+                                          + ("…" if len(fixes) > 3 else ""))})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
@@ -363,6 +404,17 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                     job.emit({"type": "chunk", "text": piece})
                 text = "".join(buf)
 
+                # 数字护栏：润色只准删/拆/重排/换说法，不准新增信息。
+                # 新增的数字一律是编的（正文那边才有事实清单），直接退回润色前的稿子 ——
+                # 一个编造的数字比"没润色"糟得多。不重试：这是模型的稳定倾向，重试还会犯。
+                added = wf.polish_added_numbers(before, text)
+                if added:
+                    job.emit({"type": "step", "key": "polish",
+                              "message": (f"润色新增了原文没有的数字（{'、'.join(added[:4])}），"
+                                          f"已保留润色前的版本。")})
+                    job.emit({"type": "reset"})
+                    text = before
+
                 # 结构护栏：润色模型偶尔会把 H2 全删掉（实测过），而且时灵时不灵。
                 # 坏了就重跑一次；再坏就退还原稿 —— 宁可不润，也不能交一堵散文墙。
                 broke = wf.polish_broke_structure(before, text)
@@ -396,6 +448,18 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                     job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
 
                 image_map = (get_store().get(req.session_id or "") or {}).get("image_map") or {}
+                # 交付前后处理：假经验句（纯代码三分支）+ 塞词（单句改写 + 检测闭环，两轮不过就删）。
+                # 这两件事 prompt 管了 5 轮没管住；检测器已 100% 命中，改为代码收口。
+                # 实测三篇：塞词 5/3/3→0，假经验 1→0，字数 -1%，¥0.004/篇。改了什么原样告诉用户。
+                text, fixes = await postfix.postfix(
+                    text, [ctx.get("main_keyword", ""), ctx.get("secondary_keyword", "")],
+                    ctx.get("facts", ""), wf.llm.complete)
+                if fixes:
+                    job.emit({"type": "step", "key": "postfix",
+                              "message": (f"交付前修正 {len(fixes)} 处："
+                                          + "；".join(f[:44] for f in fixes[:3])
+                                          + ("…" if len(fixes) > 3 else ""))})
+
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "polish",

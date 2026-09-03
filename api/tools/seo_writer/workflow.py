@@ -17,6 +17,7 @@ from typing import Any, AsyncIterator, Optional
 
 from ..seo_gap.config import Settings
 from . import prompts as P
+from . import prose_audit
 from .providers import LLM, generate_image, search
 from .voices import get_voice
 
@@ -105,6 +106,18 @@ def grade_verdict(grade: Optional[float]) -> tuple[str, str]:
     if grade <= 14:
         return "warn", f"FK {grade} 年级 · 偏难，建议润色"
     return "bad", f"FK {grade} 年级 · 太难，12 年级学生读不下来"
+
+
+#: 给大纲/正文的写作目标 = 用户目标 × 这个系数。
+#: 润色（尤其全量档）必然会压缩篇幅 —— 实测三篇分别掉到 78%/87%/100%，
+#: 按用户目标写就一定偏少。多写两成，润色完刚好落在目标附近。
+#: **只放大给写作用**，`wordcount_status` 的验收仍按用户原始目标算。
+WRITING_TARGET_RATIO = 1.2
+
+
+def writing_target(wordcounts: int) -> int:
+    """写作阶段用的字数目标（比用户目标高两成，留给润色压缩）。"""
+    return int(round((wordcounts or 0) * WRITING_TARGET_RATIO)) or wordcounts
 
 
 def _h2_count(wordcounts: int) -> str:
@@ -233,6 +246,40 @@ class SEOWriter:
             logger.warning("产品页抓取失败（已跳过）: %s", exc)
             return {}
 
+    # ------------------------------------------------------------ 事实清单
+    async def extract_facts(self, ctx: dict[str, Any]) -> str:
+        """从搜索/社媒资料里抽出带出处的可核实事实。失败返回空串，不阻断流程。
+
+        放在大纲之前：大纲和正文都拿这份清单当唯一数字来源，避免同一系统对同一事实
+        每次给不同答案（实测同主题三版里 Mailchimp 分群门槛 2000→1000、
+        「Shopify Email」被写成不存在的「Shopify Messaging」）。
+
+        用 utility 槽位（flash-lite）—— 这是抽取不是创作，不值得用贵模型。
+        """
+        corpus_len = len(ctx.get("main_search") or "") + len(ctx.get("sec_search") or "")
+        if corpus_len < 500:                      # 没资料就没清单，别花这次调用
+            return ""
+        try:
+            raw = await self.llm.complete(
+                P.FACTS_PROMPT.format(
+                    topic=ctx.get("topic", ""),
+                    main_keyword=ctx.get("main_keyword", ""),
+                    secondary_keyword=ctx.get("secondary_keyword", ""),
+                    main_search_results=ctx.get("main_search", ""),
+                    secondary_search_results=ctx.get("sec_search", ""),
+                    reddit_context=ctx.get("reddit_context", "") or ""),
+                task="facts", temperature=0.1)
+        except Exception:  # noqa: BLE001  抽不出事实不该拖垮整篇文章
+            logger.warning("事实清单抽取失败（已跳过）", exc_info=True)
+            return ""
+        return (raw or "").strip()
+
+    @staticmethod
+    def facts_block(ctx: dict[str, Any]) -> str:
+        """事实清单的 prompt 片段；没有清单就返回空串（那一段直接消失）。"""
+        facts = (ctx.get("facts") or "").strip()
+        return P.FACTS_BLOCK.format(facts=facts) if facts else ""
+
     # ------------------------------------------------------------ 主题分类
     async def classify_topic_type(self, main_keyword: str, topic: str) -> str:
         raw = await self.llm.complete(
@@ -274,10 +321,11 @@ class SEOWriter:
             specific=specific,
             product_context=product_block,
             reddit_context=P.REDDIT_CONTEXT.format(reddit=reddit) if reddit else "",
+            facts_block=self.facts_block(ctx),
             image_context=image_context,
             voice_outline=_voice_instructions(ctx, "outline"),
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
-            topic=ctx["topic"], wordcounts=ctx["wordcounts"],
+            topic=ctx["topic"], wordcounts=writing_target(ctx["wordcounts"]),
             main_search_results=ctx.get("main_search", ""),
             secondary_search_results=ctx.get("sec_search", ""),
         )
@@ -296,7 +344,8 @@ class SEOWriter:
 
     # -------------------------------------------------------------- 正文
     def article_prompt(self, ctx: dict[str, Any]) -> str:
-        wc = ctx["wordcounts"]
+        # 写作目标比用户目标高两成，留给润色压缩（见 WRITING_TARGET_RATIO）
+        wc = writing_target(ctx["wordcounts"])
         specific = (ctx.get("specific") or "").strip()
         topic_type = ctx.get("topic_type", "conceptual")
 
@@ -311,6 +360,7 @@ class SEOWriter:
             language=ctx["language"],
             specific=specific or "（无）",
             product_instructions=_product_instructions(ctx),
+            facts_block=self.facts_block(ctx),
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
             wordcounts=wc,
             outline=ctx.get("outline", ""),
@@ -324,6 +374,48 @@ class SEOWriter:
         return self.llm.stream(self.article_prompt(ctx), task="article")
 
     # -------------------------------------------------------------- 润色
+    @staticmethod
+    def outline_section_diff(old: str, new: str) -> dict:
+        """改大纲前后 H2/H3 的增删。给用户看「这次改掉了哪些节」。
+
+        为什么要有它：修订是整篇重生成，不是编辑。实测连续三版里，
+        Etsy 最有用的「按数据诊断」节、Klaviyo 的三个具体 flow 都在下一版无声消失。
+        在「锁定节」功能做出来之前，至少让用户看到删了什么，能拒绝。
+        """
+        def heads(t: str) -> list[str]:
+            return [h.strip() for h in re.findall(r"^#{2,3}\s+(.+?)\s*$", t or "", re.M)]
+        o, n = heads(old), heads(new)
+        norm = lambda h: re.sub(r"[^a-z0-9一-鿿]+", " ", h.lower()).strip()
+        on, nn = {norm(h): h for h in o}, {norm(h): h for h in n}
+        return {
+            "removed": [on[k] for k in on if k not in nn],
+            "added": [nn[k] for k in nn if k not in on],
+            "kept": sum(1 for k in on if k in nn),
+        }
+
+    @staticmethod
+    def polish_added_numbers(before: str, after: str) -> list[str]:
+        """润色**新增**了哪些数字。空列表 = 合规。
+
+        润色的职责是删/拆/重排/换说法，**不该往里加信息**。给它"加"的权限一定出事：
+        2026-09-02 实测，一条「具体压过抽象」的润色规则催生出
+        「That 3 to 4 months window」「that 20 characters limit」这类把数字硬塞进
+        指代短语的病句（正文 0 处 → 润色 4 处）。
+
+        prompt 是软约束，这里是硬闸门 —— 以后任何润色规则想再往里塞数字都会被这条拦下。
+        只查带信息量的数字（金额/百分比/四位以上），序数和小整数是行文自然会用的。
+        """
+        pat = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d+(?:\.\d+)?\s?%|\b\d{4,}\b")
+        norm = lambda s: re.sub(r"[\s$%,]", "", s)
+        had = {norm(x) for x in pat.findall(before or "")}
+        out, seen = [], set()
+        for m in pat.findall(after or ""):
+            n = norm(m)
+            if n and n not in had and n not in seen:
+                seen.add(n)
+                out.append(m.strip())
+        return out
+
     @staticmethod
     def polish_broke_structure(before: str, after: str) -> str:
         """润色是否破坏了结构？返回空串=没问题，否则返回人话原因。
@@ -350,13 +442,69 @@ class SEOWriter:
         return "；".join(bad)
 
 
+    @staticmethod
+    def polish_mode(article: str, language: str) -> tuple[str, str]:
+        """决定这篇要「全量重写」还是「轻润色」。返回 (mode, 人话理由)。
+
+        全量润色是把文章往「12 年级能读懂」压，输入本来就达标时它只会帮倒忙 ——
+        2026-09-02 实测：原文 FK 10.6（已在 9-12 带内）被压到 7.4「偏浅」，
+        字数掉 27% 触发「偏少」告警。所以先看输入水平再决定力度。
+
+        英文用 FK；中文没有 FK，用平均句长代替（阈值与 article_quality 的 zh 分支一致）。
+        判不出来就走 full —— 保持改造前的行为，不确定时不要少干活。
+        """
+        # 太短就别判了：FK 在几十个词上没有意义，空文本还会算出 0.0 被误判成「已达标」。
+        if count_words(article) < 200:
+            return "full", "正文过短，判不了"
+        if (language or "").lower().startswith("english"):
+            g = reading_grade(article, language)
+            if g is None:
+                return "full", "拿不到阅读年级"
+            # >12 = grade_verdict 的「偏难」起点，只有这时才值得整篇重写
+            return ("full", f"FK {g} 偏难") if g > 12 else ("light", f"FK {g} 已达标")
+        if prose_audit.is_cjk(article):
+            sents = prose_audit.split_sentences(article, True)
+            if not sents:
+                return "full", "切不出句子"
+            avg = sum(len(s) for s in sents) / len(sents)
+            vlong = sum(1 for s in sents if len(s) > 60)
+            if avg > 45 or vlong > len(sents) * 0.1:
+                return "full", f"平均句长 {avg:.0f} 字 偏难"
+            return "light", f"平均句长 {avg:.0f} 字 已达标"
+        return "full", "非中英文"
+
     def stream_polish(self, ctx: dict[str, Any], article: str,
                       strict: bool = False) -> AsyncIterator[str]:
-        """独立环节：整篇改写到「美国 12 年级学生能读懂」，结构一律不动。"""
-        prompt = P.POLISH_PROMPT.format(
-            language=ctx.get("language", "English"), article=article,
+        """润色。两档力度：
+
+        - **full**：整篇改写到「12 年级能读懂」（输入偏难时）
+        - **light**：只修体检点名的地方，篇幅和措辞尽量不动（输入已达标时）
+
+        两档都先跑确定性文风体检（prose_audit，零成本），把**这篇文章的具体违规**
+        拼进 prompt。规则留在 prompt 里，体检负责指出位置 —— 模型不用自己在两千词里
+        找哪句超长、哪几句同一个词开头。
+
+        strict=True（结构被破坏后的重试）一律走 full 模板 —— 那条重试路径的护栏
+        写在 POLISH_STRICT_RETRY 里，换模板会把它丢掉。
+        """
+        audit_block = ""
+        try:
+            body = prose_audit.to_prompt_block(prose_audit.audit(article))
+            if body:
+                audit_block = P.POLISH_AUDIT_BLOCK.format(audit_findings=body)
+        except Exception:  # noqa: BLE001  体检挂了不能拖垮润色
+            logger.warning("文风体检失败（已跳过）", exc_info=True)
+
+        language = ctx.get("language", "English")
+        mode, why = ("full", "结构重试") if strict else self.polish_mode(article, language)
+        logger.info("润色力度=%s（%s）", mode, why)
+
+        template = P.POLISH_PROMPT if mode == "full" else P.POLISH_LIGHT_PROMPT
+        prompt = template.format(
+            language=language, article=article,
             main_keyword=ctx.get("main_keyword", ""),
             secondary_keyword=ctx.get("secondary_keyword", ""),
+            audit_findings=audit_block,
             preserve_instructions=(P.POLISH_PRESERVE_LINKS
                                    if (ctx.get("product_url") or "").strip() else ""),
             voice_polish=_voice_instructions(ctx, "polish"))
