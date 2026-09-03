@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -137,9 +138,16 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 # 社媒真实讨论：与全网搜索互补 —— 那边是竞品成品文，这边是真人原话
                 job.emit({"type": "step", "key": "reddit", "message": "抓 Reddit 真实讨论（痛点/高频问题）…"})
                 ctx["reddit_context"] = await wf.reddit_context(ctx["main_keyword"])
-                job.emit({"type": "step", "key": "reddit",
-                          "message": ("已纳入 Reddit 讨论作为独特价值来源"
-                                      if ctx["reddit_context"] else "没抓到相关 Reddit 讨论，跳过")})
+                # 把抓到的帖子结构化发给前端 —— Reddit 真人讨论和事实清单是本产品的差异点，
+                # 只在日志里写一句"已纳入"等于白抓了，用户看不见价值。
+                threads = re.findall(r"^\[r/([^\]]+)\]\s*(.+?)（(\d+)赞/(\d+)评）\s*$",
+                                     ctx["reddit_context"] or "", re.M)
+                job.emit({"type": "reddit", "count": len(threads),
+                          "threads": [{"sub": a, "title": b, "score": int(c), "comments": int(d)}
+                                      for a, b, c, d in threads[:8]],
+                          "message": (f"已纳入 {len(threads)} 条 Reddit 真实讨论（真人原话，"
+                                      f"用于找竞品没覆盖的痛点）"
+                                      if threads else "没抓到相关 Reddit 讨论，跳过")})
 
                 # 推荐产品（可选）：抓产品页正文，供大纲规划推荐位、正文写锚文本
                 if (req.product_url or "").strip():
@@ -159,11 +167,13 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 # 每次给不同答案（实测「Shopify Email」被写成不存在的「Shopify Messaging」）。
                 job.emit({"type": "step", "key": "facts", "message": "从资料里抽取可核实的事实…"})
                 ctx["facts"] = await wf.extract_facts(ctx)
-                job.emit({"type": "step", "key": "facts",
-                          "message": (f"已锁定事实清单（{len(ctx['facts'].splitlines())} 行），"
+                _fact_lines = [l.strip() for l in (ctx["facts"] or "").splitlines()
+                               if " — " in l or " - " in l]
+                job.emit({"type": "facts", "count": len(_fact_lines),
+                          "facts": ctx.get("facts", ""),
+                          "message": (f"已锁定 {len(_fact_lines)} 条可核实事实（带出处），"
                                       f"正文只允许使用清单内的数字"
-                                      if ctx["facts"] else "资料里没抽到可核实事实，跳过"),
-                          "value": ctx["facts"]})
+                                      if _fact_lines else "资料里没抽到可核实事实，跳过")})
 
                 job.emit({"type": "step", "key": "classify", "message": "判断主题类型…"})
                 ctx["topic_type"] = await wf.classify_topic_type(ctx["main_keyword"], ctx["topic"])

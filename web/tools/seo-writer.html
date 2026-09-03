@@ -91,6 +91,20 @@
   .doc .md-img{background:var(--soft);border:1px dashed var(--line);border-radius:9px;padding:9px 12px;
        font-family:var(--font-ui);font-size:12.5px;color:var(--muted);margin:10px 0}
   .doc img{max-width:100%;border-radius:10px;margin:10px 0;display:block}
+  .doc .md-img .md-img-tag{display:inline-block;background:var(--line);color:var(--text);
+       border-radius:4px;padding:1px 6px;margin-right:8px;font-size:11px;font-weight:600}
+  /* 发现面板：Reddit 讨论 + 事实清单 */
+  #discovery:empty{display:none}
+  .disc{background:var(--soft);border:1px solid var(--line);border-radius:10px;
+       padding:10px 13px;margin:0 0 10px;font-family:var(--font-ui)}
+  .disc-h{font-size:12.5px;font-weight:600;margin-bottom:6px}
+  .disc-n{color:var(--faint);font-weight:400;font-size:11.5px;margin-left:8px}
+  .disc-l{margin:0;padding-left:0;list-style:none;font-size:12.5px;color:var(--muted)}
+  .disc-l li{padding:3px 0;border-top:1px solid var(--line);line-height:1.5}
+  .disc-l li:first-child{border-top:none}
+  .disc-sub{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-right:7px}
+  .disc-warn{display:inline-block;background:#fbe9d0;color:#8a5a12;border-radius:4px;
+       padding:0 5px;margin-right:6px;font-size:11px}
   .doc:empty:after{content:"…";color:var(--faint)}
   /* 结果元信息 */
   .meta{display:grid;gap:10px;margin-bottom:14px}
@@ -124,6 +138,7 @@
     <li data-k="wordcount"><b>01</b>定字数</li>
     <li data-k="search"><b>02</b>搜全网</li>
     <li data-k="reddit"><b>03</b>抓 Reddit</li>
+    <li data-k="facts"><b>04</b>锁定事实</li>
     <li data-k="classify"><b>04</b>定类型</li>
     <li data-k="approve" class="key"><b>05</b>你来审批</li>
     <li data-k="article"><b>06</b>写正文</li>
@@ -202,6 +217,7 @@
   <div class="sec" id="sec2" style="display:none">
     <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
     <div class="log" id="log1"></div>
+    <div id="discovery"></div>
     <div class="sealrow" id="sealRow" style="display:none">
       <div class="seal">审</div>
       <div>
@@ -227,14 +243,13 @@
     <div class="meta" id="artInfo" style="display:none"></div>
     <div class="doc" id="articleBox"></div>
     <div class="btns" id="artBtns" style="display:none">
-      <button id="btnPolish">✨ 润色一遍（12 年级可读）</button>
       <button id="btnDocx" class="ghost">下载 Word</button>
       <button id="btnCopy" class="ghost">复制 Markdown</button>
       <button id="btnRevert" class="ghost" style="display:none">还原润色前</button>
       <button id="btnRestart" class="ghost">再写一篇</button>
     </div>
-    <div class="hint" style="margin-top:8px">润色是独立的一次完整长文调用，成本和写一篇差不多，所以要你自己点。
-      只改表达不动结构：标题、黄金答案句、图片占位符、链接都原样保留。</div>
+    <div class="hint" style="margin-top:8px">正文写完会<b>自动润色一遍</b>（按可读性判断力度，另计 <span id="polishPts">3</span> 点）。
+      只改表达不动结构：标题、图片占位符、链接、表格都原样保留。不满意可以「还原润色前」。</div>
   </div>
 </div>
 
@@ -260,7 +275,8 @@ function updateCost(){
   const total=(typeof outline==="number"&&typeof article==="number")?(outline+article+img):"?";
   $("costBox").innerHTML=`<b>${total}</b> 点 <span class="dim">= 大纲 ${outline} + 正文 ${article}`
     + (n?` + 配图 ${img}`:"") + `</span>`;
-  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；润色另计 ${(p.polish||{})[t]??"?"} 点。选写手不额外扣点。`;
+  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；正文写完自动润色，另计 ${(p.polish||{})[t]??"?"} 点。选写手不额外扣点。`;
+  const pp=$("polishPts"); if(pp) pp.textContent=(p.polish||{})[t]??"?";
 }
 function syncImages(){
   const on=$("enableImages").checked;
@@ -345,22 +361,61 @@ async function sse(url,body,onEvent){
 }
 function setStatus(m,err,spin){ const s=$("status"); s.innerHTML=(spin?'<span class="spin"></span>':"")+(m||""); s.className=err?"err":""; }
 /* 进度流水：每条带一个"从这一步开始算起"的耗时，让等待变成看得见的工作量 */
-const LOG_T0={};
+const LOG_T0={}, LOG_TICK={};
 function logTo(id,msg){
   const l=$(id);
   if(!LOG_T0[id]) LOG_T0[id]=Date.now();
-  const secs=((Date.now()-LOG_T0[id])/1000).toFixed(1)+"s";
+  // 上一条定格：它的耗时就是"这一步花了多久"
   [...l.querySelectorAll(".li.now")].forEach(x=>x.classList.remove("now"));
+  if(LOG_TICK[id]){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; }
   const row=E("div",null); row.className="li now";
-  const t=E("div",null,secs); t.className="t";
+  const t=E("div",null,"0.0s"); t.className="t";
   const m=E("div",null,msg); m.className="m";
   row.append(t,m); l.append(row);
+  // 当前行的秒数自己跳。写正文要好几分钟，静止的 "0.0s" 会让人以为卡死了。
+  const born=Date.now();
+  LOG_TICK[id]=setInterval(()=>{
+    if(!row.classList.contains("now")){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; return; }
+    t.textContent=((Date.now()-born)/1000).toFixed(1)+"s";
+  },100);
 }
-function logReset(id){ delete LOG_T0[id]; $(id).innerHTML=""; }
+function logStop(id){
+  if(LOG_TICK[id]){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; }
+  [...$(id).querySelectorAll(".li.now")].forEach(x=>x.classList.remove("now"));
+}
+function logReset(id){ logStop(id); delete LOG_T0[id]; $(id).innerHTML=""; }
+
+/* 发现面板：Reddit 真人讨论 + 带出处的事实清单。
+   这两样是本产品跟"一键出文"最大的区别 —— 只在日志里写一句"已纳入"，用户看不见价值。 */
+const DISC={reddit:null, facts:null};
+function renderDiscovery(){
+  const box=$("discovery"); if(!box) return;
+  let h="";
+  if(DISC.reddit && DISC.reddit.threads && DISC.reddit.threads.length){
+    h+=`<div class="disc"><div class="disc-h">Reddit 真实讨论 · ${DISC.reddit.count} 条`+
+       `<span class="disc-n">真人原话，用来找竞品没覆盖的痛点</span></div><ul class="disc-l">`+
+       DISC.reddit.threads.map(t=>`<li><span class="disc-sub">r/${MD.escape(t.sub)}</span>`+
+         `${MD.escape(t.title)}<span class="disc-n"> ${t.score}赞 · ${t.comments}评</span></li>`).join("")+
+       `</ul></div>`;
+  }
+  if(DISC.facts && DISC.facts.count){
+    const lines=DISC.facts.facts.split("\n").filter(l=>l.includes(" — ")||l.includes(" - "));
+    const inDoubt=DISC.facts.facts.indexOf("待核实");
+    h+=`<div class="disc"><div class="disc-h">已锁定事实 · ${DISC.facts.count} 条`+
+       `<span class="disc-n">正文只准用清单里的数字，清单外的会标出来让你核实</span></div>`+
+       `<ul class="disc-l">`+lines.slice(0,10).map((l,idx)=>{
+         const doubt = inDoubt>=0 && DISC.facts.facts.indexOf(l)>inDoubt;
+         return `<li>${doubt?'<span class="disc-warn">待核实</span>':""}${MD.escape(l.replace(/^[-*`\s]+/,""))}</li>`;
+       }).join("")+
+       (lines.length>10?`<li class="disc-n">…另有 ${lines.length-10} 条</li>`:"")+`</ul></div>`;
+  }
+  box.innerHTML=h;
+}
+function discReset(){ DISC.reddit=null; DISC.facts=null; renderDiscovery(); }
 
 /* 步骤轨：直接复用后端 step 事件里已有的 key，不为它另加一套事件。
    顺序写死在前端，因为"第几步"是产品动线，不该由后端事件到达顺序决定。 */
-const TRACK=["wordcount","search","reddit","classify","approve","article","polish"];
+const TRACK=["wordcount","search","reddit","facts","classify","approve","article","polish"];
 function trackTo(key){
   const at=TRACK.indexOf(key); if(at<0) return;
   [...$("track").children].forEach(li=>{
@@ -400,7 +455,7 @@ $("btnOutline").onclick=async()=>{
 
   $("btnOutline").disabled=true;
   $("sec2").style.display=""; $("sec3").style.display="none";
-  logReset("log1"); $("outlineBox").innerHTML=""; S.outline="";
+  logReset("log1"); discReset(); $("outlineBox").innerHTML=""; S.outline="";
   setStatus("正在生成大纲…",false,true);
   const paint=throttleRender($("outlineBox"),()=>S.outline);
 
@@ -414,6 +469,8 @@ $("btnOutline").onclick=async()=>{
       voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
         if(ev.type==="step"){ logTo("log1",ev.message); trackTo(ev.key); }
+        else if(ev.type==="reddit"){ logTo("log1",ev.message); trackTo("reddit"); DISC.reddit=ev; renderDiscovery(); }
+        else if(ev.type==="facts"){ logTo("log1",ev.message); trackTo("facts"); DISC.facts=ev; renderDiscovery(); }
         else if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
         else if(ev.type==="done"){
           S.sessionId=ev.session_id; S.outline=ev.outline; paint(true);
@@ -481,12 +538,16 @@ $("btnArticle").onclick=async()=>{
           paint(true); applyImages();
           S.info={...ev}; renderInfo(); $("artBtns").style.display="flex";
           $("artMeta").textContent=`· ${ev.word_count} 词`+(ev.images?` · ${ev.images} 张配图`:"");
-          setStatus("完成 ✅ 可以下载 Word，也可以再润色一遍。");
+          setStatus("正文完成，继续自动润色…",false,true);
+          S.needPolish=true;
         }
         else if(ev.type==="error") throw new Error(ev.message);
       });
+    // 自动润色：接在正文流程之后，不在 SSE 回调里嵌套发起第二次请求。
+    // 润色失败不该让整篇文章白写 —— runPolish 内部已自行回滚并提示。
+    if(S.needPolish){ S.needPolish=false; await runPolish(); }
   }catch(err){ setStatus("失败："+(err.message||err),true); }
-  finally{ $("btnRevise").disabled=$("btnArticle").disabled=false; }
+  finally{ $("btnRevise").disabled=$("btnArticle").disabled=false; logStop("log2"); }
 };
 
 function applyImages(){
@@ -494,7 +555,8 @@ function applyImages(){
   $("articleBox").querySelectorAll(".md-img").forEach(el=>{
     const src=S.images[el.dataset.ph];
     if(!src) return;
-    const img=document.createElement("img"); img.src=src; img.alt=el.textContent.replace(/^🖼\s*/,"");
+    const img=document.createElement("img"); img.src=src;
+    img.alt=(el.dataset.ph||"").replace(/^\[IMAGE:\s*/,"").replace(/\]$/,"");
     el.replaceWith(img);
   });
 }
@@ -514,11 +576,11 @@ function renderInfo(){
 }
 
 /* ---------- 独立环节：润色 ---------- */
-$("btnPolish").onclick=async()=>{
-  if(!S.article){ setStatus("还没有文章。",true); return; }
+async function runPolish(){
+  if(!S.article){ return; }
   // 先存一份润色前的，改坏了能退回来
   S.pre={article:S.article, docx:S.docx, filename:S.filename, info:{...S.info}};
-  $("btnPolish").disabled=$("btnDocx").disabled=true;
+  $("btnDocx").disabled=true;
   setStatus("润色中，整篇重写一遍，时间和写文差不多…",false,true);
   logTo("log2","—— 开始润色（目标：美国 12 年级学生能读懂）——");
   S.article="";
@@ -548,8 +610,8 @@ $("btnPolish").onclick=async()=>{
     S.article=S.pre.article; paint(true); applyImages(); S.pre=null;
     setStatus("润色失败："+(err.message||err),true);
   }
-  finally{ $("btnPolish").disabled=$("btnDocx").disabled=false; }
-};
+  finally{ $("btnDocx").disabled=false; logStop("log2"); }
+}
 
 $("btnRevert").onclick=()=>{
   if(!S.pre) return;

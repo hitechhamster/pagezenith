@@ -23,20 +23,29 @@
     while (i < lines.length) {
       const line = lines[i].trim();
 
-      // 表格：|a|b| 后面跟 |---|---|
-      if (line.startsWith("|") && line.endsWith("|")) {
-        const block = [];
-        while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-          block.push(lines[i].trim()); i++;
+      // 表格：靠「分隔行」认，不要求首尾竖线。
+      // 2026-09-03 实测：模型有时输出松散写法（`列一 | 列二` + `--- | --- | ---`，行首尾没有竖线），
+      // 旧逻辑要求 startsWith("|") && endsWith("|")，整块表格直接降级成一堆纯文本段落。
+      const isSep = s => /\|/.test(s) && /^[|\s:-]+$/.test(s) && /-{2,}/.test(s);
+      if (line && /\|/.test(line) && i + 1 < lines.length && isSep(lines[i + 1].trim())) {
+        closeList();
+        const cells = r => {
+          let t = r.trim();
+          if (t.startsWith("|")) t = t.slice(1);
+          if (t.endsWith("|")) t = t.slice(0, -1);
+          return t.split("|").map(c => c.trim());
+        };
+        const head = cells(line);
+        i += 2;                                   // 跳过表头和分隔行
+        const body = [];
+        while (i < lines.length) {
+          const r = lines[i].trim();
+          if (!r || !/\|/.test(r)) break;         // 空行或没有竖线 = 表格结束
+          body.push(cells(r)); i++;
         }
-        const rows = block.filter(l => !/^[|\s:-]+$/.test(l));
-        if (rows.length) {
-          closeList();
-          const cells = r => r.split("|").slice(1, -1).map(c => c.trim());
-          out.push("<table><thead><tr>" + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>");
-          rows.slice(1).forEach(r => out.push("<tr>" + cells(r).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>"));
-          out.push("</tbody></table>");
-        }
+        out.push("<table><thead><tr>" + head.map(c => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>");
+        body.forEach(r => out.push("<tr>" + r.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>"));
+        out.push("</tbody></table>");
         continue;
       }
 
@@ -44,7 +53,7 @@
 
       // 图片占位符：单独标出来，让用户一眼看到配图会插在哪
       const img = line.match(/^\[IMAGE:\s*([\s\S]+?)\s*\]$/);
-      if (img) { closeList(); out.push(`<div class="md-img" data-ph="${esc(line)}">🖼 ${esc(img[1])}</div>`); i++; continue; }
+      if (img) { closeList(); out.push(`<div class="md-img" data-ph="${esc(line)}"><span class="md-img-tag">配图</span>${esc(img[1])}</div>`); i++; continue; }
 
       const h = line.match(/^(#{1,4})\s+(.*)$/);
       if (h) { closeList(); const lv = h[1].length; out.push(`<h${lv}>${inline(h[2])}</h${lv}>`); i++; continue; }
