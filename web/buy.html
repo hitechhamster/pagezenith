@@ -115,7 +115,11 @@ function resumeOrder(){
   fetch("/api/pay/order/"+encodeURIComponent(oid)).then(r=>r.ok?r.json():null).then(o=>{
     if(!o) return;
     if(o.status==="paid"){ showKey(o); return; }
-    renderCheckout(o); poll(oid);
+    // 从 Dodo 整页跳回来的：拿回付款链接重画说明卡（没链接就只画等待）；
+    // 静态码回退路径没有 pz_paylink，仍走收款码卡。
+    var link=""; try{ link=sessionStorage.getItem("pz_paylink")||""; }catch(e){}
+    if(link){ renderPrePay(Object.assign({}, o, {payment_link: link})); } else { renderCheckout(o); }
+    poll(oid);
   }).catch(()=>{});
   return true;
 }
@@ -165,19 +169,29 @@ function openCheckout(payUrl, onClose){
     location.href=payUrl;                            // 浮层用不了 → 整页跳转
   });
 }
-/* 浮层期间本页显示的等待卡：不放收款码，只放"付款窗口已打开 + 到账自动刷新" */
-function renderWaiting(o){
+/* 付款前的说明卡：先讲清楚三件事，用户点按钮才弹 Dodo 窗口。
+   支付宝**不写**：账号没开通，Dodo 会自动不显示，写了等于骗人。 */
+function renderPrePay(o){
   $("packs").style.display="none";
   var box=$("checkout"); box.style.display="";
-  box.innerHTML='<div class="checkout"><div class="co-head">'+esc(o.name)+' · +'+o.credits+' 点</div>'
-    +'<div style="padding:22px 18px;font-size:14px;line-height:1.9">'
-    +'付款窗口已打开，支持<b>微信支付</b> / 支付宝 / 银行卡。<br />'
-    +'付款完成后点数会<b>自动到账</b>，这一页不用刷新。<br />'
-    +'<span style="color:var(--faint);font-size:12.5px">窗口被拦截或没弹出来？<a href="#" id="reopen">重新打开付款窗口</a></span>'
-    +'</div><div class="co-foot"><span class="dot"></span> <span id="wait">等待付款…</span></div></div>';
-  var r=document.getElementById("reopen");
-  if(r) r.onclick=function(ev){ ev.preventDefault(); location.href=sessionStorage.getItem("pz_paylink")||"#"; };
   try{ sessionStorage.setItem("pz_paylink", o.payment_link||""); }catch(e){}
+  box.innerHTML='<div class="checkout">'
+    +'<div class="co-head">'+esc(o.name)+' · +'+o.credits+' 点 <span style="float:right">订单 <b class="mono">'+esc(o.order_id||"")+'</b></span></div>'
+    +'<div style="padding:20px 18px 6px;font-size:14px;line-height:1.95">'
+    +'<ol style="margin:0 0 14px;padding-left:20px">'
+    +'<li>点下面的按钮，会弹出 <b>Dodo Payments</b> 的付款窗口（我们的收款方）。</li>'
+    +'<li>在窗口里选 <b>微信支付</b>，扫码付款。</li>'
+    +'<li>姓名、邮箱、地址<b>已经预填好，不用改</b>，直接付就行。</li>'
+    +'<li>付完关掉窗口，点数<b>自动到账</b>，这一页不用刷新。</li>'
+    +'</ol>'
+    +'<button id="payNow" style="padding:12px 26px;border-radius:999px;background:var(--accent);color:#fff;border:0;font-size:15px;font-weight:600;cursor:pointer">打开付款窗口（微信支付）</button>'
+    +'<div style="color:var(--faint);font-size:12.5px;margin-top:10px">窗口被拦截了？<a href="#" id="reopen">在新页面打开付款</a></div>'
+    +'</div><div class="co-foot"><span class="dot"></span> <span id="wait">等待付款…</span></div></div>';
+  var b=document.getElementById("payNow");
+  if(b) b.onclick=function(){ b.disabled=true; b.textContent="付款窗口已打开…";
+    openCheckout(o.payment_link, function(){ b.disabled=false; b.textContent="再次打开付款窗口"; }); };
+  var r=document.getElementById("reopen");
+  if(r) r.onclick=function(ev){ ev.preventDefault(); window.open(o.payment_link,"_blank"); };
 }
 /* 页面一打开就预热 SDK：用户点下去才是即时的 */
 loadDodo("https://live.dodopayments.com/", function(){});
@@ -194,8 +208,10 @@ async function startOrder(pid){
     if(j.payment_link){
       // 记下订单号：浮层关闭 / 从 Dodo 跳回来（?order=xxx）都靠它续上轮询
       try{ sessionStorage.setItem("pz_order", j.order_id); }catch(e){}
-      renderWaiting(j);
-      openCheckout(j.payment_link, function(){ poll(j.order_id); });
+      // 不自动弹窗：浮层一出来就把说明盖住了，用户根本看不到"用微信支付、地址不用改"。
+      // 先给说明卡，用户点按钮再弹（2026-09-03 用户实测反馈）。轮询先开着，付完自动收尾。
+      renderPrePay(j);
+      poll(j.order_id);
       return;
     }
     renderCheckout(j);
