@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from tools.seo_gap.config import get_settings
 from billing import store as billing_store
 from billing.router import router as billing_router
 
@@ -72,8 +73,13 @@ def page(path: Path) -> HTMLResponse:
     return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 app = FastAPI(title="页面科技 — AI 跨境营销工具")
+# 同源应用，没有任何跨域调用方；allow_origins=["*"] 是早期图省事留下的。
+# 收成站点自身 + 本地开发端口。带 cookie 的请求本来就不允许 "*"，这里也顺便把语义摆正。
+_settings = get_settings()
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[_settings.site_url.rstrip("/"), "http://localhost:8012", "http://127.0.0.1:8012"],
+    allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],
 )
 
 # ---- 计费（卡密）----

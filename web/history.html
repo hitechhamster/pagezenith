@@ -77,6 +77,7 @@
   <a class="logo" href="/" style="text-decoration:none"><img src="/assets/brand/logo-128.png" alt="页面科技" onerror="this.style.display='none'" /></a><div class="brand">页面科技</div>
   <div class="grow"></div>
   <a class="keybtn" href="/" style="text-decoration:none;margin-right:8px">回工具</a>
+  <a class="keybtn" href="/buy" style="text-decoration:none;margin-right:8px">充值</a>
   <button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录</button>
 </div>
 
@@ -148,10 +149,17 @@ async function loadBalance(){
     $("whoami").style.display="flex";
     $("whoEmail").textContent = "当前账户 " + acct.email;
   }
-  const b=await CARD.refresh();
+  const b=await CARD.refresh();     // refresh 会派发 pz-card-updated → paintBalance 再画一次，无害
+  paintBalance(b);
+}
+/* 只负责画，不发任何请求 —— pz-card-updated 的监听器只能调它。
+   2026-09-03 教训：以前监听器调的是 loadBalance()，而 loadBalance → CARD.refresh() →
+   派发 pz-card-updated → 监听器 → loadBalance …… 无限循环。表现为整页忽闪，
+   实际是一个用户开着记录页就在无限刷 /api/auth/me 和 /api/billing/history。 */
+function paintBalance(b){
   if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">身份已失效，请重新登录</div>'; return; }
-  // 剩余不足一篇全套（10 点）就把数字标红 —— 提醒要早于用完那一刻
-  const low = b.remaining < 10;
+  // 剩余不足一篇全套（9 点）就把数字标红 —— 提醒要早于用完那一刻
+  const low = b.remaining < 9;
   $("balance").innerHTML=`
     <div class="b"><div class="k">剩余点数</div>
       <div class="v ${low?"low":"accent"}">${b.remaining}<small> / ${b.total}</small></div></div>
@@ -244,7 +252,8 @@ $("vCopy").onclick=()=>{
 
 $("tabResults").onclick=()=>{tab="results";$("tabResults").classList.add("on");$("tabUsage").classList.remove("on");loadList();};
 $("tabUsage").onclick=()=>{tab="usage";$("tabUsage").classList.add("on");$("tabResults").classList.remove("on");loadList();};
-window.addEventListener("pz-card-updated",()=>{loadBalance();loadList();});
+// 只画余额，不重拉列表、更不能再 refresh —— 见 paintBalance 上面的注释
+window.addEventListener("pz-card-updated",(e)=>{ if(CARD.has()) paintBalance(e.detail); });
 document.addEventListener("DOMContentLoaded",()=>{ loadBalance(); loadList(); });
 </script>
 </body>

@@ -120,6 +120,68 @@ function resumeOrder(){
   return true;
 }
 
+/* ── Dodo 站内浮层（照观象台 reading-ui.js 的写法）──
+   SDK 从本地 /vendor 加载：境外脚本在国内网络下有加载不出来的可能，
+   8 秒还没来就别等，退回整页跳转 —— 宁可跳走，也不能让用户点了没反应。 */
+var dodoState='none', dodoWaiters=[], dodoOnClose=null;
+function loadDodo(url, cb){
+  if(dodoState==='ready')  return cb(true);
+  if(dodoState==='failed') return cb(false);
+  dodoWaiters.push(cb);
+  if(dodoState==='loading') return;
+  dodoState='loading';
+  var settle=function(ok){
+    if(dodoState!=='loading') return;              // onload 和超时会抢，只结算一次
+    var D=window.DodoPaymentsCheckout&&window.DodoPaymentsCheckout.DodoPayments;
+    dodoState=(ok&&D)?'ready':'failed';
+    if(dodoState==='ready'){
+      var host=''; try{ host=new URL(url).hostname; }catch(e){}
+      try{
+        D.Initialize({
+          mode: host.indexOf('test.')===0?'test':'live',   // 从结账地址反推，前端不再存一份配置
+          displayType:'overlay', linkType:'session',
+          onEvent:function(e){
+            var t=e&&e.event_type;
+            // 关闭 ≠ 付款成功；三种事件都只做一件事：收起浮层，交给后端轮询判断
+            if(t==='checkout.status'||t==='checkout.redirect'||t==='checkout.closed'){
+              try{ D.Checkout.close(); }catch(e){}
+              if(dodoOnClose){ var f=dodoOnClose; dodoOnClose=null; f(); }
+            }
+          }
+        });
+      }catch(e){ dodoState='failed'; }
+    }
+    var ws=dodoWaiters; dodoWaiters=[]; ws.forEach(function(f){ f(dodoState==='ready'); });
+  };
+  var s=document.createElement('script'); s.src='/vendor/dodo-checkout-1.9.7.js'; s.defer=true;
+  s.onload=function(){ settle(true); }; s.onerror=function(){ settle(false); };
+  document.head.appendChild(s);
+  setTimeout(function(){ settle(false); },8000);
+}
+function openCheckout(payUrl, onClose){
+  dodoOnClose=onClose||null;
+  loadDodo(payUrl,function(ok){
+    if(ok){ try{ window.DodoPaymentsCheckout.DodoPayments.Checkout.open({checkoutUrl:payUrl}); return; }catch(e){} }
+    location.href=payUrl;                            // 浮层用不了 → 整页跳转
+  });
+}
+/* 浮层期间本页显示的等待卡：不放收款码，只放"付款窗口已打开 + 到账自动刷新" */
+function renderWaiting(o){
+  $("packs").style.display="none";
+  var box=$("checkout"); box.style.display="";
+  box.innerHTML='<div class="checkout"><div class="co-head">'+esc(o.name)+' · +'+o.credits+' 点</div>'
+    +'<div style="padding:22px 18px;font-size:14px;line-height:1.9">'
+    +'付款窗口已打开，支持<b>微信支付</b> / 支付宝 / 银行卡。<br />'
+    +'付款完成后点数会<b>自动到账</b>，这一页不用刷新。<br />'
+    +'<span style="color:var(--faint);font-size:12.5px">窗口被拦截或没弹出来？<a href="#" id="reopen">重新打开付款窗口</a></span>'
+    +'</div><div class="co-foot"><span class="dot"></span> <span id="wait">等待付款…</span></div></div>';
+  var r=document.getElementById("reopen");
+  if(r) r.onclick=function(ev){ ev.preventDefault(); location.href=sessionStorage.getItem("pz_paylink")||"#"; };
+  try{ sessionStorage.setItem("pz_paylink", o.payment_link||""); }catch(e){}
+}
+/* 页面一打开就预热 SDK：用户点下去才是即时的 */
+loadDodo("https://live.dodopayments.com/", function(){});
+
 async function startOrder(pid){
   $("err").textContent="";
   try{
@@ -130,9 +192,10 @@ async function startOrder(pid){
     // Dodo 开着 → 后端会带回 payment_link，直接跳去托管收银台。
     // 没有就走原来的扫码流程，两条路并存，切换渠道不用改这里。
     if(j.payment_link){
-      // 记下订单号：从 Dodo 跳回来时（?order=xxx）直接续上轮询
+      // 记下订单号：浮层关闭 / 从 Dodo 跳回来（?order=xxx）都靠它续上轮询
       try{ sessionStorage.setItem("pz_order", j.order_id); }catch(e){}
-      location.href=j.payment_link;
+      renderWaiting(j);
+      openCheckout(j.payment_link, function(){ poll(j.order_id); });
       return;
     }
     renderCheckout(j);

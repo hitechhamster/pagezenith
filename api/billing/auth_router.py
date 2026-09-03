@@ -33,7 +33,11 @@ class SignupReq(BaseModel):
 
 
 def _issue(request: Request, response: Response, out: dict) -> dict:
-    secure = request.url.scheme == "https"
+    # 站点在 nginx 反代后面，uvicorn 看到的 scheme 是 http —— 只看 request.url.scheme
+    # 会让生产环境的会话 cookie 一直没有 Secure 标志。三个信号任一成立就打上。
+    secure = (request.url.scheme == "https"
+              or request.headers.get("x-forwarded-proto", "").lower() == "https"
+              or get_settings().site_url.startswith("https://"))
     response.set_cookie(SESSION_COOKIE, out["token"], secure=secure, **COOKIE)
     return {"id": out["id"], "email": out["email"]}
 
