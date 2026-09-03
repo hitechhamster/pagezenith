@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>成品样例 · 页面科技</title>
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="/assets/brand/logo.png" />
+<link rel="stylesheet" href="/shared/app.css?v=a4435c68" />
+<style>
+  .hero{padding:44px 0 34px;border-bottom:1px solid var(--line);margin-bottom:26px;
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,360px);gap:36px;align-items:center}
+  /* 中文标题不设 max-width：46px 的中文字宽，14ch 会在词中间断行。
+     用 text-wrap:balance（app.css 里已设）让浏览器自己找断点。 */
+  .hero h1{font-size:44px;font-weight:700;margin:0 0 12px;line-height:1.15}
+  .hero .sub{color:var(--muted);font-size:15.5px;margin:0;max-width:46ch;line-height:1.8}
+  .eyebrow{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.16em;
+    color:var(--muted);margin-bottom:14px}
+  .cta-row{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 10px}
+  .btn-primary,.btn-ghost{display:inline-block;border-radius:999px;padding:12px 24px;
+    font-size:14px;font-weight:600;transition:transform .16s,box-shadow .16s,border-color .16s}
+  .btn-primary{background:var(--accent);color:#fff;border:1px solid var(--accent)}
+  .btn-ghost{background:var(--card);color:var(--text);border:1px solid var(--line)}
+  .btn-primary:hover,.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .btn-ghost:hover{border-color:var(--accent)}
+  .cta-note{font-size:12px;color:var(--faint);margin:0}
+  /* 小票流水 */
+  .live{position:relative;min-width:0}
+  .ledger{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
+    box-shadow:var(--shadow);overflow:hidden}
+  .ledger-head{display:flex;align-items:center;gap:9px;padding:12px 16px;font-size:12.5px;
+    color:var(--muted);border-bottom:1px dashed var(--line)}
+  .ledger-head .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+    animation:pulse 1.6s infinite;flex-shrink:0}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .ledger-body{padding:6px 16px 10px;min-height:158px}
+  .lrow{display:flex;align-items:baseline;gap:11px;padding:6px 0;
+    border-bottom:1px dotted var(--line);animation:fadeUp .45s both}
+  .lrow:last-child{border-bottom:0}
+  .lrow .t{font-family:var(--font-mono);font-size:11px;color:var(--faint);
+    flex:0 0 44px;text-align:right;font-variant-numeric:tabular-nums}
+  .lrow .m{flex:1;font-size:13px;color:var(--text);min-width:0}
+  .lrow.done .m{font-weight:600}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .ledger-foot{display:flex;justify-content:space-between;gap:10px;padding:10px 16px;
+    border-top:1px dashed var(--line);font-size:11.5px;color:var(--faint)}
+  .ledger-foot .mono{font-family:var(--font-mono)}
+  .seal{position:absolute;right:-10px;bottom:24px;width:46px;height:46px;
+    display:grid;place-items:center;border:2.5px solid var(--seal);border-radius:9px;
+    color:var(--seal);font-family:var(--font-display);font-weight:700;font-size:20px;
+    background:var(--card);transform:rotate(-8deg) scale(.6);opacity:0;
+    transition:opacity .5s,transform .5s}
+  .seal.on{opacity:1;transform:rotate(-8deg) scale(1)}
+  @media(max-width:860px){
+    .hero{grid-template-columns:1fr;gap:26px}
+    .hero h1{font-size:34px;max-width:none}
+  }
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .tool{display:block;padding:20px;border-radius:var(--radius-lg);background:var(--card);border:1px solid var(--line);transition:border-color .15s,transform .08s}
+  .tool:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .tool .ic{width:38px;height:38px;border-radius:10px;background:var(--accentsoft);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+  .tool .ic svg{width:20px;height:20px;display:block}
+  .tool .tt{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--text);margin-bottom:5px}
+  .tool .td{color:var(--muted);font-size:13px}
+  .tool.main{border-color:var(--accent);background:linear-gradient(180deg,var(--accentsoft),var(--card) 62%)}
+  .tool.main .tt:after{content:"主推";font-size:11px;color:#F6F3EA;background:var(--accent);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
+  .tool.soon{opacity:.55;pointer-events:none}
+  .tool.soon .tt:after{content:"即将上线";font-size:11px;color:var(--amber);background:var(--amberbg);border-radius:6px;padding:1px 7px;margin-left:8px;font-weight:500}
+  .pricing{margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
+  .pricing h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 10px}
+  .pricing .p-lead{font-family:var(--font-read);font-size:15px;color:var(--muted);line-height:1.8;margin:0 0 18px;max-width:60ch}
+  .pricing .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;max-width:640px}
+  .pcard{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);padding:18px}
+  .pcard.best{border-color:var(--accent);background:linear-gradient(180deg,var(--accentsoft),var(--card) 62%)}
+  .pcard .pn{font-size:13px;color:var(--muted);margin-bottom:4px}
+  .pcard .pp{font-family:var(--font-display);font-size:28px;font-weight:600;margin-bottom:4px}
+  .pcard .pu{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;min-height:34px}
+  .pcard .pbtn{display:inline-block;background:var(--accent);color:#F6F3EA;border-radius:8px;
+    padding:7px 18px;font-size:13px;text-decoration:none}
+  .pcard .pbtn:hover{opacity:.9}
+  .ptable{margin:22px 0 8px;max-width:640px;font-size:13px}
+  .ptable table{width:100%;border-collapse:collapse}
+  .ptable th,.ptable td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  .ptable th{color:var(--muted);font-weight:500;font-size:12px}
+  .ptable td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .pricing .p-note{font-size:13px;color:var(--muted);line-height:1.8;margin:10px 0 0;max-width:60ch}
+  .about{margin-top:48px;padding-top:24px;border-top:1px solid var(--line);max-width:60ch}
+  .about h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 10px}
+  .about p{font-family:var(--font-read);font-size:15px;color:var(--muted);line-height:1.8;margin:0 0 8px}
+  .about .roadmap{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 12px}
+  .about .roadmap span{font-size:12px;color:var(--accent);background:var(--accentsoft);border-radius:7px;padding:3px 11px}
+  .about .contact{color:var(--text)}
+  .about .contact b{color:var(--accent)}
+  .home-layout{display:grid;grid-template-columns:1fr 280px;gap:36px;align-items:start}
+  @media(max-width:840px){.home-layout{grid-template-columns:1fr}}
+  .newsbar{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);margin-top:48px}
+  @media(max-width:840px){.newsbar{margin-top:0}}
+  .newsbar .nb-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .newsbar .nb-head span{font-family:var(--font-display);font-weight:600;font-size:14px}
+  .newsbar .nb-head a{font-size:12px;color:var(--accent)}
+  .newsbar .nb-loading{color:var(--faint);font-size:13px}
+  .newsbar .nb-ov{font-size:12px;color:var(--muted);line-height:1.65;margin-bottom:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .newsbar .nb-item{display:block;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.5;color:var(--text)}
+  .newsbar .nb-item:last-of-type{border-bottom:0}
+  .newsbar .nb-item:hover{color:var(--accent)}
+  .newsbar .nb-item .c{color:var(--accent);font-size:11px;margin-right:6px}
+  .newsbar .nb-date{font-size:11px;color:var(--faint);margin-top:10px}
+</style>
+<style>
+  .doc{font-family:var(--font-read);font-size:15.5px;line-height:1.85;color:var(--text);
+  .doc h1{font-size:23px;margin:18px 0 8px} .doc h2{font-size:19.5px;margin:22px 0 7px}
+  .doc h3{font-size:17px;margin:18px 0 6px;padding-left:9px;border-left:3px solid var(--accent)}
+  .doc h4{font-size:15px;margin:15px 0 4px;color:var(--muted);text-transform:none;
+  .doc p{margin:0 0 11px} .doc ul{margin:0 0 11px;padding-left:20px} .doc li{margin:2px 0}
+  .doc table{border-collapse:collapse;width:100%;margin:10px 0;font-family:var(--font-ui);font-size:13px}
+  .doc th,.doc td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+  .doc th{background:var(--soft)}
+  .doc .md-img{background:var(--soft);border:1px dashed var(--line);border-radius:9px;padding:9px 12px;
+  .doc img{max-width:100%;border-radius:10px;margin:10px 0;display:block}
+  .doc .md-img .md-img-tag{display:inline-block;background:var(--line);color:var(--text);
+  #discovery:empty{display:none}
+  .disc{background:var(--soft);border:1px solid var(--line);border-radius:10px;
+  .disc-h{font-size:12.5px;font-weight:600;margin-bottom:6px}
+  .disc-n{color:var(--faint);font-weight:400;font-size:11.5px;margin-left:8px}
+  .disc-l{margin:0;padding-left:0;list-style:none;font-size:12.5px;color:var(--muted)}
+  .disc-l li{padding:3px 0;border-top:1px solid var(--line);line-height:1.5}
+  .disc-l li:first-child{border-top:none}
+  .disc-sub{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-right:7px}
+  .disc-warn{display:inline-block;background:#fbe9d0;color:#8a5a12;border-radius:4px;
+  .doc:empty:after{content:"…";color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo"><img src="/assets/brand/logo-128.png" alt="页面科技" onerror="this.style.display='none'" /></div><div class="brand">页面科技</div>
+  <div class="grow"></div>
+  <a class="keybtn" href="/buy" style="text-decoration:none">¥19.9 写两篇</a>
+</div>
+
+<div class="wrap" style="max-width:920px;margin:0 auto;padding:28px 20px 60px">
+  <div class="eyebrow">成品样例 · 真实产出，未人工修改</div>
+  <h1 style="font-size:30px;margin:6px 0 10px">一篇从关键词到 Word 的完整产出</h1>
+  <p class="sub" style="margin:0 0 18px">关键词 <b>shopify store speed optimization</b> · 目标 2000 词 · 全程约 4 分钟 · 扣 9 点。
+    下面三块就是你每次会拿到的东西：<b>Reddit 真人讨论</b>（找竞品没写的痛点）、<b>带出处的事实清单</b>（正文只准用清单里的数字）、以及成品正文。</p>
+
+  <div class="disc"><div class="disc-h">Reddit 真实讨论 · 6 条<span class="disc-n">真人原话，不是竞品文章的复述</span></div>
+    <ul class="disc-l"><li><span class="disc-sub">r/shopify</span>What&#x27;s the fastest way to increase site speed on Shopify?<span class="disc-n"> 19赞 · 46评</span></li><li><span class="disc-sub">r/shopify</span>🚨 I worked inside the Shopify “speed optimization” scam on Fiverr — here’s how it really works (please read before you waste money)<span class="disc-n"> 108赞 · 52评</span></li><li><span class="disc-sub">r/shopify</span>Should I pay for a Shopify store optimization?<span class="disc-n"> 9赞 · 37评</span></li><li><span class="disc-sub">r/shopify</span>How to increase store speed?<span class="disc-n"> 5赞 · 23评</span></li><li><span class="disc-sub">r/shopify</span>How much realistically should I be charged for speed optimization by shopify partners?<span class="disc-n"> 2赞 · 69评</span></li><li><span class="disc-sub">r/shopify</span>Best free app to speed up my site?<span class="disc-n"> 5赞 · 24评</span></li></ul></div>
+
+  <div class="disc"><div class="disc-h">已锁定事实 · 15 条<span class="disc-n">每条带出处；清单外的数字系统会标出来让你核实</span></div>
+    <ul class="disc-l"><li>63% — 页面加载时长超过 4 秒时的跳出率（截至 2025 年） — 来源：shopify.com [厂商官方]</li><li>&gt; 4 seconds — 导致 63% 跳出率的页面加载时长阈值（截至 2025 年） — 来源：shopify.com [厂商官方]</li><li>500 million — Yottaa 2025 年 Web Performance Index 统计的电商访问量样本规模 — 来源：shopify.com [厂商官方]</li><li>1,300 — Yottaa 2025 年 Web Performance Index 统计的电商网站样本数量 — 来源：shopify.com [厂商官方]</li><li>LCP, INP, CLS — Google 定义的 Core Web Vitals 指标名称 — 来源：shopify.com [厂商官方]</li><li>Up to 20 — RobotAlp 免费版监控器数量限制 — 来源：community.shopify.com [社区讨论]</li><li>Last 60 days — SpeedBoostr 应用请求访问的订单历史数据范围 — 来源：apps.shopify.com [第三方内容]</li><li>91% — SpeedBoostr 应用的 5 星评价占比 — 来源：apps.shopify.com [第三方内容]</li><li>4% — SpeedBoostr 应用的 4 星评价占比 — 来源：apps.shopify.com [第三方内容]</li><li>5% — SpeedBoostr 应用的 1 星评价占比 — 来源：apps.shopify.com [第三方内容]</li><li>$50–200 — 常见的虚假速度优化服务收费范围 — 来源：reddit.com [社区讨论]</li><li>115ms+ — Google Tag Manager (GTM) 代码注入导致的延迟时间 — 来源：reddit.com [社区讨论]</li><li class="disc-n">…另有 3 条</li><li><span class="disc-warn">待核实</span>16 — 某用户提到的 Shopify 官方速度评分（年份不明，无官方来源确认该分数的具体含义） — 来源：reddit.com [社区讨论]</li><li><span class="disc-warn">待核实</span>3 - 3.50 seconds — 某用户提到的平均页面加载时长（年份不明，无官方来源确认该数据的普遍性） — 来源：reddit.com [社区讨论]</li><li><span class="disc-warn">待核实</span>300kb — 某用户建议的 Hero Image 图片大小（年份不明，无官方来源确认该规格） — 来源：reddit.com [社区讨论]</li></ul></div>
+
+  <div class="doc" id="doc" style="margin-top:22px"></div>
+
+  <div style="margin:34px 0 0;padding:22px;border:1px solid var(--line);border-radius:14px;background:var(--card)">
+    <div style="font-size:17px;font-weight:600;margin-bottom:6px">换成你的关键词试试</div>
+    <div style="color:var(--muted);font-size:13.5px;line-height:1.8;margin-bottom:14px">大纲出来你先审批，不点「通过」正文一个字不写、一点不扣。写完自动润色、出 Word。</div>
+    <a class="btn-primary" href="/buy" style="text-decoration:none">¥19.9 写两篇</a>
+    <a class="btn-ghost" href="/tools/seo-writer" style="text-decoration:none;margin-left:8px">已有账户，直接写</a>
+  </div>
+</div>
+<script src="/shared/md.js"></script>
+<script>
+  /* 正文以 Markdown 原样内嵌，用站内同一个渲染器画 —— 和工具页看到的完全一致 */
+  document.getElementById("doc").innerHTML = MD.render("# Shopify Store Speed Optimization: How to Make a Slow Site Load Fast\n\nThe business impact of a slow storefront is absolute and measurable. The 2025 Yottaa Web Performance Index, which analyzed a sample size of 500 million ecommerce visits across 1,300 ecommerce sites, reveals a severe drop-off in user retention when performance degrades. The data identifies a strict critical threshold for ecommerce infrastructure. A load time of > 4 seconds is the exact threshold causing a 63% bounce rate. When a browser takes too long to parse the initial document and render the primary visual elements, shoppers simply close the tab before the server completes the request. \n\nShopify store speed optimization demands addressing the root infrastructural causes of slow storefronts rather than following outdated advice. The platform itself operates on a highly optimized content delivery network, meaning backend server response times are rarely the issue. The delays occur almost entirely on the client side, determined by how the browser downloads, parses, and executes the specific combination of theme code, third-party scripts, and media assets loaded onto the storefront. Resolving these bottlenecks demands a mechanical understanding of how browsers prioritize resources and a willingness to audit the exact scripts consuming the main execution thread.\n\n## How to measure your baseline and ignore vanity metrics\n\nEvaluating site performance starts with understanding the difference between a synthetic laboratory score and real-world user data. Many sellers report seeing a native Shopify speed score of 16 and panic, assuming their storefront is fundamentally broken. This number often lacks context without looking at real user data. It is a synthetic calculation generated under simulated throttling conditions, which does not reflect the actual devices or network speeds of the customer base. Similarly, some merchants report their pages taking 3 - 3.50 seconds on average to load, which requires specific diagnostic tools to unpack because an average load time blends completely different user experiences into a single, unactionable number.\n\nTo diagnose actual performance bottlenecks, we rely on the specific field data metrics that track what human users experience on their specific devices. Google defines the Core Web Vitals metrics as LCP, INP, CLS. These three measurements isolate the exact moments where a user perceives a site as slow or broken.\n\nLCP stands for Largest Contentful Paint. This metric measures visual loading speed. It marks the exact millisecond when the largest text block or image element within the initial viewport finishes rendering on the screen. A fast LCP reassures the user that the URL they clicked is functioning and delivering the requested content. \n\nINP stands for Interaction to Next Paint. This metric measures overall page responsiveness and interactivity. It tracks the latency of all tap, click, and keyboard interactions throughout the entire lifespan of a user visiting a page. If a user taps a variant selector or an add-to-cart button and the page freezes before updating the visual state, the INP score fails. This delay is usually caused by heavy JavaScript monopolizing the main thread.\n\nCLS stands for Cumulative Layout Shift. This metric measures visual stability. It calculates how much the visible elements on the page shift around unexpectedly as asynchronous resources finish downloading. If a promotional banner loads late and pushes the entire product grid down just as the user attempts to click a link, that layout shift degrades the user experience and results in a poor CLS score.\n\nRelying on a single manual test through a browser provides an incomplete picture because performance fluctuates based on server load, third-party app latency, and script execution times. Continuous monitoring is required to establish a true baseline. Tools exist to automate this process and track performance over time. For example, the free tier of RobotAlp allows Up to 20 monitors to alert merchants of performance drops. Establishing this baseline through continuous field data collection is the only way to measure whether subsequent technical changes actually improve the storefront.\n\n## Why fake speed services end up costing you twice\n\nThe demand for faster storefronts has created a secondary market of cheap optimization services that rely entirely on deceptive coding practices. These services do not optimize the site structure, compress assets, or refactor code. Instead, they inject a script into the theme architecture that detects when a performance testing tool is analyzing the domain. This practice is known as cloaking, and it presents a significant risk to the integrity of the storefront.\n\nMany sellers report that these fake optimization services usually charge in the $50–200 range. The merchant loses twice in this scenario. First, they pay the fee for a service that delivers no structural value. Second, real users still experience the exact same slow load times, leading to zero improvement in conversions. The financial drain continues because the underlying render-blocking resources remain untouched, continuing to inflate bounce rates and abandonments.\n\nThe mechanism behind this manipulation relies on user-agent sniffing. When a browser or a bot requests a webpage, it sends a user-agent string identifying itself. The injected script intercepts the page load process and checks this string. If the script detects the specific user-agent associated with PageSpeed Insights, Lighthouse, or GTmetrix, it conditionally alters the HTML document before the bot can parse it. The script temporarily blocks heavy apps, images, or third-party JavaScript only when the testing bot is present. The testing tool analyzes an empty, stripped-down version of the site and awards a near-perfect score. When a real human shopper visits the site using a standard mobile browser, the script allows all the unoptimized, heavy assets to load normally, resulting in the same multi-second delays.\n\nMerchants can identify this manipulation by looking for specific red flags. A promise of a 90+ score in under 24 hours is a primary indicator, as legitimate code refactoring and asset optimization require extensive auditing and quality assurance testing. Another clear failure manifestation is when the site feels equally heavy and unresponsive on a real mobile device despite the testing tools reporting a flawless score. Merchants can verify this by opening the site on a standard cellular connection and manually timing the visual load and interactivity delays. If the real-world experience completely contradicts the laboratory score, the theme code likely contains a cloaking script that must be found and removed immediately to restore accurate performance tracking.\n\n## Dealing with app bloat and javascript injection\n\nWhile Shopify operates on a highly efficient global infrastructure, the performance of the client-side storefront degrades with every third-party application added to the ecosystem. Every front-end app adds milliseconds to the load time. When a merchant installs an app that alters the visual storefront, that app typically injects JavaScript into the theme. The browser must download, parse, compile, and execute this script before it can finish rendering the page. Multiple apps competing for the main execution thread create a bottleneck that directly impacts interactivity and visual load times.\n\nSome tracking and functional scripts are necessary for business operations, but they remain inherently heavy. Community testing frequently shows that Google Tag Manager (GTM) code injection alone introduces a 115ms+ delay. This delay cannot be completely avoided if advanced data routing and tracking are required for marketing operations. The objective is not to eliminate all scripts, but to strictly audit the utility of each application against its performance cost and data footprint.\n\nEvaluating the necessity and impact of each application requires a systematic approach. \n\nEvaluation Criteria | What to Look For | Actionable Step\n--- | --- | ---\nStorefront Impact | Check if the app edits the online store or operates entirely in the backend. Admin-only apps for inventory management or reporting do not slow down the customer experience because they do not inject scripts into the theme. | Retain admin-only apps without performance concerns. Heavily scrutinize any app that alters the visual layout, adds pop-ups, or introduces custom widgets.\nCode Residue | Understand that clicking uninstall in the dashboard does not always delete the associated code from the theme files. Legacy scripts often remain in the liquid files, continuing to execute and block the main thread even after the app is gone. | Manually review the theme code or employ a developer to strip out leftover script tags and asset calls from previously deleted applications.\nData & Permission Footprint | Review the specific data access requirements and historical data retention requests of the application during installation. | Weigh the functional benefit of the app against the breadth of its data access and the weight of its script injection.\n\nThe SpeedBoostr app serves as an objective example of evaluating permissions and community feedback. While highly rated, with 91% 5-star, 4% 4-star, and 5% 1-star reviews, merchants must review permissions before installation. For instance, evaluating its requirement to access order history for the Last 60 days is a necessary step to weigh if the app's functionality justifies its data access and script load. Every application, regardless of its rating, introduces a new layer of execution complexity to the storefront. Merchants must ruthlessly prune any front-end application that does not directly contribute to user experience or critical revenue tracking.\n\n## Moving beyond basic image compression for visual content\n\nA common misconception in storefront management is that running all media assets through aggressive compression tools will universally solve loading delays. This approach ignores how modern theme architectures handle media delivery. Most modern Shopify themes (v2.0+) automatically use liquid image tags that serve responsive images and handle lazy loading natively. When a developer uses the proper liquid filters, the platform automatically generates WebP formats and creates multiple responsive sizes. The browser then selects the optimal file size based on the specific device viewport. Over-compressing images via third-party apps can permanently ruin visual quality, introducing artifacts and pixelation, without yielding significant speed gains because the platform is already optimizing the delivery pipeline.\n\nThe one critical area merchants must control manually is the First Contentful Paint (FCP), usually the main hero banner. This specific asset dictates the perceived loading speed of the entire homepage. If the hero image is massive, the browser spends crucial milliseconds downloading it while the rest of the page remains blank. \n\nFor optimal performance, many experienced sellers suggest keeping the main Hero Image strictly under 300kb. Achieving this specific file size requires manual cropping and exporting at the correct dimensions before uploading to the platform. Furthermore, this specific image should not be lazy-loaded. Lazy loading instructs the browser to defer fetching an image until it enters the viewport. Applying this attribute to the hero image forces the browser to wait until the entire HTML document is parsed before it even begins to request the most important visual element on the page. The hero image needs to appear instantly to signal to the user that the site is working, meaning it must be coded with an eager loading attribute to prioritize its retrieval immediately.\n\n## The real cost of speeding up Shopify\n\nDeciding whether to attempt technical improvements internally or hire a professional requires understanding the limits of surface-level adjustments versus structural code refactoring. Uninstalling unused applications and resizing hero images will only get a store so far. These actions remove the most obvious bottlenecks, but they do not address the underlying architecture of the theme. True optimization requires editing the main JavaScript bundle, deferring non-critical CSS, and removing legacy code left behind by years of app installations. These are complex tasks that require a developer who understands liquid rendering, webpack configurations, and browser execution threads.\n\nLegitimate, structural website speed optimization is a financial investment. Many sellers report reputable agency starting prices typically sit at 1800€+. This baseline cost covers the extensive auditing, manual code extraction, and rigorous testing required to untangle a heavy theme without breaking storefront functionality. Complex, high-volume stores might even see quotes around $2,000/month for ongoing performance retainers that manage edge servers and continuous code minification. These retainers ensure that as marketing teams add new tracking pixels and merchandising teams build new landing pages, the underlying code remains optimized and the main thread remains unblocked.\n\nA proper audit, code refactoring, and quality assurance testing cannot be done overnight. Modifying the main JavaScript bundle carries a high risk of breaking interactive elements like variant selectors, cart drawers, and mobile navigation menus. The typical timeline for a genuine optimization service is 1 month. This duration allows developers to isolate scripts, test deferred loading strategies, and verify that the checkout flow remains entirely intact across all major device types and browsers.\n\nMerchants must evaluate their current infrastructure and revenue scale to make the correct operational decision. Choose the DIY route if the store is relatively new, relies on a standard Online Store 2.0 theme, and the primary diagnostic issues point solely to large image files or one or two unnecessary applications. In these environments, native platform features and basic media hygiene are usually sufficient. \n\nHire a professional developer to improve Shopify store speed if the site generates significant revenue, relies heavily on custom JavaScript sections, and user data shows bounce rates spiking specifically from interactivity delays. When INP scores fail consistently because the main thread is paralyzed by complex bundle execution, surface-level tweaks will not recover the lost conversion rate. Structural refactoring becomes a necessary capital expenditure to protect the integrity of the user experience and secure the baseline retention required for scalable growth.");
+</script>
+</body>
+</html>

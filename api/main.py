@@ -115,6 +115,11 @@ async def home():
     return page(WEB / "index.html")
 
 
+@app.get("/sample")
+async def sample():
+    return page(WEB / "sample.html")
+
+
 @app.get("/news")
 async def news():
     return page(WEB / "news.html")
