@@ -68,6 +68,7 @@
   .log .t{font-family:var(--font-mono);font-size:11px;color:var(--faint);
     text-align:right;font-variant-numeric:tabular-nums}
   .log .li.now .m{color:var(--text);font-weight:500}
+  .log .li .note{display:block;color:var(--faint);font-weight:400;font-size:11.5px;margin-top:2px}
   /* 审批章：全站唯一用印泥红的地方 */
   .seal{display:inline-flex;align-items:center;justify-content:center;
     width:46px;height:46px;border:2px solid var(--seal);color:var(--seal);
@@ -379,7 +380,30 @@ function logTo(id,msg){
     t.textContent=((Date.now()-born)/1000).toFixed(1)+"s";
   },100);
 }
+/* 长任务的"干等期"：大纲/正文用 pro 模型，思考阶段一个字都不吐
+   （实测大纲 24.8s、正文 63.5s 无输出）。Gemini 流式里没有 reasoning 增量可订阅，
+   只能在前端把等待做成可见的 —— 否则静止的进度条看着就是卡死。 */
+const WAIT_MSG = {
+  outline: ["正在读完搜索结果和 Reddit 讨论…", "正在规划章节结构…",
+            "正在给每节分配事实清单里的条目…", "模型思考中，这一步通常 20-40 秒"],
+  article: ["正在按大纲逐节展开…", "正在把事实清单里的数字落到对应段落…",
+            "正在组织表格和示例…", "模型思考中，长文这一步通常 60-90 秒"],
+};
+let WAIT_T=null;
+function waitStart(id, kind){
+  waitStop();
+  const rows=$(id).querySelectorAll(".li.now"); if(!rows.length) return;
+  const row=rows[rows.length-1];
+  let note=row.querySelector(".note");
+  if(!note){ note=E("span",null,""); note.className="note"; row.querySelector(".m").append(note); }
+  const msgs=WAIT_MSG[kind]||WAIT_MSG.outline;
+  let i=0; note.textContent=msgs[0];
+  WAIT_T=setInterval(()=>{ i=(i+1)%msgs.length; note.textContent=msgs[i]; }, 6000);
+}
+function waitStop(){ if(WAIT_T){ clearInterval(WAIT_T); WAIT_T=null; } }
+
 function logStop(id){
+  waitStop();
   if(LOG_TICK[id]){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; }
   [...$(id).querySelectorAll(".li.now")].forEach(x=>x.classList.remove("now"));
 }
@@ -468,10 +492,11 @@ $("btnOutline").onclick=async()=>{
       images_per_article:parseInt($("imagesPer").value,10),
       voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
-        if(ev.type==="step"){ logTo("log1",ev.message); trackTo(ev.key); }
+        if(ev.type==="step"){ logTo("log1",ev.message); trackTo(ev.key);
+          if(ev.key==="outline") waitStart("log1","outline"); }
         else if(ev.type==="reddit"){ logTo("log1",ev.message); trackTo("reddit"); DISC.reddit=ev; renderDiscovery(); }
         else if(ev.type==="facts"){ logTo("log1",ev.message); trackTo("facts"); DISC.facts=ev; renderDiscovery(); }
-        else if(ev.type==="chunk"){ S.outline+=ev.text; paint(); }
+        else if(ev.type==="chunk"){ waitStop(); S.outline+=ev.text; paint(); }
         else if(ev.type==="done"){
           S.sessionId=ev.session_id; S.outline=ev.outline; paint(true);
           showSeal(); trackTo("approve");
@@ -526,8 +551,9 @@ $("btnArticle").onclick=async()=>{
       enable_images:$("enableImages").checked, images_per_article:parseInt($("imagesPer").value,10),
       voice:VOICE, image_style:$("imageStyle").value},
       ev=>{
-        if(ev.type==="step"){ logTo("log2",ev.message); trackTo(ev.key==="images"?"article":ev.key); }
-        else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
+        if(ev.type==="step"){ logTo("log2",ev.message); trackTo(ev.key==="images"?"article":ev.key);
+          if(ev.key==="article") waitStart("log2","article"); }
+        else if(ev.type==="chunk"){ waitStop(); S.article+=ev.text; paint(); }
         else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
