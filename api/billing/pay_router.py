@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 from typing import Any, Optional
 
@@ -16,11 +17,28 @@ from pydantic import BaseModel
 
 from tools.seo_gap.config import get_settings
 
-from . import accounts, payorders as P
+from . import accounts, dodo, payorders as P
 from .deps import SESSION_COOKIE
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pay", tags=["pay"])
+
+
+def _dodo_products() -> dict[str, str]:
+    """DODO_PRODUCTS="trial=pdt_x,standard=pdt_y" → {"trial": "pdt_x", ...}"""
+    out: dict[str, str] = {}
+    for part in (get_settings().dodo_products or "").split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            if k.strip() and v.strip():
+                out[k.strip()] = v.strip()
+    return out
+
+
+def dodo_enabled() -> bool:
+    """三件套齐了才算启用；缺任一就退回旧的扫码流程，不硬失败。"""
+    s = get_settings()
+    return bool(s.dodo_api_key and s.dodo_webhook_secret and _dodo_products())
 
 
 def _check_token(request: Request) -> None:
@@ -55,9 +73,30 @@ async def create_order(req: OrderReq, request: Request):
         raise HTTPException(status_code=401, detail="请先登录再购买。")
     ip = (request.client.host if request.client else "") or ""
     try:
-        return P.create_order(req.product, ip, acct["id"])
+        order = P.create_order(req.product, ip, acct["id"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Dodo 开着就建 checkout，把付款链接一起返回；前端有 payment_link 就跳转，
+    # 没有就仍显示收款码 —— 两条路并存，切换不需要改前端逻辑。
+    if dodo_enabled():
+        pid = _dodo_products().get(req.product)
+        if not pid:
+            logger.warning("Dodo 未配置商品 %s，回退扫码", req.product)
+            return order
+        s = get_settings()
+        try:
+            pay = await dodo.create_payment(
+                s, order_id=order["order_id"], product_id=pid,
+                amount_cents=order["amount_cents"],
+                email=acct.get("email") or "", name=acct.get("email") or "",
+                return_url=f"{s.site_url.rstrip('/')}/buy?order={order['order_id']}")
+            order["payment_link"] = pay["payment_link"]
+            order["gateway"] = "dodo"
+        except dodo.DodoError as exc:
+            # 建单已经落库，付款链接拿不到不该让用户白等 —— 回退扫码路径
+            logger.warning("Dodo 建单失败，回退扫码: %s", exc)
+    return order
 
 
 @router.get("/order/{oid}")
@@ -88,6 +127,42 @@ async def notify(req: NotifyReq, request: Request):
         return {"matched": False, "reason": "无唯一匹配订单，请到 /payadmin 人工确认"}
     logger.info("到账自动发卡: %s %s", hit["order_id"], hit["product"])
     return {"matched": True, "order_id": hit["order_id"]}
+
+
+@router.post("/dodo/webhook")
+async def dodo_webhook(request: Request):
+    """Dodo 回调。验签 → 取 order_id → 交付。
+
+    始终回 200（除了验签失败回 401）：Dodo 收到非 2xx 会重投，
+    而"订单已处理""不是我们关心的事件"都不是错误，重投也没用。
+    """
+    raw = await request.body()
+    ok, why = dodo.verify_webhook(get_settings().dodo_webhook_secret, request.headers, raw)
+    if not ok:
+        logger.warning("Dodo webhook 验签失败: %s", why)
+        raise HTTPException(status_code=401, detail="签名校验失败")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        return {"ok": True, "skipped": "载荷不是 JSON"}
+
+    etype = (body.get("type") or body.get("event_type") or "").lower()
+    if etype != "payment.succeeded":
+        return {"ok": True, "skipped": etype or "无事件类型"}
+
+    oid = dodo.extract_order_id(body)
+    if not oid:
+        # 拿不到订单号说明 metadata 没带上 —— 报警但别重投，人工去 /payadmin 处理
+        logger.error("Dodo webhook 缺 order_id，需人工确认: %s", str(body)[:300])
+        return {"ok": True, "skipped": "载荷里没有 order_id"}
+
+    hit = P.deliver_by_id(oid, via="dodo")
+    if hit is None:
+        # 幂等：重投或已人工确认过，都会走到这
+        logger.info("Dodo webhook 订单 %s 已处理过，跳过", oid)
+        return {"ok": True, "already": True, "order_id": oid}
+    logger.info("Dodo 付款成功自动到账: %s %s", oid, hit["product"])
+    return {"ok": True, "order_id": oid}
 
 
 @router.get("/pending")

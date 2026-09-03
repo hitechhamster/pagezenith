@@ -105,6 +105,21 @@ async function loadPacks(){
   }catch(e){ $("err").textContent="商品加载失败，请刷新重试。"; }
 }
 
+// 从 Dodo 收银台跳回来：URL 带 ?order=xxx，或 sessionStorage 里有上次的订单号。
+// 直接进轮询等 webhook 到账 —— 不重新下单，避免重复扣款。
+function resumeOrder(){
+  let oid=new URLSearchParams(location.search).get("order")||"";
+  if(!oid){ try{ oid=sessionStorage.getItem("pz_order")||""; }catch(e){} }
+  if(!oid) return false;
+  try{ sessionStorage.removeItem("pz_order"); }catch(e){}
+  fetch("/api/pay/order/"+encodeURIComponent(oid)).then(r=>r.ok?r.json():null).then(o=>{
+    if(!o) return;
+    if(o.status==="paid"){ showKey(o); return; }
+    renderCheckout(o); poll(oid);
+  }).catch(()=>{});
+  return true;
+}
+
 async function startOrder(pid){
   $("err").textContent="";
   try{
@@ -112,6 +127,14 @@ async function startOrder(pid){
       headers:{"Content-Type":"application/json"},body:JSON.stringify({product:pid})});
     const j=await r.json();
     if(!r.ok) throw new Error(j.detail||"下单失败");
+    // Dodo 开着 → 后端会带回 payment_link，直接跳去托管收银台。
+    // 没有就走原来的扫码流程，两条路并存，切换渠道不用改这里。
+    if(j.payment_link){
+      // 记下订单号：从 Dodo 跳回来时（?order=xxx）直接续上轮询
+      try{ sessionStorage.setItem("pz_order", j.order_id); }catch(e){}
+      location.href=j.payment_link;
+      return;
+    }
     renderCheckout(j);
     poll(j.order_id);
   }catch(e){ $("err").textContent=String(e.message||e); }
@@ -201,8 +224,8 @@ function showKey(j){
 fetch("/api/auth/me").then(r=>r.json()).then(m=>{
   if(!m.account){ location.href="/login?next="+encodeURIComponent("/buy"); return; }
   $("who").textContent=`当前账户 ${m.account.email} · 余额 ${m.balance.remaining} 点`;
-  loadPacks();
-}).catch(()=>{ loadPacks(); });
+  if(!resumeOrder()) loadPacks();
+}).catch(()=>{ if(!resumeOrder()) loadPacks(); });
 </script>
 </body>
 </html>

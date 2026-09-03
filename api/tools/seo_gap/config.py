@@ -175,13 +175,20 @@ class Settings(BaseSettings):
     #   Serper / Reddit   → 香港直连正常，不进隧道（少一条依赖就少一个故障点）
     # 免签支付：手机到账通知转发 与 /payadmin 管理页 共用的口令（见 billing/payorders.py）
     pay_notify_token: str = ""
+    # Dodo Payments（merchant of record，替代支付宝静态码）。
+    # 三个都配齐才会启用；缺任一则前端仍走旧的扫码流程，不会硬失败。
+    # dodo_products 形如 "trial=pdt_xxx,standard=pdt_yyy,max=pdt_zzz"
+    dodo_api_key: str = ""
+    dodo_webhook_secret: str = ""
+    dodo_base_url: str = "https://test.dodopayments.com"   # 生产换 https://live.dodopayments.com
+    dodo_products: str = ""
     # 发信（Resend）。没配就不发信，只记日志 —— 见 billing/mailer.py
     resend_api_key: str = ""
     mail_from: str = "页面科技 <noreply@pagezenith.com>"
     site_url: str = "https://pagezenith.com"
     outbound_proxy: str = ""
     # 需要走代理的目的地关键词；留空则用默认（只有 gemini/google）
-    proxy_targets: str = "gemini,generativelanguage,googleapis"
+    proxy_targets: str = "gemini,generativelanguage,googleapis"   # dodo 香港直连正常，无需入列
 
     def proxy_for(self, host_or_provider: str) -> str | None:
         """返回该目的地该用的代理；不需要代理时返回 None。"""

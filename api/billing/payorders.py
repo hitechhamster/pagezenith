@@ -192,6 +192,24 @@ def match_amount(amount_cents: int) -> Optional[dict[str, Any]]:
         return _deliver(rows[0], "auto")
 
 
+def deliver_by_id(oid: str, via: str = "dodo") -> Optional[dict[str, Any]]:
+    """按订单号交付 —— Dodo webhook 用。
+
+    与 match_amount 的区别：那个靠"金额尾数唯一"反查订单（静态码时代的无奈），
+    这里订单号是支付渠道原样带回来的，不存在匹配歧义。
+
+    幂等：只更新 status='pending' 的行。Dodo 会重投 webhook，重复调用第二次
+    拿不到 pending 行，返回 None —— 上层据此回 200 但不重复加点。
+    """
+    with _LOCK:
+        _init()
+        row = conn().execute(
+            "SELECT * FROM pay_orders WHERE id=? AND status='pending'", (oid,)).fetchone()
+        if row is None:
+            return None
+        return _deliver(row, via)
+
+
 def confirm_manual(oid: str) -> Optional[dict[str, Any]]:
     """管理页人工确认（到账通知漏了时的兜底）。"""
     with _LOCK:
