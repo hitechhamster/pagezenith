@@ -94,8 +94,13 @@ def _gen_id() -> str:
 
 
 def create_order(product: str, ip: str = "",
-                 account_id: Optional[int] = None) -> dict[str, Any]:
-    """建订单：挑一个未占用的金额尾数。抛 ValueError 时把 .args[0] 直接给用户看。"""
+                 account_id: Optional[int] = None, exact: bool = False) -> dict[str, Any]:
+    """建订单。抛 ValueError 时把 .args[0] 直接给用户看。
+
+    exact=False：静态码路径，挑一个未占用的金额尾数当订单号（¥19.90 → ¥19.53）。
+    exact=True ：Dodo 路径，按原价建单。Dodo 凭 metadata.order_id 认单，不需要尾数；
+                 而且 Dodo 实际按商品价扣款，库里再记 19.53 就和真实流水对不上，/payadmin 会错。
+    """
     if product not in PRODUCTS:
         raise ValueError("没有这个商品。")
     name, base, credits = PRODUCTS[product]
@@ -109,13 +114,16 @@ def create_order(product: str, ip: str = "",
                 (ip,)).fetchone()[0] >= MAX_PENDING_PER_IP:
             raise ValueError("你有太多未支付的订单，请先完成或等它们过期。")
 
-        taken = {r[0] for r in c.execute(
-            "SELECT amount_cents FROM pay_orders WHERE status='pending'")}
-        offsets = list(range(1, MAX_OFFSET + 1))
-        random.shuffle(offsets)
-        amount = next((base - k for k in offsets if (base - k) not in taken), None)
-        if amount is None:
-            raise ValueError("当前下单的人太多，请几分钟后再试。")
+        if exact:
+            amount = base
+        else:
+            taken = {r[0] for r in c.execute(
+                "SELECT amount_cents FROM pay_orders WHERE status='pending'")}
+            offsets = list(range(1, MAX_OFFSET + 1))
+            random.shuffle(offsets)
+            amount = next((base - k for k in offsets if (base - k) not in taken), None)
+            if amount is None:
+                raise ValueError("当前下单的人太多，请几分钟后再试。")
 
         oid = _gen_id()
         c.execute("INSERT INTO pay_orders(id,product,amount_cents,created_at,ip,account_id) "

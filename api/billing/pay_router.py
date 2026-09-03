@@ -73,7 +73,8 @@ async def create_order(req: OrderReq, request: Request):
         raise HTTPException(status_code=401, detail="请先登录再购买。")
     ip = (request.client.host if request.client else "") or ""
     try:
-        order = P.create_order(req.product, ip, acct["id"])
+        # Dodo 凭订单号认单，按原价建；静态码才需要尾数当订单号
+        order = P.create_order(req.product, ip, acct["id"], exact=dodo_enabled())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
