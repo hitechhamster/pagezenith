@@ -83,8 +83,12 @@
   /* Markdown 渲染区 */
   .doc{font-family:var(--font-read);font-size:15.5px;line-height:1.85;color:var(--text);
        max-height:62vh;overflow-y:auto;padding-right:6px}
-  .doc h1{font-size:23px;margin:18px 0 8px} .doc h2{font-size:19px;margin:20px 0 6px}
-  .doc h3{font-size:16.5px;margin:16px 0 5px} .doc h4{font-size:15px;margin:14px 0 4px}
+  .doc h1{font-size:23px;margin:18px 0 8px} .doc h2{font-size:19.5px;margin:22px 0 7px}
+  /* h3 原来 16.5px、正文 15.5px，只差 1px，看着跟段落一样（用户实测反馈）。
+     拉开字号差之外再给 h3/h4 一条左边线，层级一眼可辨。 */
+  .doc h3{font-size:17px;margin:18px 0 6px;padding-left:9px;border-left:3px solid var(--accent)}
+  .doc h4{font-size:15px;margin:15px 0 4px;color:var(--muted);text-transform:none;
+       letter-spacing:.02em;padding-left:9px;border-left:2px solid var(--line)}
   .doc p{margin:0 0 11px} .doc ul{margin:0 0 11px;padding-left:20px} .doc li{margin:2px 0}
   .doc table{border-collapse:collapse;width:100%;margin:10px 0;font-family:var(--font-ui);font-size:13px}
   .doc th,.doc td{border:1px solid var(--line);padding:6px 9px;text-align:left}

@@ -55,7 +55,7 @@
       const img = line.match(/^\[IMAGE:\s*([\s\S]+?)\s*\]$/);
       if (img) { closeList(); out.push(`<div class="md-img" data-ph="${esc(line)}"><span class="md-img-tag">配图</span>${esc(img[1])}</div>`); i++; continue; }
 
-      const h = line.match(/^(#{1,4})\s+(.*)$/);
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
       if (h) { closeList(); const lv = h[1].length; out.push(`<h${lv}>${inline(h[2])}</h${lv}>`); i++; continue; }
 
       if (/^[-*]\s+/.test(line)) {

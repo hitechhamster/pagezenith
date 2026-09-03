@@ -652,6 +652,8 @@ ARTICLE_PROMPT = """你为{main_keyword}关键词写SEO文章
 
 直接开始正文
 
+**标题层级不许跳级**：H2 下面要分小节就用 H3，不许直接跳到 H4
+（跳级对 SEO 的大纲解析不利，前端和 Word 的层级也会错位）。最深到 H3 就够了。
 H2 及以下的子标题写成**人话短句**，不要名词堆。
 反面（实测产出，全是把关键词硬拼成词组）：「Algorithm Tag Reading」「Inventory Size Power」
 「Impactful Video」「Mockup Blindness」——真人不会这么起标题。

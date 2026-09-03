@@ -59,7 +59,7 @@ body{margin:0;color:var(--text);
   background:var(--bg) radial-gradient(var(--dot) 1px,transparent 1px);
   background-size:22px 22px;
   font-family:var(--font-ui);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
-h1,h2,h3{font-family:var(--font-display);font-weight:700;letter-spacing:0;text-wrap:balance;line-height:1.25}
+h1,h2,h3,h4,h5,h6{font-family:var(--font-display);font-weight:700;letter-spacing:0;text-wrap:balance;line-height:1.25}
 h1{font-size:34px;margin:0 0 10px}
 /* 表单里的数字/卡密/点数一律等宽，跟设计稿一致 */
 input[type=number],.mono,[data-mono]{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
