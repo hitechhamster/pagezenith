@@ -39,14 +39,14 @@ async def fetch(req: FetchRequest) -> dict:
 @router.get("/health")
 async def health() -> dict:
     s = get_settings()
-    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model}
+    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model_name()}
 
 
 @router.post("/check", response_model=ArticleCheck)
 async def check(req: CheckRequest, card: Card = Depends(require_card)) -> ArticleCheck:
     s = get_settings()
-    if not s.use_mocks and not s.openrouter_api_key:
-        raise HTTPException(status_code=500, detail="服务端未配置 OPENROUTER_API_KEY。")
+    if not s.use_mocks and not s.has_llm_key():
+        raise HTTPException(status_code=500, detail="服务端未配置 LLM API Key（GEMINI_API_KEY 或 OPENROUTER_API_KEY）。")
     async with charge(card, "article-quality", "check") as tx:
         try:
             out = await ArticleAnalyzer(s).check(req)

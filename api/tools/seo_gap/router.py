@@ -31,8 +31,8 @@ def _settings_for(req: ReportRequest):
     """服务端统一出 key；缺 key 是站长的配置问题。"""
     s = get_settings()
     if not s.use_mocks:
-        if not s.openrouter_api_key:
-            raise HTTPException(status_code=500, detail="服务端未配置 OPENROUTER_API_KEY。")
+        if not s.has_llm_key():
+            raise HTTPException(status_code=500, detail="服务端未配置 LLM API Key（GEMINI_API_KEY 或 OPENROUTER_API_KEY）。")
         if not s.serp_key():
             raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY。")
     return s
@@ -41,7 +41,7 @@ def _settings_for(req: ReportRequest):
 @router.get("/health")
 async def health() -> dict:
     s = get_settings()
-    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model,
+    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model_name(),
             "free_slots": _sema._value}
 
 
@@ -96,8 +96,8 @@ async def report_stream(req: ReportRequest, card: Card = Depends(require_card)):
 def _settings_for_batch(req: BatchReportRequest):
     s = get_settings()
     if not s.use_mocks:
-        if not s.openrouter_api_key:
-            raise HTTPException(status_code=500, detail="服务端未配置 OPENROUTER_API_KEY。")
+        if not s.has_llm_key():
+            raise HTTPException(status_code=500, detail="服务端未配置 LLM API Key（GEMINI_API_KEY 或 OPENROUTER_API_KEY）。")
         if not s.serp_key():
             raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY。")
     return s

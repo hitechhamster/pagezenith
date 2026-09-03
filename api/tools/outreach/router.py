@@ -24,8 +24,8 @@ def _settings_for(req: OutreachRequest):
     """服务端统一出 key。缺 key 是站长的配置问题，报 500 而不是 400。"""
     s = get_settings()
     if not s.use_mocks:
-        if not s.openrouter_api_key:
-            raise HTTPException(status_code=500, detail="服务端未配置 OPENROUTER_API_KEY。")
+        if not s.has_llm_key():
+            raise HTTPException(status_code=500, detail="服务端未配置 LLM API Key（GEMINI_API_KEY 或 OPENROUTER_API_KEY）。")
         if not s.serp_key():
             raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY。")
     return s
@@ -34,7 +34,7 @@ def _settings_for(req: OutreachRequest):
 @router.get("/health")
 async def health() -> dict:
     s = get_settings()
-    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model,
+    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model_name(),
             "max_prospects": s.outreach_max_prospects}
 
 

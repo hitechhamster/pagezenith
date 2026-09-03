@@ -52,7 +52,9 @@ class Settings(BaseSettings):
     # LLM (OpenRouter, OpenAI 兼容)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    llm_model: str = "google/gemini-3.1-flash-lite"
+    # 2026-09-03 改默认为 Gemini 直连命名（原 "google/gemini-3.1-flash-lite" 是 OpenRouter 写法）。
+    # 供应商由模型名前缀决定（见下方 llm_endpoint），"google/" 前缀直连时会自动剥掉。
+    llm_model: str = "gemini-3.1-flash-lite"
     writer_model: str = ""  # 增补段落写作模型；留空=同 llm_model
 
     # DeepSeek（润色专用；**国内直连，绝不能走代理** —— 走了反而不通）
@@ -63,16 +65,40 @@ class Settings(BaseSettings):
 
     # Embedding（语义去重粗判用）。统一走 OpenRouter /embeddings，多语言模型。
     # base_url / api_key 留空则复用上面的 openrouter_*；只在需要换服务时才填。
-    embedding_model: str = "openai/text-embedding-3-large"
+    # 默认走 Gemini 的 embedding（服务端只配了 Gemini key）。要用 OpenRouter 就把
+    # embedding_base_url / embedding_api_key / embedding_model 三个一起改。
+    embedding_model: str = "gemini-embedding-001"
     embedding_base_url: str = ""
     embedding_api_key: str = ""
 
     def embedding_endpoint(self) -> tuple[str, str]:
-        """返回 (base_url, api_key)：未单独配置时复用 OpenRouter。"""
-        return (
-            self.embedding_base_url or self.openrouter_base_url,
-            self.embedding_api_key or self.openrouter_api_key,
-        )
+        """返回 (base_url, api_key)：单独配了就用；否则有 Gemini key 走 Gemini，再否则 OpenRouter。"""
+        if self.embedding_base_url:
+            return self.embedding_base_url, (self.embedding_api_key or self.openrouter_api_key)
+        if self.gemini_api_key:
+            return self.gemini_base_url, self.gemini_api_key
+        return self.openrouter_base_url, self.openrouter_api_key
+
+    # ── LLM 供应商解析：四个非写作工具共用（seo_writer 有自己那套，逻辑一致）──
+    # 2026-09-03 前 seo_gap/clients/llm.py 硬写 OpenRouter，服务端只配 Gemini 时四个工具全 500。
+    def llm_model_name(self, model: str | None = None) -> str:
+        """给端点的模型名。Gemini 直连端点不认 OpenRouter 的 "google/" 前缀。"""
+        m = (model or self.llm_model or "").strip()
+        if m.startswith("google/") and self.gemini_api_key:
+            return m[len("google/"):]
+        return m
+
+    def llm_endpoint(self, model: str | None = None) -> tuple[str, str]:
+        """按模型名前缀选 (base_url, api_key)。三家都是 OpenAI 兼容，只有地址和 key 不同。"""
+        m = (model or self.llm_model or "").lower()
+        if (m.startswith("gemini") or m.startswith("google/")) and self.gemini_api_key:
+            return self.gemini_base_url, self.gemini_api_key
+        if m.startswith("deepseek") and self.deepseek_key:
+            return self.deepseek_base_url, self.deepseek_key
+        return self.openrouter_base_url, self.openrouter_api_key
+
+    def has_llm_key(self, model: str | None = None) -> bool:
+        return bool(self.llm_endpoint(model)[1])
 
     # 行为开关
     use_mocks: bool = True

@@ -1,8 +1,8 @@
-"""LLM 客户端（OpenRouter，OpenAI 兼容）。
+"""LLM 客户端（OpenAI 兼容；供应商由 Settings.llm_endpoint 按模型名选：Gemini / DeepSeek / OpenRouter）。
 
 能力：
   - chat_json():   调模型强制返回 JSON（单页抽取）。
-  - embed():       批量 embedding（语义去重粗判），统一走 OpenRouter /embeddings、多语言模型。
+  - embed():       批量 embedding（语义去重粗判），走 Settings.embedding_endpoint（默认 Gemini）。
   - judge_pairs(): LLM 裁边界——只对落在模糊带的 claim 对判 same/different，返回严格 JSON。
 
 mock 模式下不发请求：embed 返回确定性 hash 向量，judge_pairs 用否定/数字启发式，
@@ -32,13 +32,11 @@ class LLMClient:
         if self.s.use_mocks:
             return _mock_extraction(user)
 
-        url = f"{self.s.openrouter_base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.s.openrouter_api_key}",
-            "Content-Type": "application/json",
-        }
+        base, key = self.s.llm_endpoint()
+        url = f"{base}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         payload = {
-            "model": self.s.llm_model,
+            "model": self.s.llm_model_name(),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -46,7 +44,8 @@ class LLMClient:
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
-        async with httpx.AsyncClient(timeout=self.s.request_timeout) as client:
+        async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
+                                     proxy=self.s.proxy_for(url)) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -58,20 +57,19 @@ class LLMClient:
         model 可覆盖默认模型（如增补段落用更强的写作模型）。"""
         if self.s.use_mocks:
             return mock
-        url = f"{self.s.openrouter_base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.s.openrouter_api_key}",
-            "Content-Type": "application/json",
-        }
+        base, key = self.s.llm_endpoint(model)
+        url = f"{base}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         payload = {
-            "model": model or self.s.llm_model,
+            "model": self.s.llm_model_name(model),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             "temperature": 0,
         }
-        async with httpx.AsyncClient(timeout=self.s.request_timeout) as client:
+        async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
+                                     proxy=self.s.proxy_for(url)) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -82,20 +80,19 @@ class LLMClient:
         if self.s.use_mocks:
             return mock
         b64 = base64.b64encode(image_png).decode()
-        url = f"{self.s.openrouter_base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.s.openrouter_api_key}",
-            "Content-Type": "application/json",
-        }
+        base, key = self.s.llm_endpoint(model)
+        url = f"{base}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         payload = {
-            "model": model or self.s.llm_model,
+            "model": self.s.llm_model_name(model),
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}},
             ]}],
             "temperature": 0,
         }
-        async with httpx.AsyncClient(timeout=self.s.request_timeout) as client:
+        async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
+                                     proxy=self.s.proxy_for(url)) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -113,7 +110,8 @@ class LLMClient:
         url = f"{base_url}/embeddings"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {"model": self.s.embedding_model, "input": texts}
-        async with httpx.AsyncClient(timeout=self.s.request_timeout) as client:
+        async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
+                                     proxy=self.s.proxy_for(url)) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -131,20 +129,19 @@ class LLMClient:
 
         numbered = [{"pair_id": i, "text_a": a, "text_b": b} for i, (a, b) in enumerate(pairs)]
         user = JUDGE_USER_TEMPLATE.format(pairs=json.dumps(numbered, ensure_ascii=False))
-        url = f"{self.s.openrouter_base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.s.openrouter_api_key}",
-            "Content-Type": "application/json",
-        }
+        base, key = self.s.llm_endpoint()
+        url = f"{base}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         payload = {
-            "model": self.s.llm_model,
+            "model": self.s.llm_model_name(),
             "messages": [
                 {"role": "system", "content": JUDGE_SYSTEM},
                 {"role": "user", "content": user},
             ],
             "temperature": 0,
         }
-        async with httpx.AsyncClient(timeout=self.s.request_timeout) as client:
+        async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
+                                     proxy=self.s.proxy_for(url)) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()

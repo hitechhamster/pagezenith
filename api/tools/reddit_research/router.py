@@ -21,8 +21,8 @@ _sema = asyncio.Semaphore(get_settings().max_concurrent_runs)
 def _settings_for(req: RedditResearchRequest):
     s = get_settings()
     if not s.use_mocks:
-        if not s.openrouter_api_key:
-            raise HTTPException(status_code=500, detail="服务端未配置 OPENROUTER_API_KEY。")
+        if not s.has_llm_key():
+            raise HTTPException(status_code=500, detail="服务端未配置 LLM API Key（GEMINI_API_KEY 或 OPENROUTER_API_KEY）。")
         if not s.serp_key():
             raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY。")
     return s
@@ -31,7 +31,7 @@ def _settings_for(req: RedditResearchRequest):
 @router.get("/health")
 async def health() -> dict:
     s = get_settings()
-    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model,
+    return {"status": "ok", "use_mocks": s.use_mocks, "model": s.llm_model_name(),
             "reddit_enabled": s.reddit_enabled}
 
 
