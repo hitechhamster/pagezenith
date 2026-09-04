@@ -89,7 +89,9 @@
     .cmp-table td:not(.feat)::before{content:attr(data-l)"　";color:var(--faint);font-size:11px}
     .cmp-table td.cmp-us{margin:5px 8px 0;padding:7px 9px;border-radius:9px}
   }
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  /* min(260px,100%)：容器比 260px 还窄时（375px 手机上主栏只有 335px）让轨道跟着缩，
+     否则 auto-fill 会按 260px 硬排两列 = 594px，把整页顶得横向滚动。 */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:14px}
   .tool{display:block;padding:20px;border-radius:var(--radius-lg);background:var(--card);border:1px solid var(--line);transition:border-color .15s,transform .08s}
   .tool:hover{border-color:var(--accent);transform:translateY(-1px)}
   .tool .ic{width:38px;height:38px;border-radius:10px;background:var(--accentsoft);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:12px}
@@ -126,6 +128,10 @@
   .about .contact{color:var(--text)}
   .about .contact b{color:var(--accent)}
   .home-layout{display:grid;grid-template-columns:1fr 280px;gap:36px;align-items:start}
+  /* grid item 默认 min-width:auto，缩不到比内容的 min-content 更窄。主栏里那个工具卡
+     grid 的 min-content 是 594px，于是 1fr 这条轨道也被撑到 594px —— 手机上整页横滚。
+     显式给 0 才允许它缩。这是 CSS grid 最常见的溢出坑。 */
+  .home-layout>.main{min-width:0}
   @media(max-width:840px){.home-layout{grid-template-columns:1fr}}
   .newsbar{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);margin-top:48px}
   @media(max-width:840px){.newsbar{margin-top:0}}
