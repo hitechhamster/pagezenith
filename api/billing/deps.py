@@ -104,7 +104,10 @@ async def require_card(request: Request,
     else:
         key = (x_card_key or "").strip()
         if not key:
-            _rate_limit_bad_key(ip)
+            # 「没带凭证」是未登录访客的常态，不是攻击信号，**不计入**撞密码限流。
+            # 以前算进去，后果是：①逛得多一点的匿名访客会撞上 429，而提示写的是
+            # "尝试次数过多"，他根本不知道自己该去登录；②运营商/公司 NAT 下多人共用
+            # 一个出口 IP 会互相拖累。真正该限的是下面那条——**带了但是错的**凭证。
             raise HTTPException(status_code=401, detail="请先登录，或输入卡密。")
         h = store.hash_card(key)
         st = store.card_state(h)
