@@ -159,8 +159,17 @@ async def dodo_webhook(request: Request):
 
     hit = P.deliver_by_id(oid, via="dodo")
     if hit is None:
-        # 幂等：重投或已人工确认过，都会走到这
-        logger.info("Dodo webhook 订单 %s 已处理过，跳过", oid)
+        # 走到这有两种完全不同的情况，以前一律打成"已处理过，跳过" —— 于是丢单时
+        # 日志还在报平安。必须分开：
+        cur = P.get_order(oid)
+        if cur is None:
+            # 本站根本没有这个订单号。可能是同一个 Dodo 账号下别的站的付款（webhook
+            # 是按账号推的，不分站），也可能是有人往 metadata 里塞了假订单号。
+            # 收到钱却对不上单，这是要人看的。
+            logger.error("Dodo webhook 收到未知订单号 %s —— 本站查无此单，需人工核对", oid)
+            return {"ok": True, "skipped": "unknown order", "order_id": oid}
+        # 已经是 paid：真正的幂等重投，正常。
+        logger.info("Dodo webhook 订单 %s 已是 %s，幂等跳过", oid, cur["status"])
         return {"ok": True, "already": True, "order_id": oid}
     logger.info("Dodo 付款成功自动到账: %s %s", oid, hit["product"])
     return {"ok": True, "order_id": oid}

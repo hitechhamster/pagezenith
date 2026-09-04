@@ -71,14 +71,18 @@ async function load(){
     const j=await r.json();
     const items=j.items||[];
     if(!items.length){ $("list").innerHTML='<div class="empty">没有待付订单。</div>'; return; }
+    // 2026-09-04 起这个列表也包含 expired（30 分钟没付成的）订单 —— 客户说"我明明付了"
+    // 的时候要能在这找到它并人工确认。所以多一列状态，否则分不清哪些还在等、哪些已过期。
     $("list").innerHTML=`<table><thead><tr>
-        <th>订单号</th><th>商品</th><th>应付金额</th><th>已等</th><th></th></tr></thead><tbody>`
+        <th>订单号</th><th>商品</th><th>应付金额</th><th>状态</th><th>已等</th><th></th></tr></thead><tbody>`
       + items.map(o=>{
           const mins=Math.floor(o.age_secs/60);
+          const expired=o.status==="expired";
           return `<tr>
             <td class="m">${esc(o.order_id)}</td>
             <td>${esc(o.product)}</td>
             <td class="amt">¥${esc(o.amount)}</td>
+            <td class="${expired?"old":""}">${expired?"已过期":"等待中"}</td>
             <td class="${mins>20?"old":""}">${mins} 分钟</td>
             <td><button class="mini" onclick="confirmOne('${esc(o.order_id)}','${esc(o.amount)}')">已到账</button></td>
           </tr>`;

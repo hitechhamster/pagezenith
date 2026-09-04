@@ -83,6 +83,11 @@ def _migrate() -> None:
             conn().execute(f"ALTER TABLE pay_orders ADD COLUMN {name} {decl}")
 
 
+# 尚未交付、仍可交付的状态。过期只是展示概念不是拒付理由 —— 详见 deliver_by_id。
+# _deliver 的 UPDATE 守卫必须用同一个集合，否则会重复加点。
+_DELIVERABLE = "('pending','expired')"
+
+
 def _expire_stale(now: int) -> None:
     conn().execute(
         "UPDATE pay_orders SET status='expired' WHERE status='pending' AND created_at<?",
@@ -177,10 +182,18 @@ def _deliver(row, via: str) -> dict[str, Any]:
                        (credits, w["wallet_hash"]))
     else:
         key = mint(1, credits, batch=f"pay-{via}", label=name)[0]
-    conn().execute(
+    # ⚠️ 这条 WHERE 就是整个幂等的支点：加点的 UPDATE 是无条件的，靠它把订单钉成
+    # paid 来保证只发一次。所以它的状态集合**必须**和 deliver_by_id / confirm_manual
+    # 的 SELECT 完全一致 —— 只放宽一边的话，expired 订单会「加了点但状态没变」，
+    # webhook 一重投就再加一次。改任意一处务必同步另外两处。
+    cur = conn().execute(
         "UPDATE pay_orders SET status='paid', paid_at=?, card_key=?, via=? "
-        "WHERE id=? AND status='pending'",
+        "WHERE id=? AND status IN " + _DELIVERABLE,
         (int(time.time()), key, via, row["id"]))
+    if cur.rowcount != 1:
+        # 状态在我们读它和写它之间被人改了（并发重投）。回滚，别把点数留下。
+        conn().rollback()
+        raise RuntimeError(f"订单 {row['id']} 状态已变，放弃本次交付")
     conn().commit()
     return {"order_id": row["id"], "amount_cents": row["amount_cents"],
             "product": row["product"], "card_key": key,
@@ -206,24 +219,36 @@ def deliver_by_id(oid: str, via: str = "dodo") -> Optional[dict[str, Any]]:
     与 match_amount 的区别：那个靠"金额尾数唯一"反查订单（静态码时代的无奈），
     这里订单号是支付渠道原样带回来的，不存在匹配歧义。
 
-    幂等：只更新 status='pending' 的行。Dodo 会重投 webhook，重复调用第二次
-    拿不到 pending 行，返回 None —— 上层据此回 200 但不重复加点。
+    幂等：只交付尚未 paid 的行。Dodo 会重投 webhook，第二次拿不到行，返回 None
+    —— 上层据此回 200 但不重复加点。
+
+    ⚠️ 2026-09-04：这里原本只认 'pending'，于是出现「钱收了、点数不发」的黑洞——
+    订单 30 分钟自动转 expired（而且买家自己那个 3 秒一次的轮询就是执行过期的那只
+    手），微信支付稍慢一点、或者用户建单后去吃个饭回来再付，webhook 到达时订单已经
+    expired → 查不到行 → 返回 None → 上层回 200 → Dodo 认为投递成功不再重投 →
+    钱进账、点数永不到账、没有任何告警。**过期只是前端展示概念，不是拒付理由**，
+    所以这里必须连 expired 一起认。真正防重复的是 _deliver 里那条 WHERE。
     """
     with _LOCK:
         _init()
         row = conn().execute(
-            "SELECT * FROM pay_orders WHERE id=? AND status='pending'", (oid,)).fetchone()
+            "SELECT * FROM pay_orders WHERE id=? AND status IN " + _DELIVERABLE,
+            (oid,)).fetchone()
         if row is None:
             return None
         return _deliver(row, via)
 
 
 def confirm_manual(oid: str) -> Optional[dict[str, Any]]:
-    """管理页人工确认（到账通知漏了时的兜底）。"""
+    """管理页人工确认（到账通知漏了时的兜底）。
+
+    同样要认 expired —— 需要人工兜底的场景，十有八九订单已经躺过 30 分钟了。
+    """
     with _LOCK:
         _init()
         row = conn().execute(
-            "SELECT * FROM pay_orders WHERE id=? AND status='pending'", (oid,)).fetchone()
+            "SELECT * FROM pay_orders WHERE id=? AND status IN " + _DELIVERABLE,
+            (oid,)).fetchone()
         if row is None:
             return None
         return _deliver(row, "manual")
@@ -233,11 +258,15 @@ def pending_orders() -> list[dict[str, Any]]:
     with _LOCK:
         _init()
         _expire_stale(int(time.time()))
+        # 过期单也列出来：客户说"我明明付了"的时候，要能在这页找到它并人工确认。
+        # 只列最近 7 天的，免得越积越长。
         rows = conn().execute(
-            "SELECT * FROM pay_orders WHERE status='pending' ORDER BY created_at DESC"
-        ).fetchall()
+            "SELECT * FROM pay_orders WHERE status IN " + _DELIVERABLE
+            + " AND created_at > ? ORDER BY created_at DESC",
+            (int(time.time()) - 7 * 86400,)).fetchall()
     return [{"order_id": r["id"], "product": PRODUCTS.get(r["product"], (r["product"],))[0],
              "amount": f"{r['amount_cents'] // 100}.{r['amount_cents'] % 100:02d}",
+             "status": r["status"],
              "age_secs": int(time.time()) - r["created_at"]} for r in rows]
 
 
