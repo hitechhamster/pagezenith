@@ -9,9 +9,24 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import sys
+
+# ---- 日志：让应用自己的 logger 真的能被看见 ----
+# 2026-09-04 实测发现：全项目没有任何 basicConfig/dictConfig，systemd 也没给 --log-config，
+# 于是 uvicorn 只配了它自己那几个 logger，**应用里所有 logger.info 全部被丢弃**
+# （journal 里搜"付款成功自动到账"是 0 条，尽管那笔钱确实到账了）。
+# 这直接架空了当天刚加的几条告警：webhook 与订单对不上、收到未知订单号、退款/拒付、
+# 钱包卡不存在 —— 它们的全部价值就是"出事时有人能看见"。
+# 放在其它 import 之前：模块级 getLogger 拿到的是同一个对象，handler 在 emit 时才查，
+# 所以顺序不影响已创建的 logger。
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,        # systemd 直接收进 journal
+)
 from pathlib import Path
 
 # Windows 上 Playwright 需要 Proactor 事件循环（见 router 内说明）。Linux 无影响。
