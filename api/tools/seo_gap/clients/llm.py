@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from ..config import Settings, get_settings
+from billing import usage_sink
 from ..lexical import embed_tokens, heuristic_same
 
 
@@ -49,6 +50,7 @@ class LLMClient:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
+        usage_sink.note_openai_usage(data, self.s.llm_model_name())
         content = data["choices"][0]["message"]["content"]
         return _safe_json(content)
 
@@ -73,6 +75,7 @@ class LLMClient:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
+        usage_sink.note_openai_usage(data, self.s.llm_model_name(model))
         return _loads_lenient(data["choices"][0]["message"]["content"])
 
     async def vision_json(self, prompt: str, image_png: bytes, mock=None, model: str | None = None):
@@ -96,6 +99,7 @@ class LLMClient:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
+        usage_sink.note_openai_usage(data, self.s.llm_model_name(model))
         return _loads_lenient(data["choices"][0]["message"]["content"])
 
     # --------------------------------------------------------------- embed
@@ -115,6 +119,7 @@ class LLMClient:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
+        usage_sink.note_openai_usage(data, self.s.embedding_model)
         # 按 index 排序，保证与输入顺序对齐
         items = sorted(data["data"], key=lambda d: d.get("index", 0))
         return [item["embedding"] for item in items]
@@ -145,6 +150,7 @@ class LLMClient:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
+        usage_sink.note_openai_usage(data, self.s.llm_model_name())
         content = data["choices"][0]["message"]["content"]
         return _parse_judgements(content, len(pairs))
 

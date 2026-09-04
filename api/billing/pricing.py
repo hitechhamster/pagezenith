@@ -164,6 +164,9 @@ MODEL_COST_CNY_PER_MTOK: dict[str, tuple[float, float]] = {
     "gemini-3.7-flash": (5.4, 27.0),         # $0.75 / $3.75（促销，2027-01-01 起 $1.50/$7.50）
     "gemini-3.1-pro-preview": (14.4, 86.4),  # $2.00 / $12.00（prompt ≤200k；超过则 $4/$18）
     "deepseek-v4-flash": (2.0, 8.0),         # ⚠️ 未核实，仅历史流水用（已停用，见 TIERS 注释）
+    # embedding 只按输入计费，输出为 0。内容差距分析会 embed 大量文档，
+    # 不列在这里就会落到下面的 _FALLBACK_COST（5.0/20.0，文本模型的价），高估约 5 倍。
+    "gemini-embedding-001": (1.08, 0.0),     # $0.15/M 输入、输出免费（2026-09 查证）
     # 旧命名保留，历史流水还查得到
     "gemini-3.1-flash": (5.4, 27.0),
     "google/gemini-3.1-flash-lite": (1.8, 10.8),

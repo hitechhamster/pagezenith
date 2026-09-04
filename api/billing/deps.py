@@ -26,7 +26,7 @@ from typing import Any, Optional
 
 from fastapi import Header, HTTPException, Request
 
-from . import store
+from . import store, usage_sink
 from . import accounts
 from .pricing import est_cost_cny, est_image_cost_cny, price, tier_of
 
@@ -213,6 +213,10 @@ async def charge(card: Card, tool: str, action: str, tier: str = "basic",
             raise InsufficientCredits(need, st["remaining"])
         tx.usage_id = uid
 
+    # 把用量回收槽挂进当前异步上下文：共用 seo_gap/clients/llm.py 的那五个工具
+    # （内容差距/质检/Reddit/外链/站点侦察）不必逐个把 tx 传下去，也能把 token 报上来。
+    # 不挂的话它们的 est_cost 恒为 0，全局成本熔断对它们就是瞎的。见 usage_sink.py。
+    sink_token = usage_sink.set_sink(tx.report_tokens)
     try:
         yield tx
     except Exception:
@@ -228,3 +232,5 @@ async def charge(card: Card, tool: str, action: str, tier: str = "basic",
             store.save_result(tx.result_id, card.key_hash, tool,
                               tx._result["title"], tx._result["summary"],
                               tx._result["payload"])
+    finally:
+        usage_sink.reset_sink(sink_token)
