@@ -31,6 +31,7 @@ import secrets
 import time
 from typing import Any, Optional
 
+from .pricing import signup_credits
 from .store import _LOCK, conn, hash_card, mint
 
 SESSION_TTL = 60 * 60 * 24 * 30        # 30 天
@@ -102,8 +103,9 @@ def register(email: str, password: str, ip: str = "") -> dict[str, Any]:
         c = conn()
         if c.execute("SELECT 1 FROM accounts WHERE email=?", (em,)).fetchone():
             raise ValueError("这个邮箱已经注册过了，直接登录吧。")
-        # 钱包卡：0 点起步，用户看不到它的卡号（明文当场丢弃）
-        wallet_key = mint(1, 0, batch="wallet", label="账户钱包")[0]
+        # 钱包卡：用户看不到它的卡号（明文当场丢弃）。
+        # 2026-09-04 起注册即送一篇的量（见 pricing.signup_credits，可用环境变量关掉）。
+        wallet_key = mint(1, signup_credits(), batch="wallet", label="账户钱包")[0]
         salt = secrets.token_hex(16)
         now = int(time.time())
         cur = c.execute(

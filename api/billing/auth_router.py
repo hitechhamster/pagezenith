@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from .pricing import signup_credits
 from . import accounts, mailer, store
 from .deps import SESSION_COOKIE, _client_ip, _rate_limit_bad_key
 from tools.seo_gap.config import get_settings
@@ -53,7 +54,7 @@ async def register(req: SignupReq, request: Request, response: Response,
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("新账户 #%s %s", out["id"], out["email"])
     # 后台发信：发不出去也不能挡住注册
-    bg.add_task(mailer.send_welcome, out["email"], 0)
+    bg.add_task(mailer.send_welcome, out["email"], signup_credits())
     return _issue(request, response, out)
 
 

@@ -97,6 +97,33 @@ REVISE_FREE = 3
 REVISE_EXTRA = 1
 
 
+def full_article_credits() -> int:
+    """写完整一篇（大纲 + 正文 + 自动润色，不含配图）要多少点。
+
+    这个数散落在首页、结账页、欢迎邮件里，以前各写各的（出现过 9 / 10 / 按 /10 估三个
+    口径同时在线）。要引用就调这个函数，别再手抄。
+    """
+    return (price("seo-writer", "outline")
+            + price("seo-writer", "article")
+            + price("seo-writer", "polish"))
+
+
+def signup_credits() -> int:
+    """新账户注册即送的点数，默认 = 正好够完整写一篇。
+
+    2026-09-04 加：在此之前新账户是 0 点，用户注册完立刻撞"点数不足"——两个真实
+    陌生人（8/29、8/30）就是这样注册完一次没跑过。送一篇让"先试后付"名副其实。
+
+    ⚠️ 成本敞口：注册无邮箱验证，等于任何人可以无限刷邮箱白嫖，一份约 ¥0.8 真实
+    API 成本。兜底有两层：全局 ¥300/天熔断，以及这里 ——
+    **被薅时把 .env 里 SIGNUP_CREDITS 设成 0，重启即关，不用改代码。**
+    """
+    raw = os.getenv("SIGNUP_CREDITS", "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return full_article_credits()
+
+
 def price(tool: str, action: str, tier: str = DEFAULT_TIER) -> int:
     row = PRICES.get((tool, action))
     if row is None:

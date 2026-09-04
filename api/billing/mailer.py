@@ -79,8 +79,14 @@ def send_reset(to: str, link: str, minutes: int) -> bool:
 
 
 def send_welcome(to: str, credits: int = 0) -> bool:
-    extra = (f"<p>账户里已有 <b>{credits} 点</b>，可以直接开始。</p>" if credits else
-             "<p>点数用完即充，不订阅、不绑卡。一篇文章全套 10 点。</p>")
+    # 注册即送的点数正好够写完整一篇，这里就直说"够写一篇"，比光给个点数好懂。
+    # （"全套 10 点"是旧文案，实际是 9 点：大纲 2 + 正文 5 + 润色 2。）
+    from .pricing import full_article_credits
+    full = full_article_credits()
+    extra = (f"<p>账户里已有 <b>{credits} 点</b>"
+             + (f"，正好够完整写一篇（全套 {full} 点）。</p>" if credits >= full else "，可以直接开始。</p>")
+             if credits else
+             f"<p>点数用完即充，不订阅、不绑卡。一篇文章全套 {full} 点。</p>")
     return send(
         to, "页面科技账户已开通", "账户开通了",
         f'''{extra}
