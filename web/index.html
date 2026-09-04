@@ -158,7 +158,7 @@
 <div class="nav">
   <div class="logo"><img src="/assets/brand/logo-128.png" alt="页面科技" onerror="this.style.display='none'" /></div><div class="brand">页面科技</div>
   <div class="grow"></div>
-  <a class="keybtn" href="/buy" style="text-decoration:none;margin-right:8px">充值</a><a class="keybtn" href="/history" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录</button>
+  <a class="keybtn" href="/login?mode=register" data-when="anon" style="text-decoration:none;margin-right:8px;border-color:var(--accent);background:var(--accentsoft);color:var(--accent);font-weight:600">注册送 <span data-signup-credits>11</span> 点</a><a class="keybtn" href="/buy" data-when="user" style="text-decoration:none;margin-right:8px">充值</a><a class="keybtn" href="/history" data-when="user" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录</button>
 </div>
 
 <div class="wrap home-wrap">
@@ -183,7 +183,9 @@
            （pricing.py 的 PRICES），新账户初始 0 点、没有任何免费额度 —— 这句话对每一个
            新用户都是假的，而它恰好是这条漏斗的承重墙。留下的两句都能在代码里对上：
            点数不过期（cards 表无有效期字段）、不点通过不写正文也不扣正文的点。 -->
-      <p class="cta-note">注册送 9 点，够完整写一篇 · 点数不过期 · 大纲你先审批，不点通过正文一个字不写、一点不扣</p>
+      <!-- 数字从 /api/billing/pricing 取（keys.js 的 paintSignupCredits），别再手抄：
+     这里曾写死「注册送 9 点」，后端改成 11 之后前端没跟着动。 -->
+      <p class="cta-note">注册送 <span data-signup-credits>11</span> 点，够完整写一篇 · 点数不过期 · 大纲你先审批，不点通过正文一个字不写、一点不扣</p>
     </div>
     <!-- 签名元素：真实任务流水。付款前唯一能看见「三到五分钟在干什么」的东西 -->
     <div class="live">

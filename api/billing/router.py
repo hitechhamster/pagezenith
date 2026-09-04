@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from . import jobs, store
 from .deps import Card, require_card
-from .pricing import REVISE_FREE, TIERS, price_table
+from .pricing import signup_credits, REVISE_FREE, TIERS, price_table
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -23,6 +23,9 @@ async def pricing() -> dict:
         "tiers": [{"key": k, **v} for k, v in TIERS.items()],
         "prices": price_table(),
         "revise_free": REVISE_FREE,
+        # 注册赠送额度也从这里出：以前首页把它手抄成"注册送 9 点"，
+        # 后端改成 11 之后前端没跟着动，又出现一次数字不一致。
+        "signup_credits": signup_credits(),
     }
 
 

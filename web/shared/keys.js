@@ -105,6 +105,7 @@
     });
     const b = document.getElementById("keybtn");
     if (b) { b.classList.toggle("warn", !!bad); b.textContent = badgeText(); }
+    paintAuthNav();
   }
 
   /* 点徽标：登录了进「我的记录」看账，没登录去登录页。
@@ -167,6 +168,31 @@
     });
   }
 
+  /* 注册赠送额度：同样从接口取，别再手抄。
+     首页曾把它写死成"注册送 9 点"，后端改成 11 之后前端没跟着动。 */
+  async function paintSignupCredits() {
+    const nodes = document.querySelectorAll("[data-signup-credits]");
+    if (!nodes.length) return;
+    try {
+      const j = await (await rawFetch("/api/billing/pricing")).json();
+      if (!j.signup_credits) return;
+      nodes.forEach(el => { el.textContent = j.signup_credits; });
+    } catch (e) { /* 取不到就保留占位符里的默认值 */ }
+  }
+
+  /* 按登录状态切换导航：未登录露「注册」，登录后露「充值 / 我的记录」。
+     以前导航只有「充值 / 我的记录 / 登录」——陌生人看到"登录"会以为这里没他的事，
+     注册入口只藏在登录页一行小字里。 */
+  function paintAuthNav() {
+    const known = account !== null || !!read();
+    document.querySelectorAll("[data-when=anon]").forEach(el => {
+      el.style.display = known ? "none" : "";
+    });
+    document.querySelectorAll("[data-when=user]").forEach(el => {
+      el.style.display = known ? "" : "none";
+    });
+  }
+
   /* ---------- 对外接口（保留旧名，语义已换）---------- */
   window.CARD = {
     get: read,
@@ -180,6 +206,7 @@
     signOut,
     onBadgeClick,
     paintCosts,
+    paintAuthNav,
     refresh,
     open: openModal,
     toast,
@@ -207,5 +234,7 @@
     //    这是「已登录却被弹回首页」的真正根因。
     ready = refresh();
     paintCosts();
+    paintSignupCredits();
+    paintAuthNav();
   });
 })();

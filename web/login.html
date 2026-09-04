@@ -67,7 +67,8 @@
 <script>
 const $=id=>document.getElementById(id);
 let MODE="login";
-const next=new URLSearchParams(location.search).get("next")||"/";
+const _q=new URLSearchParams(location.search);
+const next=_q.get("next")||"/";
 
 function say(m,bad){ $("msg").style.color=bad?"var(--seal)":"var(--accent)"; $("msg").textContent=m||""; }
 
@@ -88,6 +89,8 @@ function setMode(m){
   if(!reg) $("pw2").value="";
   say("");
 }
+// 导航里的「注册」按钮带 ?mode=register 直接进注册态
+if(_q.get("mode")==="register") setMode("register");
 $("swap").onclick=()=>setMode(MODE==="login"?"register":"login");
 
 async function submit(){
