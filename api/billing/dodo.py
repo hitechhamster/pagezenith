@@ -164,3 +164,42 @@ def extract_order_id(body: dict) -> Optional[str]:
         if isinstance(cur, str) and cur.strip():
             return cur.strip()
     return None
+
+
+def _dig(body: dict, *paths) -> Any:
+    """按多条候选路径取值，取到第一个非空就返回。载荷嵌套层级各版本不一致。"""
+    for path in paths:
+        cur: Any = body
+        for k in path:
+            if not isinstance(cur, dict):
+                cur = None
+                break
+            cur = cur.get(k)
+        if cur not in (None, "", [], {}):
+            return cur
+    return None
+
+
+def extract_payment(body: dict) -> dict:
+    """从 webhook 载荷里取「实际付了什么」：金额（分）、币种、商品 id 列表。
+
+    2026-09-04 加。在此之前 webhook 只认 metadata.order_id 就发点，**完全不看这笔钱
+    到底付了多少、付的什么、什么币种**。两个后果：
+      ① 同一个 Dodo 账号下还跑着别的站（观象台），它的付款也会推到这个端点来；
+      ② metadata 是可以被下单方影响的，一旦能塞假 order_id，就等于用便宜商品的钱
+         去兑贵档的点数。
+    取不到的字段返回 None，由上层决定是拒绝还是只告警（见 pay_router）。
+    """
+    amount = _dig(body, ("data", "total_amount"), ("total_amount",),
+                  ("data", "payload", "total_amount"))
+    currency = _dig(body, ("data", "currency"), ("currency",),
+                    ("data", "payload", "currency"))
+    cart = _dig(body, ("data", "product_cart"), ("product_cart",),
+                ("data", "payload", "product_cart")) or []
+    pids = [c.get("product_id") for c in cart
+            if isinstance(c, dict) and c.get("product_id")]
+    return {
+        "amount_cents": int(amount) if isinstance(amount, (int, float)) else None,
+        "currency": (currency or "").upper() or None,
+        "product_ids": pids,
+    }

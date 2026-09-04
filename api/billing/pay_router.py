@@ -148,6 +148,20 @@ async def dodo_webhook(request: Request):
         return {"ok": True, "skipped": "载荷不是 JSON"}
 
     etype = (body.get("type") or body.get("event_type") or "").lower()
+
+    # 退款 / 拒付：在此之前这类事件被当成"不关心的事件"直接丢掉，于是
+    # 充值 → 用光点数 → 去 Dodo 退款 → 点数原样留着，站长净亏成本。
+    # 自动扣回点数有误伤风险（点可能已经花了，扣成负数更难处理），所以这里只做两件
+    # 稳妥的事：把订单标回去、按 error 记一条能被人看见的日志。真正的追讨是人工动作。
+    if etype in ("payment.refunded", "refund.succeeded",
+                 "dispute.opened", "dispute.succeeded", "payment.disputed"):
+        oid = dodo.extract_order_id(body) or "(无订单号)"
+        logger.error("Dodo 退款/拒付 事件=%s 订单=%s —— 点数不会自动收回，"
+                     "请人工去 /payadmin 或数据库核实该账户余额。载荷=%s",
+                     etype, oid, str(body)[:400])
+        P.mark_refunded(oid)
+        return {"ok": True, "refund_noted": True, "order_id": oid}
+
     if etype != "payment.succeeded":
         return {"ok": True, "skipped": etype or "无事件类型"}
 
@@ -156,6 +170,30 @@ async def dodo_webhook(request: Request):
         # 拿不到订单号说明 metadata 没带上 —— 报警但别重投，人工去 /payadmin 处理
         logger.error("Dodo webhook 缺 order_id，需人工确认: %s", str(body)[:300])
         return {"ok": True, "skipped": "载荷里没有 order_id"}
+
+    # ── 发点之前先核对「这笔钱到底付了什么」──────────────────────────
+    # 验签只能证明"这条消息真的来自 Dodo"，证明不了"这笔付款对应的是这个订单"。
+    # 而 metadata 是下单侧能影响的东西，同一个 Dodo 账号下还跑着别的站，所以必须
+    # 拿订单里记的应付金额/商品，去跟载荷里的实付金额/商品对一遍。
+    want = P.order_expectation(oid)
+    if want is not None and want["status"] != "paid":
+        got = dodo.extract_payment(body)
+        pid_want = _dodo_products().get(want["product"])
+        amt_want = want["amount_cents"]
+        bad = []
+        if got["amount_cents"] is not None and amt_want is not None \
+                and got["amount_cents"] != amt_want:
+            bad.append(f"金额 实付{got['amount_cents']}≠应付{amt_want}")
+        if got["currency"] and got["currency"] != "CNY":
+            bad.append(f"币种 {got['currency']}≠CNY")
+        if got["product_ids"] and pid_want and pid_want not in got["product_ids"]:
+            bad.append(f"商品 {got['product_ids']}∌{pid_want}")
+        if bad:
+            # 不发点、不回 4xx（回 4xx 只会让 Dodo 无意义地重投）。这是要人看的：
+            # 要么有人在试探，要么是 Dodo 后台商品价被改过。
+            logger.error("Dodo webhook 与订单对不上，拒绝发点 order=%s 问题=%s 载荷=%s",
+                         oid, "; ".join(bad), str(body)[:400])
+            return {"ok": True, "skipped": "payment mismatch", "order_id": oid}
 
     hit = P.deliver_by_id(oid, via="dodo")
     if hit is None:

@@ -161,6 +161,38 @@ def get_order(oid: str) -> Optional[dict[str, Any]]:
     return out
 
 
+def mark_refunded(oid: str) -> bool:
+    """把订单标成 refunded（收到 Dodo 的退款/拒付事件时）。
+
+    只改订单状态，**不动账户点数** —— 点可能已经花掉了，自动扣会把余额搞成负数，
+    而且误伤成本比漏追高。这里的作用是留痕：让 /payadmin 和对账时能看出这单已退，
+    真正要不要追讨由人来定。返回是否命中一行。
+    """
+    with _LOCK:
+        _init()
+        cur = conn().execute(
+            "UPDATE pay_orders SET status='refunded' WHERE id=? AND status='paid'", (oid,))
+        conn().commit()
+    return cur.rowcount > 0
+
+
+def order_expectation(oid: str) -> Optional[dict[str, Any]]:
+    """这个订单「应该」被付多少钱、买的哪档。给 webhook 核对实付用。
+
+    与 get_order 的区别：那个是给买家看的展示结构（金额是 "19.90" 字符串、商品是
+    中文名）。核对要的是原始值：产品 key 和分为单位的金额。
+    """
+    with _LOCK:
+        _init()
+        row = conn().execute(
+            "SELECT product, amount_cents, status FROM pay_orders WHERE id=?",
+            (oid,)).fetchone()
+    if row is None:
+        return None
+    return {"product": row["product"], "amount_cents": row["amount_cents"],
+            "status": row["status"]}
+
+
 def _deliver(row, via: str) -> dict[str, Any]:
     """交付。必须在 _LOCK 里调用。
 

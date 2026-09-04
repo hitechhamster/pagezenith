@@ -340,8 +340,16 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                     for ph, png in image_map.items():
                         job.emit({"type": "image", "placeholder": ph,
                                   "png_b64": base64.b64encode(png).decode("ascii")})
-                    if not image_map:
-                        job.emit({"type": "step", "key": "images", "message": "配图生成失败，已跳过"})
+                    # 少出几张就退几张的点。以前不管出没出都按 n_images 收 —— 要 3 张只
+                    # 出 1 张照收 3 张的钱，全挂了也一点不退，跟首页"生成失败自动退点"
+                    # 直接打架。这是最容易被用户抓到的超收。
+                    missing = n_images - len(image_map)
+                    if missing > 0:
+                        back = tx.refund_credits(missing * price(TOOL, "image", tier))
+                        job.emit({"type": "step", "key": "images",
+                                  "message": (f"配图生成失败，已跳过（退回 {back} 点）" if not image_map
+                                              else f"只生成了 {len(image_map)}/{n_images} 张，"
+                                                   f"少的已退回 {back} 点")})
 
                 if image_map and sum(len(v) for v in image_map.values()) <= MAX_SESSION_IMAGE_BYTES:
                     get_store().update(req.session_id, image_map=image_map)

@@ -202,6 +202,29 @@ def refund(usage_id: int) -> None:
         c.commit()
 
 
+def refund_partial(usage_id: int, credits: int) -> int:
+    """部分退点：只退回其中 N 点，流水仍算 ok。返回实际退了多少。
+
+    用在「一次预扣、部分没交付」的场景 —— 典型是配图：正文 + N 张图一次性扣，
+    图挂了但正文好好的，整单退不对（用户确实拿到了正文），一点不退更不对
+    （首页白纸黑字写着"生成失败自动退点"）。
+    """
+    if credits <= 0:
+        return 0
+    c = conn()
+    with _LOCK:
+        row = c.execute("SELECT card_hash, credits, status FROM usage WHERE id=?",
+                        (usage_id,)).fetchone()
+        if row is None or row["status"] != "ok" or row["credits"] <= 0:
+            return 0
+        give = min(int(credits), int(row["credits"]))
+        c.execute("UPDATE cards SET used_credits = MAX(0, used_credits - ?) WHERE card_hash=?",
+                  (give, row["card_hash"]))
+        c.execute("UPDATE usage SET credits = credits - ? WHERE id=?", (give, usage_id))
+        c.commit()
+    return give
+
+
 def finalize_usage(usage_id: int, *, model: str = "", tokens_in: int = 0,
                    tokens_out: int = 0, est_cost: float = 0.0) -> None:
     """把真实 token 用量与成本回填到流水（熔断和对账都读这里）。"""

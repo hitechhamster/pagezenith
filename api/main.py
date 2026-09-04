@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 from pathlib import Path
@@ -72,7 +73,13 @@ def page(path: Path) -> HTMLResponse:
         _PAGE_CACHE[str(path)] = (mtime, html)
     return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
-app = FastAPI(title="页面科技 — AI 跨境营销工具")
+# 自动文档默认关闭：/docs /redoc /openapi.json 会把全部内部端点（含店主接口的结构）
+# 摊开给任何人看。本地开发想要就设 ENABLE_DOCS=1。
+_DOCS = os.environ.get("ENABLE_DOCS", "").strip() in ("1", "true", "yes")
+app = FastAPI(title="页面科技 — AI 跨境营销工具",
+              docs_url="/docs" if _DOCS else None,
+              redoc_url="/redoc" if _DOCS else None,
+              openapi_url="/openapi.json" if _DOCS else None)
 # 同源应用，没有任何跨域调用方；allow_origins=["*"] 是早期图省事留下的。
 # 收成站点自身 + 本地开发端口。带 cookie 的请求本来就不允许 "*"，这里也顺便把语义摆正。
 _settings = get_settings()

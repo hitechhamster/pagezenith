@@ -44,8 +44,21 @@ _bad_attempts: dict[str, list[float]] = {}
 
 
 def _client_ip(request: Request) -> str:
+    """限流/审计用的客户端 IP。
+
+    ⚠️ 2026-09-04 修：原来取 `X-Forwarded-For` 的**最左**一段。而 nginx 用的是
+    `$proxy_add_x_forwarded_for`——它把真实对端**追加在右边**，左边那段是客户端自己
+    传进来的。于是攻击者只要每次换一个 XFF 首值，按 IP 的限流就完全失效（实测：
+    同一真实 IP 打到 429，改个头立刻恢复）。登录撞库、密码重置邮件轰炸都吃这条闸。
+
+    uvicorn 已带 `--proxy-headers --forwarded-allow-ips 127.0.0.1`，会用可信代理提供的
+    值填好 `request.client.host`，所以直接用它。留 XFF 只作为没有 client 时的兜底，
+    且取**最右**一段（最靠近我们这一跳的、由 nginx 追加的那个）。
+    """
+    if request.client and request.client.host:
+        return request.client.host
     fwd = request.headers.get("x-forwarded-for", "")
-    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")) or "-"
+    return (fwd.split(",")[-1].strip() if fwd else "") or "-"
 
 
 def _rate_limit_bad_key(ip: str) -> None:
@@ -57,7 +70,7 @@ def _rate_limit_bad_key(ip: str) -> None:
         for k in [k for k, v in _bad_attempts.items() if not v or now - v[-1] > 3600]:
             _bad_attempts.pop(k, None)
     if len(hits) > BAD_KEY_PER_HOUR:
-        raise HTTPException(status_code=429, detail="卡密尝试过于频繁，请一小时后再试。")
+        raise HTTPException(status_code=429, detail="尝试次数过多，请一小时后再试。")
 
 
 @dataclass
@@ -172,6 +185,13 @@ class Charge:
 
     def set_result(self, *, title: str, summary: str = "", payload: dict[str, Any]) -> None:
         self._result = {"title": title, "summary": summary, "payload": payload}
+
+    def refund_credits(self, credits: int) -> int:
+        """退掉本次预扣里没交付的那部分（比如配图失败）。返回实际退了多少点。"""
+        if self.usage_id is None or credits <= 0:
+            return 0
+        return store.refund_partial(self.usage_id, int(credits))
+
 
 
 @contextlib.asynccontextmanager
