@@ -6,6 +6,7 @@ SemanticDeduper（覆盖/缺口判定）。所有文本中文。
 
 from __future__ import annotations
 
+import importlib.util
 import asyncio
 import logging
 import re
@@ -74,8 +75,25 @@ class ReportV2Builder:
         return await fetcher.fetch(url)
 
     def _make_fetcher(self, req: ReportRequest):
-        mode = req.fetch_mode or "browser"  # v2 默认浏览器抓取，过反爬
-        return BrowserFetcher(self.s) if mode == "browser" else PageFetcher(self.s)
+        """选抓取器。
+
+        ⚠️ 2026-09-04 修两处：
+        ① 默认值原本硬编码 "browser"（"v2 默认浏览器抓取，过反爬"）。那是本地 BYOK
+           时代的设定；服务端 2026-08 起就不装 playwright 了，于是**只要请求没显式
+           传 fetch_mode，这个工具必挂**。改成跟随服务端配置 `s.fetch_mode`（httpx）。
+        ② 就算真要 browser，playwright 缺失也应降级而不是把整个分析炸掉 ——
+           这是本文件里第三个 BrowserFetcher 构造点，前两个（pipeline / article_quality）
+           已经加过同样的兜底，这里当时漏了。
+        """
+        mode = req.fetch_mode or self.s.fetch_mode or "httpx"
+        if mode != "browser":
+            return PageFetcher(self.s)
+        # playwright 的导入在 BrowserFetcher._ensure() 里（异步、抓第一页时才触发），
+        # 所以这里不能靠 try 构造对象来判断，得直接看模块在不在。
+        if importlib.util.find_spec("playwright") is None:
+            logger.warning("请求了浏览器抓取但 playwright 未安装，降级为 httpx")
+            return PageFetcher(self.s)
+        return BrowserFetcher(self.s)
 
     async def build(self, req: ReportRequest) -> ReportV2:
         """非流式：消费 build_stream 拼成完整 ReportV2（供 /report 和测试用）。"""
