@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from ..seo_gap.config import Settings, get_settings
-from ..seo_gap.security import assert_safe_url
+from ..seo_gap.security import SAFE_HOOKS, assert_safe_url
 from .models import AgeInfo, ReconReport, ShopifyInfo
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ async def _get(client, url, **kw):
 # --------------------------------------------------------------------------- #
 async def fetch_main(url: str, s: Settings):
     headers = {"User-Agent": _UA, "Accept-Language": "en,zh;q=0.8"}
-    async with httpx.AsyncClient(timeout=s.fetch_timeout, follow_redirects=True, headers=headers) as c:
+    async with httpx.AsyncClient(timeout=s.fetch_timeout, follow_redirects=True, headers=headers, event_hooks=SAFE_HOOKS) as c:
         r = await _get(c, url)
     if r is not None and r.status_code < 400 and len(r.text) > 200:
         return r.text, {k.lower(): v for k, v in r.headers.items()}, str(r.url)
@@ -136,7 +136,7 @@ async def shopify_info(html: str, base: str, s: Settings) -> ShopifyInfo:
     # 公开的 /products.json（很多 Shopify 店开放）→ 分页拉全 → 选品/上新/价格情报
     prods = []
     async with httpx.AsyncClient(timeout=s.fetch_timeout, follow_redirects=True,
-                                 headers={"User-Agent": _UA}) as c:
+                                 headers={"User-Agent": _UA}, event_hooks=SAFE_HOOKS) as c:
         for page in range(1, 21):  # 最多 20 页 = 5000 产品
             r = await _get(c, base.rstrip("/") + f"/products.json?limit=250&page={page}")
             if r is None or r.status_code != 200:
@@ -203,7 +203,7 @@ def _years_since(date_str: str) -> float | None:
 
 async def age_info(domain: str, s: Settings) -> AgeInfo:
     age = AgeInfo()
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": _UA}) as c:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": _UA}, event_hooks=SAFE_HOOKS) as c:
         rdap, way = await asyncio.gather(
             _get(c, f"https://rdap.org/domain/{domain}"),
             _get(c, f"http://web.archive.org/cdx/search/cdx?url={domain}&output=json&fl=timestamp&limit=1&sort=ascending&collapse=timestamp"),
@@ -306,7 +306,7 @@ async def hosting_info(domain: str, s):
         info["ip"] = ip
     except Exception:
         return info
-    async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": _UA}) as c:
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": _UA}, event_hooks=SAFE_HOOKS) as c:
         r = await _get(c, f"https://rdap.org/ip/{ip}")
     if r is not None and r.status_code == 200:
         try:
@@ -339,7 +339,7 @@ async def seo_info(html: str, base: str, s: Settings):
     desc = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', html, re.I)
     langs = sorted(set(re.findall(r'hreflang=["\']([a-zA-Z\-]+)["\']', html)))[:12]
     sitemap_urls = None
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": _UA}) as c:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": _UA}, event_hooks=SAFE_HOOKS) as c:
         r = await _get(c, base.rstrip("/") + "/sitemap.xml")
     if r is not None and r.status_code == 200:
         sitemap_urls = r.text.count("<loc>")

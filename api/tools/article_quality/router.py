@@ -23,8 +23,14 @@ _sema = asyncio.Semaphore(get_settings().max_concurrent_runs)
 
 
 @router.post("/fetch")
-async def fetch(req: FetchRequest) -> dict:
-    """抓取网址正文供编辑器载入（无需 key）。"""
+async def fetch(req: FetchRequest, card: Card = Depends(require_card)) -> dict:
+    """抓取网址正文供编辑器载入。不计点，但要求登录。
+
+    2026-09-04 从「无需 key」改成要登录。原因是它是全站唯一一个未鉴权、还会让服务器
+    去访问任意 URL 的端点，等于：①匿名 SSRF 入口（实测经它读到过云元数据）②免费的
+    匿名抓取代理，谁都能借这台服务器的带宽和出口 IP 打别人。抓取本身不扣点，所以
+    对真实用户只是多一次登录，不多花钱。
+    """
     s = get_settings()
     if _sema.locked():
         raise HTTPException(status_code=429, detail="服务繁忙，请稍后重试。")

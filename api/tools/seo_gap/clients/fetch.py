@@ -11,7 +11,7 @@ from selectolax.parser import HTMLParser
 
 from ..config import Settings, get_settings
 from ..models import PageContent
-from ..security import assert_safe_url
+from ..security import SAFE_HOOKS, assert_safe_url
 
 _DROP_TAGS = ("script", "style", "noscript", "nav", "footer", "header", "aside", "form")
 
@@ -81,8 +81,11 @@ class PageFetcher:
             return _mock_page(url)
         if self.s.block_private_urls:
             assert_safe_url(url)
+        # event_hooks：重定向的每一跳都会再过一次 SSRF 校验。
+        # 只在入口校验是不够的 —— 挂个 302 到 169.254.169.254 就能绕过（2026-09-04）。
         async with httpx.AsyncClient(
             timeout=self.s.fetch_timeout, follow_redirects=True, headers=_BROWSER_HEADERS,
+            event_hooks=SAFE_HOOKS if self.s.block_private_urls else {},
         ) as client:
             resp = await client.get(url)
             resp.raise_for_status()
