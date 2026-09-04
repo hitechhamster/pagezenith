@@ -146,6 +146,27 @@
     t._h = setTimeout(() => (t.className = ""), 3600);
   }
 
+  /* ---------- 点数徽标 ----------
+     页面上任何 <span data-cost="工具:动作"> 都会被填成「本次消耗 N 点」。
+     数字从 /api/billing/pricing 实时取，不写死在各页面里 —— 首页价目表就吃过
+     写死的亏（页面上的数和后端对不上）。取不到就保持空白，不显示错的数字。 */
+  async function paintCosts() {
+    const nodes = document.querySelectorAll("[data-cost]");
+    if (!nodes.length) return;
+    let prices;
+    try {
+      const j = await (await rawFetch("/api/billing/pricing")).json();
+      prices = j.prices || [];
+    } catch (e) { return; }
+    nodes.forEach(el => {
+      const [tool, action] = (el.getAttribute("data-cost") || "").split(":");
+      const row = prices.find(p => p.tool === tool && p.action === action);
+      if (!row) return;
+      el.textContent = `本次消耗 ${row.credits} 点`;
+      el.classList.add("ready");
+    });
+  }
+
   /* ---------- 对外接口（保留旧名，语义已换）---------- */
   window.CARD = {
     get: read,
@@ -158,6 +179,7 @@
     account: () => account,
     signOut,
     onBadgeClick,
+    paintCosts,
     refresh,
     open: openModal,
     toast,
@@ -184,5 +206,6 @@
     //    于是账户用户的 account 永远是 null、徽标永远显示"登录"、点了就去登录页。
     //    这是「已登录却被弹回首页」的真正根因。
     ready = refresh();
+    paintCosts();
   });
 })();
