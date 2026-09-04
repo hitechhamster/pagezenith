@@ -145,8 +145,14 @@
         <option value="uk-en">英国 / English</option>
       </select>
     </div>
-    <label class="check"><input type="checkbox" id="browser" checked />本地浏览器抓取</label>
-    <label class="check" title="需在右上角设置里填 Tavily key；用它把竞品页解析成更干净的正文"><input type="checkbox" id="tavily" />Tavily 解析（更干净）</label>
+    <!-- 2026-09-04 删掉两个失效开关：
+         ①「本地浏览器抓取」以前默认勾着，但服务端 2026-08 起就不装 playwright 了
+           （见 api/requirements.txt 的注释），于是每次分析都必挂在 ModuleNotFoundError，
+           用户看到的是「TypeError: network error」。名字里的"本地"是 BYOK 时代的遗留 ——
+           那时这套工具跑在用户自己的电脑上，才有"本地浏览器"这回事。
+         ② Tavily 开关的提示写着"在右上角设置里填 key"，而那个设置面板随 BYOK 一起删了，
+           现在没有任何途径能填 Tavily key，生产也没配 TAVILY_KEY —— 勾了等于没勾
+           （无 key 时 TavilyClient 直接返回 None）。 -->
     <button id="run">开始分析</button><span data-cost="seo-gap:analyze"></span>
   </div>
   <div class="sub small" id="batchHint" style="display:none;margin-top:-6px">批量模式：综合看你的页/站在整组关键词上的差距与该补的内容；跨关键词自动去重（同一竞品页只抓一次），Reddit 仅取前 3 个词以省额度。</div>
