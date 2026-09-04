@@ -96,7 +96,7 @@ async function loadPacks(){
       <div class="pack${i===1?" best":""}" data-id="${esc(p.id)}">
         <div class="pn">${esc(p.name)}${i===1?'<span class="tagbest">多数人选这张</span>':""}</div>
         <div class="pp"><small>¥</small>${esc(p.price)}</div>
-        <div class="pc">${p.credits} 点 · 约 ${Math.floor(p.credits/10)} 篇全套文章</div>
+        <div class="pc">${p.credits} 点 · 约 ${Math.floor(p.credits/9)} 篇全套文章</div>
         <span class="pgo">充值</span>
       </div>`).join("");
     $("packs").querySelectorAll(".pack").forEach(el=>{

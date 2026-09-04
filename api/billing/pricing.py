@@ -105,12 +105,15 @@ def price(tool: str, action: str, tier: str = DEFAULT_TIER) -> int:
 
 
 def price_table() -> list[dict]:
-    """给前端展示的价目（首页/工具页标价用）。"""
-    out = []
-    for (tool, action), row in PRICES.items():
-        out.append({"tool": tool, "action": action,
-                    "basic": row.get("basic", 0), "pro": row.get("pro", 0)})
-    return out
+    """给前端展示的价目（首页/工具页标价用）。
+
+    ⚠️ 2026-09-04 修：这里以前同时吐 basic 和 pro 两列。但 TIERS 早就只剩 "pro" 一档，
+    `row.get("basic", 0)` 于是对每一行都返回 0 —— 首页那张表的"基础档"整列显示 0 点，
+    等于白纸黑字告诉用户基础档所有功能免费。现在只吐实际存在的那一档。
+    加档位时这里要跟着改，别再让展示层去 get 一个不存在的键然后拿默认值当真。
+    """
+    return [{"tool": tool, "action": action, "credits": row.get(DEFAULT_TIER, 0)}
+            for (tool, action), row in PRICES.items()]
 
 
 # ── 成本估算（¥/百万 token，用于熔断与对账，非精确账单）──────────────

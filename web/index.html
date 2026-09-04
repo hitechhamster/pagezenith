@@ -74,7 +74,21 @@
   .cmp-table td.no{color:var(--faint)}
   .cmp-table td.mid{color:var(--muted)}
   .cmp-table td.yes{color:var(--text);font-weight:500}
-  @media(max-width:640px){ .cmp-table{font-size:12px} .cmp-table td.feat{white-space:normal;min-width:120px} }
+  .cmp-note{font-size:11.5px;color:var(--faint);line-height:1.7;margin:9px 2px 0}
+  /* 窄屏：不横滚，整表按行堆叠成卡片。原来 min-width:560px + overflow-x 的组合
+     会把最右边的"页面科技"列（唯一的卖点列）推到屏幕外，而横滚很少有人会去试。 */
+  @media(max-width:640px){
+    .cmp-table-wrap{overflow-x:visible;background:transparent;border:0;box-shadow:none}
+    .cmp-table{min-width:0;display:block;font-size:13px}
+    .cmp-table thead{display:none}
+    .cmp-table tbody,.cmp-table tr,.cmp-table td{display:block;width:auto}
+    .cmp-table tr{border:1px solid var(--line);border-radius:var(--radius-lg);
+      background:var(--card);box-shadow:var(--shadow);padding:4px 0 8px;margin-bottom:10px}
+    .cmp-table td{border:0;padding:3px 13px}
+    .cmp-table td.feat{white-space:normal;font-size:14px;padding:10px 13px 6px}
+    .cmp-table td:not(.feat)::before{content:attr(data-l)"　";color:var(--faint);font-size:11px}
+    .cmp-table td.cmp-us{margin:5px 8px 0;padding:7px 9px;border-radius:9px}
+  }
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
   .tool{display:block;padding:20px;border-radius:var(--radius-lg);background:var(--card);border:1px solid var(--line);transition:border-color .15s,transform .08s}
   .tool:hover{border-color:var(--accent);transform:translateY(-1px)}
@@ -152,7 +166,11 @@
       <div class="cta-row">
         <a class="btn-primary" href="/tools/seo-writer">写两篇看看</a>
       </div>
-      <p class="cta-note">先填关键词免费看到大纲，大纲你先审批，不点通过正文一个字不写、一点不扣</p>
+      <!-- 2026-09-04 撤回一句假话：原文是"先填关键词**免费**看到大纲"。大纲实际扣 2 点
+           （pricing.py 的 PRICES），新账户初始 0 点、没有任何免费额度 —— 这句话对每一个
+           新用户都是假的，而它恰好是这条漏斗的承重墙。留下的两句都能在代码里对上：
+           点数不过期（cards 表无有效期字段）、不点通过不写正文也不扣正文的点。 -->
+      <p class="cta-note">¥19.9 起 · 点数不过期 · 大纲你先审批，不点通过正文一个字不写、一点不扣</p>
     </div>
     <!-- 签名元素：真实任务流水。付款前唯一能看见「三到五分钟在干什么」的东西 -->
     <div class="live">
@@ -172,21 +190,22 @@
 
   <div class="cmp" id="compare">
     <h2>和别人比，这个产品好在哪</h2>
-    <p class="cmp-lead">不是宣传话术 —— 这几条是生成过程里真实存在的环节，跑一次「SEO 文章生成」你能亲眼看到每一步。</p>
+    <p class="cmp-lead">右边这一列不是宣传话术 —— 每一条都是生成过程里真实存在的环节，跑一次「SEO 文章生成」你能亲眼看到每一步。</p>
     <div class="cmp-table-wrap">
       <table class="cmp-table">
-        <thead><tr><th></th><th>通用 AI 对话工具</th><th>普通 SEO 文章生成器</th><th class="cmp-us">页面科技</th></tr></thead>
+        <thead><tr><th></th><th>通用 AI 对话工具</th><th>多数 AI 写作 / SEO 工具</th><th class="cmp-us">页面科技</th></tr></thead>
         <tbody>
-        <tr><td class="feat">写之前搜不搜现有内容</td><td class="no"><span class="ic">✗</span>不搜，凭训练知识编</td><td class="mid"><span class="ic">~</span>少数搜，多数套模板</td><td class="yes cmp-us"><span class="ic">✓</span>搜 —— 实时抓 Google 前 10 名结构</td></tr>
-        <tr><td class="feat">会不会去 Reddit 挖真实讨论</td><td class="no"><span class="ic">✗</span>不会</td><td class="mid"><span class="ic">~</span>几乎没有</td><td class="yes cmp-us"><span class="ic">✓</span>会 —— 当独家信息源写进文章</td></tr>
-        <tr><td class="feat">数字 / 事实有没有出处</td><td class="no"><span class="ic">✗</span>没有，编造率高</td><td class="mid"><span class="ic">~</span>少见，出错不提醒</td><td class="yes cmp-us"><span class="ic">✓</span>有 —— 事实清单，清单外的会标出来</td></tr>
-        <tr><td class="feat">大纲按不按 EEAT（经验/专业/权威/可信）搭</td><td class="no"><span class="ic">✗</span>随手列几个小标题</td><td class="mid"><span class="ic">~</span>部分会，但拿到即定稿</td><td class="yes cmp-us"><span class="ic">✓</span>会，而且先给你看</td></tr>
-        <tr><td class="feat">大纲能不能改</td><td class="no"><span class="ic">✗</span>没有大纲这一步</td><td class="mid"><span class="ic">~</span>大多不能改</td><td class="yes cmp-us"><span class="ic">✓</span>能 —— 不通过不扣正文的点</td></tr>
-        <tr><td class="feat">有没有单独的润色环节</td><td class="no"><span class="ic">✗</span>没有</td><td class="mid"><span class="ic">~</span>少数有，基础同义替换</td><td class="yes cmp-us"><span class="ic">✓</span>有 —— 专门降低机翻感</td></tr>
-        <tr><td class="feat">能不能塞你自己的具体要求</td><td class="no"><span class="ic">✗</span>靠对话反复调</td><td class="mid"><span class="ic">~</span>模板固定，塞不进去</td><td class="yes cmp-us"><span class="ic">✓</span>专门输入框 —— 榜单/对比/教程都能装</td></tr>
+        <tr><td class="feat">写之前先搜一遍现有内容</td><td class="mid" data-l="通用 AI 对话工具"><span class="ic">~</span>能联网搜，但不拆解前 10 名的结构</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>各家不一，过程多数不给你看</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>抓 Google 前 10 名，逐页拆结构与覆盖点</td></tr>
+        <tr><td class="feat">拿 Reddit 真人讨论当信息源</td><td class="no" data-l="通用 AI 对话工具"><span class="ic">✗</span>没有这个固定环节</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>少见</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>专门抓子版块讨论与评论，当独家信息源写进文章</td></tr>
+        <tr><td class="feat">数字 / 事实带不带出处</td><td class="no" data-l="通用 AI 对话工具"><span class="ic">✗</span>不保证，容易编</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>不一定有，出错也未必提醒你</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>先出一份带来源的事实清单，正文只用清单内的数字，清单外的会标出来让你核实</td></tr>
+        <tr><td class="feat">大纲按不按 EEAT 搭</td><td class="no" data-l="通用 AI 对话工具"><span class="ic">✗</span>没有这个固定环节</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>有模板，但通常拿到即定稿</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>按经验/专业/权威/可信搭，而且先给你过目</td></tr>
+        <tr><td class="feat">大纲能不能你来改</td><td class="mid" data-l="通用 AI 对话工具"><span class="ic">~</span>靠对话一句句反复说</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>多数不开放给你改</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>随便改，不点「通过」正文一个字不写、一点不扣</td></tr>
+        <tr><td class="feat">有没有单独的润色环节</td><td class="no" data-l="通用 AI 对话工具"><span class="ic">✗</span>没有这个固定环节</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>不一定有</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>整篇写完再单独过一遍，专门降低机翻感</td></tr>
+        <tr><td class="feat">能不能塞你自己的具体要求</td><td class="yes" data-l="通用 AI 对话工具"><span class="ic">✓</span>灵活，但要你自己反复调</td><td class="mid" data-l="多数 AI 写作 / SEO 工具"><span class="ic">~</span>模板固定，能塞的有限</td><td class="yes cmp-us" data-l="页面科技"><span class="ic">✓</span>专门的「具体要求」输入框 —— 榜单、对比、教程都能装</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="cmp-note">中间两列是按各家公开介绍和通用形态归纳的，没有逐一实测，仅供参考；最后一列每一条你都能在生成过程里自己看到。</p>
   </div>
 
  <div class="home-layout">
@@ -237,23 +256,28 @@
     <div class="cards">
       <div class="pcard">
         <div class="pn">体验卡</div><div class="pp">¥19.9</div>
-        <div class="pu">20 点 · 约 3 篇基础档文章</div>
+        <!-- 2026-09-04 改：一篇全套 9 点（大纲2+正文5+润色2），20/9≈2.2 → 2 篇。
+             原来写"约 3 篇"，比实际多报 36%，而结账页按 /10 算显示 2 篇 —— 用户在首页
+             决定掏钱、在结账页发现数变小。三处（本处、buy.html、9 点定义）必须一起动。 -->
+        <div class="pu">20 点 · 约 2 篇全套文章</div>
         <a class="pbtn" href="/buy">购买</a>
       </div>
       <div class="pcard best">
         <div class="pn">标准卡</div><div class="pp">¥49</div>
-        <div class="pu">60 点 · 约 10 篇基础档文章</div>
+        <div class="pu">60 点 · 约 6 篇全套文章</div>
         <a class="pbtn" href="/buy">购买</a>
       </div>
       <div class="pcard">
         <div class="pn">大卡</div><div class="pp">¥99</div>
-        <div class="pu">140 点 · 约 23 篇基础档文章</div>
+        <div class="pu">140 点 · 约 15 篇全套文章</div>
         <a class="pbtn" href="/buy">购买</a>
       </div>
     </div>
     <div class="ptable" id="ptable"></div>
+    <!-- 2026-09-04：删掉"基础档/高级档"整段。TIERS 里早就只剩一档（pro），
+         这段话描述的是一个已经不存在的产品结构。 -->
     <p class="p-note" id="buy">充值后点数立刻进账户，直接开始用。
-      基础档与高级档的区别只在写作模型：<b>基础档</b>快而省，适合批量产出；<b>高级档</b>文笔与逻辑更强，适合重点页面。</p>
+      一篇全套文章 <b>9 点</b>：大纲 2 + 正文 5 + 自动润色 2。改大纲每篇前 3 次不额外扣点。</p>
   </div>
 
   <div class="about">
@@ -282,12 +306,13 @@
   const ACTN={outline:"大纲（含搜索/判字数/分类）",article:"正文 + SEO 元数据",polish:"润色一遍",
               image:"AI 配图（每张）",revise:"改大纲",analyze:"一次分析",check:"单篇检测",run:"一次运行"};
   fetch("/api/billing/pricing").then(r=>r.json()).then(j=>{
+    // 2026-09-04：原来这里画"基础档/高级档"两列，而后端 TIERS 只剩一档，
+    // 基础档那列恒为 0 —— 等于告诉用户所有功能免费。现在只画实际存在的一列。
     const rows=(j.prices||[]).filter(p=>p.action!=="revise").map(p=>
       `<tr><td>${TOOLN[p.tool]||p.tool}</td><td>${ACTN[p.action]||p.action}</td>
-       <td class="n">${p.basic}</td><td class="n">${p.pro===p.basic?"—":p.pro}</td></tr>`).join("");
+       <td class="n">${p.credits}</td></tr>`).join("");
     document.getElementById("ptable").innerHTML=
-      `<table><tr><th>工具</th><th>动作</th><th style="text-align:right">基础档</th>
-       <th style="text-align:right">高级档</th></tr>${rows}</table>
+      `<table><tr><th>工具</th><th>动作</th><th style="text-align:right">点数</th></tr>${rows}</table>
        <div style="color:var(--faint);font-size:12px;margin-top:8px">
        单位：点。改大纲每篇前 ${j.revise_free??3} 次免费。生成失败自动退点。</div>`;
   }).catch(()=>{});

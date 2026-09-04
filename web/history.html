@@ -140,7 +140,8 @@ document.getElementById("btnLogout").onclick=()=>{
   if(confirm("退出登录？点数留在账户里，下次登录还在。")) CARD.signOut();
 };
 function toggleRedeem(on){ const d=document.querySelector(".redeem"); if(d) d.style.display=on?"":"none"; }
-async function loadBalance(){
+/* 账户相关的 UI（兑换区 / 当前账户行）。纯 DOM，不发请求，所以监听器可以安全地调。 */
+function paintAccount(){
   // 没登录就把兑换区藏了 —— 兑换本来就要先有账户，露着只会让人白填一次
   if(!CARD.has()){ toggleRedeem(false); return; }
   toggleRedeem(true);
@@ -149,13 +150,23 @@ async function loadBalance(){
     $("whoami").style.display="flex";
     $("whoEmail").textContent = "当前账户 " + acct.email;
   }
-  const b=await CARD.refresh();     // refresh 会派发 pz-card-updated → paintBalance 再画一次，无害
-  paintBalance(b);
+}
+async function loadBalance(){
+  paintAccount();
+  const b=await CARD.refresh();     // refresh 会派发 pz-card-updated → 监听器再画一次，无害
+  paintAccount(); paintBalance(b);  // refresh 之后 account 才有值，这里补画一次
 }
 /* 只负责画，不发任何请求 —— pz-card-updated 的监听器只能调它。
    2026-09-03 教训：以前监听器调的是 loadBalance()，而 loadBalance → CARD.refresh() →
    派发 pz-card-updated → 监听器 → loadBalance …… 无限循环。表现为整页忽闪，
-   实际是一个用户开着记录页就在无限刷 /api/auth/me 和 /api/billing/history。 */
+   实际是一个用户开着记录页就在无限刷 /api/auth/me 和 /api/billing/history。
+   ⚠️ 2026-09-04 补课：当时为了断环，把监听器整行换成只调 paintBalance，
+   **连 loadList() 一起砍掉了** —— 环是断了，但页面首帧永远停在"请去登录"：
+   DOMContentLoaded 里 loadList() 跑的时候 keys.js 的 refresh() 还没回来，
+   CARD.has() 恒为 false，而之后没有任何人再拉一次列表。
+   结果是已登录用户上方余额正常、下方写着"去登录"，付过钱的人回来取不到货。
+   环的元凶只有 loadBalance→CARD.refresh 这一条；loadList/paintAccount 全是 GET 或纯 DOM
+   （keys.js 的 fetch 钩子只在 POST 之后才补 refresh），放回监听器里不会重新成环。 */
 function paintBalance(b){
   if(!b){ $("balance").innerHTML='<div class="empty" style="padding:6px 0">身份已失效，请重新登录</div>'; return; }
   // 剩余不足一篇全套（9 点）就把数字标红 —— 提醒要早于用完那一刻
@@ -252,8 +263,14 @@ $("vCopy").onclick=()=>{
 
 $("tabResults").onclick=()=>{tab="results";$("tabResults").classList.add("on");$("tabUsage").classList.remove("on");loadList();};
 $("tabUsage").onclick=()=>{tab="usage";$("tabUsage").classList.add("on");$("tabResults").classList.remove("on");loadList();};
-// 只画余额，不重拉列表、更不能再 refresh —— 见 paintBalance 上面的注释
-window.addEventListener("pz-card-updated",(e)=>{ if(CARD.has()) paintBalance(e.detail); });
+/* 身份/余额一到手就把三块都补画：账户行、余额、列表。
+   这里可以调 loadList()（GET，不会再触发 refresh），但**绝不能**调 loadBalance()
+   —— 那个里面有 CARD.refresh()，会重新成环。见 paintBalance 上面那段注释。 */
+window.addEventListener("pz-card-updated",(e)=>{
+  paintAccount();
+  if(CARD.has()) paintBalance(e.detail);
+  loadList();
+});
 document.addEventListener("DOMContentLoaded",()=>{ loadBalance(); loadList(); });
 </script>
 </body>

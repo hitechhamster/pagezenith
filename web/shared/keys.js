@@ -43,6 +43,12 @@
             location.href = "/login?next=" +
               encodeURIComponent(location.pathname + location.search);
           }, 1200);           // 留一点时间让用户看见提示，别闪一下就跳走
+        } else {
+          // 402 = 点数不足。以前只弹一个 3.6 秒就消失的 toast 就没了下文：用户卡在
+          // "点数不足"四个字上，页面上没有任何一处告诉他去哪充值（导航里那个"充值"
+          // 和旁边两个胶囊长得一样，手机上还在屏幕外）。既然点数不足是"必须充值才能
+          // 继续"的死结，就直接送到充值页，跟 401 送去登录同一个道理。
+          setTimeout(() => { location.href = "/buy"; }, 1800);
         }
         refresh();
       }
