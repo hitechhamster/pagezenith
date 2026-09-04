@@ -79,14 +79,27 @@ def send_reset(to: str, link: str, minutes: int) -> bool:
 
 
 def send_welcome(to: str, credits: int = 0) -> bool:
-    # 注册即送的点数正好够写完整一篇，这里就直说"够写一篇"，比光给个点数好懂。
-    # （"全套 10 点"是旧文案，实际是 9 点：大纲 2 + 正文 5 + 润色 2。）
-    from .pricing import full_article_credits
+    """开通信。赠送点数要说清楚「够做什么」，别只丢一个数字。
+
+    ⚠️ 关键是要点破配图：赠送的 11 点够写一篇**不带配图**的（9 点），但只要勾了
+    AI 配图就不够（每张 +3）。不写清楚，用户会兴冲冲勾上配图然后撞"点数不足"——
+    正是这个撞墙让人当场流失。数字全部从价目表推导，别手抄。
+    """
+    from .pricing import full_article_credits, price
     full = full_article_credits()
-    extra = (f"<p>账户里已有 <b>{credits} 点</b>"
-             + (f"，正好够完整写一篇（全套 {full} 点）。</p>" if credits >= full else "，可以直接开始。</p>")
-             if credits else
-             f"<p>点数用完即充，不订阅、不绑卡。一篇文章全套 {full} 点。</p>")
+    per_img = price("seo-writer", "image")
+    if credits:
+        extra = (f"<p>账户里已有 <b>{credits} 点</b>，"
+                 f"够完整写一篇（大纲 + 正文 + 自动润色，共 {full} 点）。</p>"
+                 f'<p style="font-size:13.5px;color:#63635E">'
+                 f"顺带一提：<b>不勾「AI 配图」就够用</b>；配图每张另计 {per_img} 点，"
+                 f"想加图的话余额要再补一点。</p>")
+        text = (f"页面科技账户已开通（{to}）。账户里已有 {credits} 点，"
+                f"够写一篇不带配图的文章（{full} 点）；配图每张另计 {per_img} 点。\n")
+    else:
+        extra = (f"<p>点数用完即充，不订阅、不绑卡。一篇文章 {full} 点"
+                 f"（配图每张另计 {per_img} 点）。</p>")
+        text = f"页面科技账户已开通（{to}）。一篇文章 {full} 点。\n"
     return send(
         to, "页面科技账户已开通", "账户开通了",
         f'''{extra}
@@ -96,4 +109,4 @@ def send_welcome(to: str, credits: int = 0) -> bool:
              padding:12px 26px;border-radius:999px;font-weight:600">开始写第一篇</a></p>
         <p style="font-size:13px;color:#63635E">
           这封信也是你的账户凭证 —— 忘了密码可以用这个邮箱自助重设。</p>''',
-        f"页面科技账户已开通（{to}）。\nhttps://pagezenith.com/tools/seo-writer")
+        text + "https://pagezenith.com/tools/seo-writer")
