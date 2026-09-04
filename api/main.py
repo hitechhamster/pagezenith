@@ -122,6 +122,16 @@ async def home():
     return page(WEB / "index.html")
 
 
+@app.get("/terms")
+async def terms():
+    return page(WEB / "terms.html")
+
+
+@app.get("/privacy")
+async def privacy():
+    return page(WEB / "privacy.html")
+
+
 @app.get("/news")
 async def news():
     return page(WEB / "news.html")

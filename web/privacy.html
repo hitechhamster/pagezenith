@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>隐私政策 · 页面科技</title>
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="/assets/brand/logo.png" />
+<link rel="stylesheet" href="/shared/app.css" />
+<style>
+  .legal{max-width:64ch;margin:0 auto}
+  .legal h1{font-size:26px;margin:0 0 6px}
+  .legal .upd{font-size:12.5px;color:var(--faint);margin:0 0 26px}
+  .legal h2{font-family:var(--font-display);font-size:17px;font-weight:600;margin:30px 0 8px}
+  .legal p,.legal li,.legal td,.legal th{font-family:var(--font-read);font-size:14.5px;color:var(--text);line-height:1.9}
+  .legal p{margin:0 0 10px}
+  .legal ul{margin:0 0 10px;padding-left:20px}
+  .legal .key{border-left:3px solid var(--accent);background:var(--accentsoft);
+    border-radius:0 8px 8px 0;padding:12px 15px;margin:14px 0}
+  .legal .key p{margin:0}
+  .legal a{color:var(--accent)}
+  .legal .tw{overflow-x:auto;margin:12px 0 16px}
+  .legal table{width:100%;border-collapse:collapse;min-width:460px;font-size:13.5px}
+  .legal th,.legal td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  .legal th{font-size:12.5px;color:var(--muted);font-weight:600}
+</style>
+<style>
+  .sitefoot{max-width:1080px;margin:56px auto 22px;padding:16px 20px 0;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sitefoot a{color:var(--muted)}
+  .sitefoot a:hover{color:var(--accent)}
+  .sitefoot span{opacity:.5}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="logo"><img src="/assets/brand/logo-128.png" alt="页面科技" onerror="this.style.display='none'" /></div><a class="brand" href="/" style="color:var(--text)">页面科技</a>
+  <a class="navlink" href="/">← 全部工具</a>
+  <div class="grow"></div>
+</div>
+
+<div class="wrap legal">
+  <h1>隐私政策</h1>
+  <p class="upd">最后更新：2026 年 9 月 4 日</p>
+
+  <p>本政策说明页面科技（pagezenith.com，下称"本站"）会收集哪些信息、为什么收集、交给了谁，以及你可以怎么处理它们。本站为个人开发运营。</p>
+
+  <div class="key">
+    <p>一句话版本：本站只收集<b>让服务能跑起来所必需</b>的信息（邮箱、密码、你的输入与产出、少量技术日志）；<b>不收集</b>手机号、身份证、地址、银行卡号；<b>不向任何人出售</b>你的数据；<b>不投放广告追踪</b>。</p>
+  </div>
+
+  <h2>一、我们收集什么</h2>
+  <div class="tw"><table>
+    <thead><tr><th>类别</th><th>具体内容</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr><td>账户信息</td><td>邮箱地址；密码（只存 scrypt 加盐哈希，<b>我们看不到你的原始密码</b>）</td><td>登录、找回密码、发送账户通知</td></tr>
+      <tr><td>你的输入</td><td>关键词、主题、具体要求等你填进工具的内容；你粘贴或让系统抓取的网址与正文</td><td>生成结果</td></tr>
+      <tr><td>你的产出</td><td>生成的大纲、文章、分析报告</td><td>存放在"我的记录"供你取回</td></tr>
+      <tr><td>消费记录</td><td>每次扣点的时间、工具、动作、点数、token 用量与估算成本</td><td>计费、对账、成本监控</td></tr>
+      <tr><td>技术日志</td><td>IP 地址、请求时间与结果</td><td>限流防滥用、排查故障、安全审计</td></tr>
+      <tr><td>订单信息</td><td>订单号、商品档位、金额、支付状态</td><td>充值到账与对账</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>本站不收集也不存储你的银行卡号、支付密码等支付凭证</b>——付款全程在 Dodo Payments 的页面完成，本站只收到"某订单已付款"的结果通知。</p>
+
+  <h2>二、Cookie</h2>
+  <p>本站只使用一个必要的会话 Cookie（<code>pz_session</code>），用于保持你的登录状态。它是 HttpOnly + SameSite=Lax 的，浏览器脚本读不到。<b>本站不使用任何广告或第三方追踪 Cookie</b>，也没有接入统计分析代码。</p>
+
+  <h2>三、我们把数据交给了谁</h2>
+  <p>为了实现功能，你的部分内容会传给以下第三方处理。它们各自的隐私政策适用于其处理行为：</p>
+  <div class="tw"><table>
+    <thead><tr><th>服务方</th><th>传过去什么</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>Google（Gemini）</td><td>你的关键词、要求，以及生成过程中的中间文本</td><td>AI 生成与润色</td></tr>
+      <tr><td>DeepSeek</td><td>同上（作为备用模型，按配置可能启用）</td><td>AI 生成</td></tr>
+      <tr><td>Serper</td><td>你的关键词</td><td>获取搜索结果用于分析</td></tr>
+      <tr><td>Dodo Payments</td><td>邮箱、订单号与金额</td><td>收款与开票</td></tr>
+      <tr><td>Resend</td><td>你的邮箱</td><td>发送账户与密码重置邮件</td></tr>
+    </tbody>
+  </table></div>
+  <p>本站的服务器位于中国香港。使用上述服务意味着相关数据会在境外处理。</p>
+  <p><b>本站不会为营销目的把你的信息出售或提供给任何第三方。</b>仅在法律法规明确要求时，才会配合有权机关提供必要信息。</p>
+
+  <h2>四、保存多久</h2>
+  <ul>
+    <li><b>生成结果</b>：保留<b>最近 50 条、且不超过 90 天</b>（以先达到者为准），超出自动删除。重要内容请及时导出。</li>
+    <li><b>账户与消费记录</b>：账户存续期间保留，用于对账与争议处理。</li>
+    <li><b>技术日志</b>：仅短期保留用于排障与安全审计。</li>
+  </ul>
+
+  <h2>五、你的权利</h2>
+  <p>根据《个人信息保护法》，你有权查询、更正、删除你的个人信息，也可以撤回同意。具体做法：</p>
+  <ul>
+    <li><b>查询</b>：登录后在<a href="/history">我的记录</a>可查看你的产出与消费流水。</li>
+    <li><b>更正 / 删除 / 注销账户</b>：目前请发邮件到下方地址，我们会在核实身份后处理。<b>注销账户会一并删除你的产出记录，且账户内剩余点数不予退还</b>（见<a href="/terms">服务条款</a>）。</li>
+  </ul>
+
+  <h2>六、安全</h2>
+  <p>本站采取的措施包括：全站 HTTPS 传输；密码只存加盐哈希；会话令牌只存哈希；登录失败限流；数据库文件不对外暴露、每日备份。但请理解，<b>没有任何系统能保证绝对安全</b>——请为本站设置独立密码，不要与其他网站复用。</p>
+
+  <h2>七、未成年人</h2>
+  <p>本站面向从事内容与营销工作的成年人，不面向未满 18 周岁的未成年人提供服务，也不会有意收集其个人信息。</p>
+
+  <h2>八、政策变更</h2>
+  <p>本政策可能更新，更新后在本页公布并修改"最后更新"日期。涉及重大变更时会在站内提示。</p>
+
+  <h2>九、联系我们</h2>
+  <p>关于隐私的任何问题、或行使上述权利，请联系：<br />
+    <a href="mailto:hitechtransformsoda@gmail.com">hitechtransformsoda@gmail.com</a></p>
+</div>
+
+<div class="sitefoot">
+  <a href="/terms">服务条款</a><span>·</span><a href="/privacy">隐私政策</a><span>·</span>
+  <a href="mailto:hitechtransformsoda@gmail.com">hitechtransformsoda@gmail.com</a>
+</div>
+</body>
+</html>

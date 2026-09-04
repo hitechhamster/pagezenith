@@ -71,6 +71,13 @@
   #viewer .vbody h1,#viewer .vbody h2,#viewer .vbody h3{font-family:var(--font-display);margin:1.2em 0 .5em}
   #viewer .vbody pre{white-space:pre-wrap;font-family:inherit}
 </style>
+<style>
+  .sitefoot{max-width:1080px;margin:56px auto 22px;padding:16px 20px 0;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sitefoot a{color:var(--muted)}
+  .sitefoot a:hover{color:var(--accent)}
+  .sitefoot span{opacity:.5}
+</style>
 </head>
 <body>
 <div class="nav">
@@ -273,5 +280,10 @@ window.addEventListener("pz-card-updated",(e)=>{
 });
 document.addEventListener("DOMContentLoaded",()=>{ loadBalance(); loadList(); });
 </script>
+
+<div class="sitefoot">
+  <a href="/terms">服务条款</a><span>·</span><a href="/privacy">隐私政策</a><span>·</span>
+  <a href="mailto:hitechtransformsoda@gmail.com">hitechtransformsoda@gmail.com</a>
+</div>
 </body>
 </html>

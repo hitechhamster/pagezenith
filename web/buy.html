@@ -62,6 +62,13 @@
   #err{color:var(--seal);font-size:13.5px;margin-top:12px;min-height:18px}
   @media(max-width:660px){ .co-body{grid-template-columns:1fr} .qr{width:100%;height:auto;aspect-ratio:1} }
 </style>
+<style>
+  .sitefoot{max-width:1080px;margin:56px auto 22px;padding:16px 20px 0;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sitefoot a{color:var(--muted)}
+  .sitefoot a:hover{color:var(--accent)}
+  .sitefoot span{opacity:.5}
+</style>
 </head>
 <body>
 <div class="nav">
@@ -315,5 +322,10 @@ fetch("/api/auth/me").then(r=>r.json()).then(m=>{
   if(!resumeOrder()) loadPacks();
 }).catch(()=>{ if(!resumeOrder()) loadPacks(); });
 </script>
+
+<div class="sitefoot">
+  <a href="/terms">服务条款</a><span>·</span><a href="/privacy">隐私政策</a><span>·</span>
+  <a href="mailto:hitechtransformsoda@gmail.com">hitechtransformsoda@gmail.com</a>
+</div>
 </body>
 </html>

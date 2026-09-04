@@ -60,6 +60,13 @@
   .dim .dn{width:96px;flex-shrink:0} .dim .tr{flex:1;height:6px;background:var(--soft);border-radius:4px;overflow:hidden}
   .dim .fl{height:100%;border-radius:4px} .dim .dv{width:28px;text-align:right;color:var(--muted)}
 </style>
+<style>
+  .sitefoot{max-width:1080px;margin:56px auto 22px;padding:16px 20px 0;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sitefoot a{color:var(--muted)}
+  .sitefoot a:hover{color:var(--accent)}
+  .sitefoot span{opacity:.5}
+</style>
 </head>
 <body>
 <div class="nav">
@@ -274,5 +281,10 @@ function renderAI(r){
     r.rewrites.forEach(x=>{const b=E("div","rw");const ap=E("button","apply","应用");ap.style.float="right";ap.onclick=()=>applyText(x.original,x.rewrite);b.append(ap,E("div","o",x.original),E("div","n2","→ "+x.rewrite));s3.append(b);});root.append(s3);}
 }
 </script>
+
+<div class="sitefoot">
+  <a href="/terms">服务条款</a><span>·</span><a href="/privacy">隐私政策</a><span>·</span>
+  <a href="mailto:hitechtransformsoda@gmail.com">hitechtransformsoda@gmail.com</a>
+</div>
 </body>
 </html>
