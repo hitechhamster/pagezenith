@@ -123,6 +123,12 @@
   .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   .ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
   .ghost:hover{background:var(--soft);border-color:var(--line)}
+  .restored{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;
+    padding:10px 14px;border:1px solid var(--accent);background:var(--accentsoft);
+    border-radius:10px;font-size:13px;color:var(--text)}
+  .restored button{background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer}
+  .restored button:hover{border-color:var(--seal);color:var(--seal)}
 </style>
 <style>
   .sitefoot{max-width:1080px;margin:56px auto 22px;padding:16px 20px 0;border-top:1px solid var(--line);
@@ -181,26 +187,17 @@
     </div>
     <div class="hint" id="specHint">
       这一栏优先级最高，和其他设置冲突时以它为准。常用法：
-      <a href="#" data-spec="把要推荐的产品资料整段贴在这里：">贴产品资料</a> ·
+      <a href="#" data-spec="文末推荐这个产品，写成自然的锚文本链接（这是全文唯一允许的链接）：\n产品名：\n链接：\n卖点：">推荐产品</a> ·
       <a href="#" data-spec="读者是刚开店的新手，不要预设他懂任何术语。">指定读者</a> ·
       <a href="#" data-spec="必须回答这几个问题：">必答问题</a> ·
       <a href="#" data-spec="不要出现这些说法：">回避说法</a> ·
       <a href="#" data-spec="品牌名固定写作：">固定写法</a>
-      <br />贴产品资料和上面「推荐产品页」的区别：那个是给链接让系统去抓，这里是你直接把内容喂进来。
+      <br />要在文末推荐自己的产品，就在这里写清楚<b>产品信息和链接</b>，会写成自然的锚文本。
     </div>
     <div class="row">
       <div class="f narrow"><label>字数</label><input id="wordcounts" type="number" min="0" max="5000" value="0" /></div>
       <div class="f"><label>语言</label><select id="language"></select></div>
     </div>
-    <div class="row">
-      <div class="f"><label>推荐产品页（可选，文末唯一允许的链接）</label>
-        <input id="productUrl" placeholder="https://… 留空则全文不带任何链接" /></div>
-      <div class="f narrow"><label>推荐详细度</label>
-        <select id="productLevel">
-          <option>简短提及</option><option selected>中等介绍</option><option>详细介绍</option>
-        </select></div>
-    </div>
-    <div class="hint">填了产品页会自动读取它的正文：大纲规划推荐位置，正文写成自然的锚文本链接。</div>
     <div class="hint">字数填 0 = 让 AI 按主题复杂度自己判断（800–3000）。</div>
     <div class="row">
       <div class="f">
@@ -341,6 +338,7 @@ window.addEventListener("pz-card-updated",()=>{});
     ["English","Chinese (Simplified)"].forEach(l=>{const o=document.createElement("option");o.value=l;o.textContent=l;$("language").append(o);});
   }
   syncImages();
+  restoreDraft();      // 放在最后：语言/风格下拉框填好了，恢复的值才选得中
 })();
 
 /* specific 的示例：点一下把开头填进去，用户接着往下写 */
@@ -471,6 +469,49 @@ function showSeal(left){
 }
 function baseBody(){ return {tier: tier()}; }
 // 流式渲染节流：每 120ms 重排一次，避免长文一边写一边把页面卡住
+/* ---------- 草稿：大纲是花了点数买来的，不能因为离开页面就没了 ----------
+   实测事故（2026-09-04 用户报）：大纲写完 → 点「写正文」→ 点数不足 → 被送去充值 →
+   充完回来，大纲没了、2 点白花。原因是大纲只活在 JS 变量 S.outline 里，一离开页面就没。
+   现在把「输入 + 大纲 + 正文」存进 localStorage，回到本页自动恢复。
+   服务端 session 若已过期也不要紧：写正文那一步本来就会把参数一起回传降级继续。 */
+const DRAFT_KEY="pz_writer_draft", DRAFT_TTL=24*3600*1000;
+const DRAFT_FIELDS=["mainKw","secKw","topic","specific","wordcounts","language","imagesPer","imageStyle"];
+function saveDraft(){
+  try{
+    if(!S.outline && !S.article) return;      // 没产出就不存，免得覆盖掉更有用的旧草稿
+    const f={};
+    DRAFT_FIELDS.forEach(id=>{ const el=$(id); if(el) f[id]=el.value; });
+    const ck=$("enableImages"); if(ck) f.enableImages=ck.checked;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      ts:Date.now(), f, sessionId:S.sessionId, outline:S.outline,
+      article:S.article, docx:S.docx, filename:S.filename}));
+  }catch(e){}                                  // 隐私模式/配额满：存不了就算了，不能影响主流程
+}
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+function restoreDraft(){
+  let d=null;
+  try{ d=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null"); }catch(e){}
+  if(!d || !d.outline || (Date.now()-(d.ts||0))>DRAFT_TTL) return;
+  Object.entries(d.f||{}).forEach(([id,v])=>{ const el=$(id); if(el && v!=null) el.value=v; });
+  const ck=$("enableImages");
+  if(ck && "enableImages" in (d.f||{})){ ck.checked=!!d.f.enableImages; syncImages(); }
+  S.sessionId=d.sessionId||""; S.outline=d.outline||""; S.article=d.article||"";
+  S.docx=d.docx||""; S.filename=d.filename||"article.docx";
+  $("outlineBox").innerHTML=MD.render(S.outline);
+  $("sec2").style.display="";
+  if(S.article){ $("articleBox").innerHTML=MD.render(S.article); $("sec3").style.display=""; }
+  const bar=E("div","restored");
+  const when=new Date(d.ts).toLocaleString("zh-CN",{month:"numeric",day:"numeric",
+    hour:"2-digit",minute:"2-digit"});
+  bar.append(document.createTextNode("已恢复你 "+when+" 未完成的这篇（大纲还在，接着写就行）。"));
+  const btn=E("button",null,"不用了，重新开始");
+  btn.onclick=()=>{ clearDraft(); location.reload(); };
+  bar.append(btn);
+  $("sec2").prepend(bar);
+}
+/* 离开页面前再存一次 —— 覆盖「被送去充值页」这种非自愿跳转 */
+window.addEventListener("beforeunload", saveDraft);
+
 function throttleRender(box,getText){
   let last=0,timer=null;
   return (final)=>{
@@ -497,7 +538,6 @@ $("btnOutline").onclick=async()=>{
   try{
     await sse("/api/seo-writer/outline",{...baseBody(),
       main_keyword:mainKw, secondary_keyword:secKw, topic,
-      product_url:$("productUrl").value.trim(), product_level:$("productLevel").value,
       specific:$("specific").value, wordcounts:parseInt($("wordcounts").value||"0",10),
       language:$("language").value, enable_images:$("enableImages").checked,
       images_per_article:parseInt($("imagesPer").value,10),
@@ -509,7 +549,7 @@ $("btnOutline").onclick=async()=>{
         else if(ev.type==="facts"){ logTo("log1",ev.message); trackTo("facts"); DISC.facts=ev; renderDiscovery(); }
         else if(ev.type==="chunk"){ waitStop(); S.outline+=ev.text; paint(); }
         else if(ev.type==="done"){
-          S.sessionId=ev.session_id; S.outline=ev.outline; paint(true);
+          S.sessionId=ev.session_id; S.outline=ev.outline; paint(true); saveDraft();
           showSeal(); trackTo("approve");
           $("outlineMeta").textContent=`· 目标 ${ev.wordcounts} 词 · ${ev.topic_type}`;
           setStatus("大纲已生成，看一下：不满意就提修改意见，满意就点「通过」。");
@@ -674,6 +714,7 @@ $("btnCopy").onclick=async()=>{
   catch(e){ setStatus("复制失败，请手动选中正文复制。",true); }
 };
 $("btnRestart").onclick=()=>{
+  clearDraft();
   S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={}; S.info={}; S.pre=null;
   $("btnRevert").style.display="none";
   $("sec2").style.display="none"; $("sec3").style.display="none"; setStatus("");

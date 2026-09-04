@@ -108,6 +108,12 @@ def full_article_credits() -> int:
             + price("seo-writer", "polish"))
 
 
+# 注册赠送的默认点数。9 = 一篇不带图（大纲2+正文5+润色2）；11 是用户 2026-09-04 定的，
+# 留了 2 点余量。⚠️ 注意：**11 点不够写一篇带配图的**（1 张图要 +3 = 12 点，
+# 界面默认的 2 张要 15 点）。想让赠送额度覆盖带图的一篇，把这个数改成 12 或 15。
+SIGNUP_CREDITS_DEFAULT = 11
+
+
 def signup_credits() -> int:
     """新账户注册即送的点数，默认 = 正好够完整写一篇。
 
@@ -121,7 +127,7 @@ def signup_credits() -> int:
     raw = os.getenv("SIGNUP_CREDITS", "").strip()
     if raw.isdigit():
         return int(raw)
-    return full_article_credits()
+    return SIGNUP_CREDITS_DEFAULT
 
 
 def price(tool: str, action: str, tier: str = DEFAULT_TIER) -> int:
