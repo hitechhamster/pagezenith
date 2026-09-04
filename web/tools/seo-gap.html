@@ -224,7 +224,7 @@ async function run(){
   const target_url=$("url").value.trim();
   const keyword=$("keyword").value.trim();
   const [location_code,language_code]=REGION[$("region").value];
-  const fetch_mode=$("browser").checked?"browser":"httpx";
+  const fetch_mode="httpx";     // 服务端没有浏览器，见上方被删开关处的注释
   if(!/^https?:/.test(target_url)) return setStatus("目标网址需为 http/https。",true);
   if(!keyword) return setStatus("请填写关键词。",true);
   if(!CARD.has()){ CARD.toast("请先登录", true); CARD.onBadgeClick(); return; }
@@ -234,7 +234,7 @@ async function run(){
   let total=0, got=0;
   try{
     const resp=await fetch("/api/seo-gap/report_stream",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked})});
+      body:JSON.stringify({keyword,target_url,location_code,language_code,fetch_mode,use_tavily:false})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
     while(true){
@@ -282,7 +282,7 @@ async function runBatch(){
   const seen=new Set();
   const keywords=$("keywords").value.split("\n").map(x=>x.trim()).filter(x=>x&&!seen.has(x.toLowerCase())&&seen.add(x.toLowerCase())).slice(0,10);
   const [location_code,language_code]=REGION[$("region").value];
-  const fetch_mode=$("browser").checked?"browser":"httpx";
+  const fetch_mode="httpx";     // 服务端没有浏览器，见上方被删开关处的注释
   if(!/^https?:/.test(target_url)) return setStatus("目标网址需为 http/https。",true);
   if(!keywords.length) return setStatus("请至少输入一个关键词（每行一个）。",true);
   if(!CARD.has()){ CARD.toast("请先登录", true); CARD.onBadgeClick(); return; }
@@ -291,7 +291,7 @@ async function runBatch(){
   setStatus(`批量分析 ${keywords.length} 个关键词…结果逐块出现，请勿关闭本页。`,false,true);
   try{
     const resp=await fetch("/api/seo-gap/batch_stream",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,use_tavily:$("tavily").checked})});
+      body:JSON.stringify({keywords,target_url,location_code,language_code,fetch_mode,use_tavily:false})});
     if(!resp.ok) throw new Error("后端 "+resp.status+"："+(await resp.text()).slice(0,300));
     const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
     while(true){

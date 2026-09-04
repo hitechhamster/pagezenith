@@ -189,5 +189,13 @@ class AnalysisPipeline:
 
 def _browser_fetcher(*args, **kwargs):
     """惰性导入：只有真的选了 browser 模式才 import playwright（默认不装它）。"""
-    from .clients.browser_fetch import BrowserFetcher
+    # playwright 是可选依赖，服务端不装（见 api/requirements.txt 的注释）。
+    # 2026-09-04：前端曾默认勾「本地浏览器抓取」，于是内容差距分析每次都挂在
+    # ModuleNotFoundError（用户看到的是 "network error"）。前端已改，这里再兜一层——
+    # 任何调用方要 browser 都不该导致整个分析失败。
+    try:
+        from .clients.browser_fetch import BrowserFetcher
+    except ImportError:
+        logger.warning("请求了浏览器抓取但 playwright 未安装，降级为 httpx")
+        return PageFetcher(*args, **kwargs)
     return BrowserFetcher(*args, **kwargs)

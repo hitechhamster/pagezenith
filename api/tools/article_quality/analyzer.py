@@ -219,5 +219,11 @@ class ArticleAnalyzer:
 
 def _browser(s):
     """惰性导入 Playwright（默认部署不装它，见 requirements 注释）。"""
-    from ..seo_gap.clients.browser_fetch import BrowserFetcher
+    # playwright 是可选依赖，服务端不装。没装就降级回 httpx，
+    # 别让「从网址抓取」整个功能挂掉。
+    try:
+        from ..seo_gap.clients.browser_fetch import BrowserFetcher
+    except ImportError:
+        logger.warning("请求了浏览器抓取但 playwright 未安装，降级为 httpx")
+        return PageFetcher(s)
     return BrowserFetcher(s)

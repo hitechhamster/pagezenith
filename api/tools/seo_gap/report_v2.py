@@ -257,9 +257,9 @@ class ReportV2Builder:
         try:
             page, png = await fetcher.capture(req.target_url)
         except Exception as exc:
-            raise RuntimeError(f"目标页抓取失败（{exc}）。可勾选浏览器抓取或确认网址可访问。") from exc
+            raise RuntimeError(f"目标页抓取失败（{exc}）。请确认网址能正常打开、且没有登录墙。") from exc
         if looks_blocked(page.text) or _word_count(page.text) < 30:
-            raise RuntimeError("目标页被反爬拦截或正文为空。试试勾选浏览器抓取，或换个能正常打开的网址。")
+            raise RuntimeError("目标页被反爬拦截或正文为空。换一个能正常打开的网址，或把正文直接粘进来。")
         return page, png
 
     async def _vision(self, png) -> dict:

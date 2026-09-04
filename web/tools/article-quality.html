@@ -212,7 +212,7 @@ $("fetch").addEventListener("click",async()=>{
   if(!/^https?:/.test(u)) return setS("请输入 http/https 网址。",true);
   $("fetch").disabled=true; setS("抓取中…（本地浏览器过反爬，约 10–20 秒）");
   try{
-    const resp=await fetch("/api/article-quality/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:u,fetch_mode:"browser"})});
+    const resp=await fetch("/api/article-quality/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:u})});
     if(!resp.ok) throw new Error((await resp.json()).detail||("后端 "+resp.status));
     const d=await resp.json(); ED.value=d.text||""; render(); setS("已载入正文，可编辑或点「AI 深度分析」");
   }catch(e){ setS(String(e.message||e),true); }
