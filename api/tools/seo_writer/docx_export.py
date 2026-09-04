@@ -56,6 +56,27 @@ def _add_formatted_runs(paragraph, text: str) -> None:
             paragraph.add_run(part)
 
 
+# ── Markdown 表格识别 ───────────────────────────────────────────────
+# 模型两种写法都会吐：标准（|a|b|）和松散（a | b）。只认标准的话，松散表格会整块
+# 变成正文里的一堆管道符。判据改成「这一行有竖线，且**下一行是分隔行**」——
+# 分隔行才是 Markdown 表格真正的标志。（md.js 里的前端渲染器同款逻辑。）
+_SEP_ROW = re.compile(r"^[|\s:\-]+$")
+
+
+def _is_sep_row(line: str) -> bool:
+    t = (line or "").strip()
+    return bool(t) and "|" in t and bool(_SEP_ROW.match(t)) and "--" in t
+
+
+def _is_table_head(line: str, next_line: str) -> bool:
+    return "|" in (line or "") and _is_sep_row(next_line)
+
+
+def _split_row(row_text: str) -> list:
+    """按竖线切一行，首尾的空格和竖线都容忍。"""
+    return [c.strip() for c in row_text.strip().strip("|").split("|")]
+
+
 def build_docx(markdown_text: str, image_map: Optional[dict[str, bytes]] = None) -> bytes:
     """返回 .docx 的字节内容。image_map: {"[IMAGE: xxx]": png_bytes}"""
     doc = docx.Document()
@@ -79,15 +100,20 @@ def build_docx(markdown_text: str, image_map: Optional[dict[str, bytes]] = None)
             continue
 
         # Markdown 表格
-        if line.startswith("|") and line.endswith("|"):
+        #
+        # ⚠️ 2026-09-04 修：原本要求每行**首尾都有 `|`** 才认。但模型经常吐松散写法
+        #    （`App | Price | Best for` 配 `--- | --- | ---`，两头不带竖线），那种情况下
+        #    整张表会原样落进 Word 变成一堆管道符。前端渲染器 md.js 已经踩过同一个坑，
+        #    这里是同款修法：**靠「下一行是分隔行」来识别表头**，不再要求首尾竖线。
+        if _is_table_head(line, lines[i + 1] if i + 1 < len(lines) else ""):
             table_lines = []
-            while i < len(lines) and lines[i].strip().startswith("|") and lines[i].strip().endswith("|"):
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
                 table_lines.append(lines[i].strip())
                 i += 1
-            data_rows = [l for l in table_lines if not re.match(r"^[|\s:-]+$", l)]
+            data_rows = [l for l in table_lines if not _SEP_ROW.match(l)]
             if not data_rows:
                 continue
-            header_cols = [c.strip() for c in data_rows[0].split("|")[1:-1]]
+            header_cols = _split_row(data_rows[0])
             if not header_cols:
                 continue
             table = doc.add_table(rows=1, cols=len(header_cols))
@@ -97,7 +123,7 @@ def build_docx(markdown_text: str, image_map: Optional[dict[str, bytes]] = None)
                 _add_formatted_runs(p, h)
                 p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
             for row_text in data_rows[1:]:
-                cells = [c.strip() for c in row_text.split("|")[1:-1]]
+                cells = _split_row(row_text)
                 row = table.add_row().cells
                 for j, ct in enumerate(cells):
                     if j < len(row):
