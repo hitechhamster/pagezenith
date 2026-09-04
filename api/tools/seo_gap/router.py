@@ -12,7 +12,8 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from billing.deps import Card, charge, require_card
+from billing.deps import Card, InsufficientCredits, charge, require_card
+from billing.pricing import price
 from billing.pricing import price as _price
 
 from .config import get_settings
@@ -25,6 +26,21 @@ router = APIRouter(prefix="/api/seo-gap", tags=["seo-gap"])
 
 # 同时进行的分析数上限（公开部署防资源/账单失控）
 _sema = asyncio.Semaphore(get_settings().max_concurrent_runs)
+
+
+TOOL_NAME = "seo-gap"
+def _precheck(card: Card, action: str, credits: int | None = None) -> None:
+    """进流之前先挡掉「点数不足」。
+
+    2026-09-04：这三个流式端点原本把 charge() 写在生成器里，于是 402 是在 SSE 响应头
+    发出之后才抛的 —— Starlette 报 "response already started"，连接被掐断，
+    用户在浏览器里看到的是 `TypeError: network error`，完全不知道是余额不够。
+    在这里先检查，402 就能走正常 HTTP 状态码，前端 keys.js 会统一提示并送去充值。
+    真正的原子扣点仍在 charge() 里，并发抢点由那边的条件更新兜底。
+    """
+    need = price(TOOL_NAME, action) if credits is None else credits
+    if card.remaining < need:
+        raise InsufficientCredits(need, card.remaining)
 
 
 def _settings_for(req: ReportRequest):
@@ -67,6 +83,7 @@ async def report(req: ReportRequest, card: Card = Depends(require_card)) -> Repo
 @router.post("/report_stream")
 async def report_stream(req: ReportRequest, card: Card = Depends(require_card)):
     """流式四部分报告（SSE）：逐块产出，前端分析一个显示一个。"""
+    _precheck(card, "analyze")
     s = _settings_for(req)
 
     async def gen():
@@ -81,9 +98,12 @@ async def report_stream(req: ReportRequest, card: Card = Depends(require_card)):
                         events.append(ev)
                         yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 except Exception as exc:
+                    # 错误已经作为 SSE 事件发给用户了；这里显式退点后正常收尾。
+                    # 再 raise 的话响应头早发出去了，只会把连接掐断 → 用户看到 network error。
                     logger.exception("report_stream failed")
                     yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
-                    raise
+                    tx.refund_all()
+                    return
                 tx.set_result(title=f"内容差距：{getattr(req, 'keyword', '') or ''}",
                               summary=f"{len(events)} 条事件",
                               payload={"kind": "seo-gap", "events": events[-200:]})

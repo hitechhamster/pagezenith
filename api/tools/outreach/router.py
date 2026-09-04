@@ -9,7 +9,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from billing.deps import Card, charge, require_card
+from billing.deps import Card, InsufficientCredits, charge, require_card
+from billing.pricing import price
 
 from ..seo_gap.config import get_settings
 from .analyzer import OutreachFinder
@@ -42,6 +43,11 @@ async def health() -> dict:
 async def find_stream(req: OutreachRequest, card: Card = Depends(require_card)):
     if not req.keyword.strip() and not req.your_url.strip():
         raise HTTPException(status_code=400, detail="请填写主题关键词或目标网址。")
+    # 余额预检必须在进流之前：charge() 写在生成器里，402 会在响应头发出后才抛，
+    # 那时只能掐断连接，用户看到的是 network error 而不是"点数不足"。同 seo_gap。
+    need = price("outreach", "run")
+    if card.remaining < need:
+        raise InsufficientCredits(need, card.remaining)
     s = _settings_for(req)
 
     async def gen():
@@ -59,7 +65,9 @@ async def find_stream(req: OutreachRequest, card: Card = Depends(require_card)):
                 except Exception as exc:
                     logger.exception("outreach find failed")
                     yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
-                    raise
+                    # 同 seo_gap：错误已发给用户，退点后正常收尾，别把连接掐断
+                    tx.refund_all()
+                    return
                 tx.set_result(title=f"外链拓客：{req.keyword or req.your_url}",
                               summary=f"{len(events)} 条事件",
                               payload={"kind": "outreach", "events": events[-200:]})

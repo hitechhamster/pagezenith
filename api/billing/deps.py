@@ -151,6 +151,7 @@ class Charge:
     # 配图单独记：图片不按 token 计价，混进 _usage 会被按文本单价算错
     _images: dict[str, int] = field(default_factory=dict)
     _result: Optional[dict[str, Any]] = None
+    _refunded: bool = False
 
     def report_tokens(self, model: str, tokens_in: int, tokens_out: int) -> None:
         """累加真实用量。同一次请求里每个模型各记一桶。"""
@@ -189,6 +190,19 @@ class Charge:
     def set_result(self, *, title: str, summary: str = "", payload: dict[str, Any]) -> None:
         self._result = {"title": title, "summary": summary, "payload": payload}
 
+    def refund_all(self) -> None:
+        """全额退点并把流水标成 refunded，且告诉 charge() 别再 finalize。
+
+        专给**流式端点**用：SSE 的响应头在第一个事件就发出去了，之后再让异常穿出去，
+        Starlette 只能报 "response already started" 并把连接掐断 —— 浏览器那头看到的是
+        `TypeError: network error`，用户完全不知道发生了什么（2026-09-04 用户实测反馈）。
+        所以流式路径要「把错误当成一个 SSE 事件发给用户，然后自己把钱退了，正常收尾」，
+        而不是靠抛异常触发 charge() 的退点。
+        """
+        if self.usage_id is not None and not self._refunded:
+            store.refund(self.usage_id)
+            self._refunded = True
+
     def refund_credits(self, credits: int) -> int:
         """退掉本次预扣里没交付的那部分（比如配图失败）。返回实际退了多少点。"""
         if self.usage_id is None or credits <= 0:
@@ -224,7 +238,7 @@ async def charge(card: Card, tool: str, action: str, tier: str = "basic",
             store.refund(tx.usage_id)
         raise
     else:
-        if tx.usage_id is not None:
+        if tx.usage_id is not None and not tx._refunded:
             store.finalize_usage(tx.usage_id, model=tx.model_label,
                                  tokens_in=tx.tokens_in, tokens_out=tx.tokens_out,
                                  est_cost=tx.cost_cny)
