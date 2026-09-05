@@ -275,105 +275,114 @@ def invented_assertions(text: str, allowed: set[str]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-_BOOST_SECTION = """Rewrite this one section of an article so that it carries real, checkable
-information instead of positioning statements.
+_BOOST_ADDENDUM = """Write an ADDITION to one section of an article. The section is thin on concrete,
+checkable information; your job is to supply what it is missing, not to rewrite it.
+
+Output ONLY a compact markdown block to be appended to the end of the section:
+a table (2-4 columns) or a bullet list of concrete items — between {need_new} and {max_new} items,
+and no more than {max_words} words in total. Short cells, no explanations inside the table.
+Each item must be something a reader can act on or verify: an exact value with units,
+a model / product / tool name, a menu path or file name, a threshold, a specific failure symptom.
 
 Hard rules:
+- Do NOT repeat anything already in the section (listed below). New items only.
+- No headings (no # lines), no introduction sentence, no closing sentence. Block only.
 - Statistics are locked: do NOT introduce any percentage, price, bounce rate, sample size,
   or "studies show / according to" claim that is not already in the reference material below.
-- Concrete operating values ARE wanted: exact upload dimensions, size thresholds, counts
-  per page, timeout seconds, target metric values, menu paths, file and setting names.
-  Use your own expertise for these and state them as recommendations, not as findings
-  ("upload the hero image at no more than 1600 px wide", not "studies show 1600 px is optimal").
-- Keep the same heading, the same language, and roughly the same length ({words} words ±20%).
-- Prefer concrete specifics: exact setting names, file names, menu paths, parameter values,
-  units, thresholds, failure symptoms. Those are what the reader came for.
-- Do NOT invent first-hand experience ("we recently audited a store that…"). You have none.
-- Output the rewritten section only — no preamble, no explanation.
+  Concrete operating values from your own expertise are fine, stated as recommendations.
+- Same language as the section.
 
-## Reference material (the only source of facts you may use)
+## Items the section already has (do not repeat)
+{have_list}
+
+## Reference material (the only source of statistics you may use)
 {material}
 
-## Section to rewrite
+## The section
 {section}"""
 
 
 async def boost_thin_sections(text: str, report: dict, facts: str, material: str,
                               complete: Optional[CompleteFn],
-                              max_sections: int = 3) -> tuple[str, list[str]]:
-    """把检测器判为「空转」的小节定向重写一遍，改完再测，没变好就原样退回。
+                              max_sections: int = 4,
+                              sections: Optional[list[str]] = None) -> tuple[str, list[str]]:
+    """给检测器判为「空转」的小节**追加**一块具体信息，原文一个字不动。
 
-    和塞词修复同一个套路：**验证闭环代替信任**。密度这件事没法纯代码修
-    （硬信息不能凭空造），所以只能调模型；但调完必须验证：
-      ① 证据密度真的涨了；② 没有引入事实清单和资料之外的新数字；③ 篇幅没崩。
-    三条有一条不过就丢弃这次重写 —— 宁可保持原样，也不能为了指标好看而编数字。
-
-    最多修三节，成本压在 ¥0.015 量级以内。
+    2026-09-05 从「整节重写」改成「只加不换」。重写版实测 8 次补写落地 0 次：
+    模型一重写就会重排小标题（结构护栏拒 2 次）、把 0.1/0.2/0.3 mm 折成一句"thin to thick"
+    （保留护栏拒 4 次）—— 两道护栏都对，是重写这个动作本身和"加东西"的目标打架。
+    附加块从构造上就不可能丢原文、不可能动标题，剩下的检查只有三条：
+      ① 真的加了 ≥3 条新单元；② 没编统计；③ 篇幅没飞（≤1.6×）。
+    仍然是验证闭环：一条不过就整块丢弃。最多修四节，¥0.02/篇量级。
     """
-    thin = (report.get("density") or {}).get("thin") or []
+    # sections 显式指定就按它来（整篇低于竞品时，点名最稀的几节局部补，而不是重跑）；
+    # 不指定就按检测器判的薄节。
+    thin = sections if sections is not None else ((report.get("density") or {}).get("thin") or [])
     if not thin or complete is None or not text:
         return text, []
-
+    per100 = float(((report.get("target") or {}).get("per100")) or 4.0)
     allowed = _facts_numbers(facts) | _facts_numbers(material)
     changes: list[str] = []
+    # 全文篇幅预算：补写总共最多加两成。实测 3PL 三块附加表把 2280 词撑到 2956（+30%），
+    # 会把用户定的字数目标顶成"偏多"。预算用完就停，剩下的薄节留给用户看提示。
+    budget = int(0.2 * density_audit.word_count(text))
+    added = 0
     for head, body in density_audit.sections(text):
-        if head not in thin or len(changes) >= max_sections:
+        if head not in thin or len(changes) >= max_sections or added >= budget:
             continue
-        # sections() 返回的 body 自带前导换行，别再补一个 —— 补了就跟原文对不上，
-        # replace 静默失败，却照样往 changes 里记一笔「已补写」。
-        # (intro) 是虚构的节名（H1 到第一个 H2 之间那段），它在原文里没有对应的标题行，
-        # 拼上 "## (intro)" 必然定位失败 —— 实测日志里就是这么报的。
         is_intro = head == "(intro)"
         if is_intro:
-            # (intro) 那一块是从文首到第一个 H2 之间的全部内容，**H1 标题也在里面**。
-            # 连 H1 一起交给模型重写，它不会原样还回来，结构守卫就会把整次补写毙掉
-            # （实测日志：「补写「(intro)」改变了标题结构，已丢弃」）。把 H1 摘出去。
             m = re.match(r"\A\s*#\s+.*(?:\n|$)\s*", body)
             block = body[m.end():] if m else body
         else:
             block = f"## {head}{body}"
-        if density_audit.word_count(block) < 60:
-            continue
         words = density_audit.word_count(block)
+        if words < 60:
+            continue
+        old_units = density_audit._evidence_units(block)
+        need_new = max(3, int(per100 * words / 100) - len(old_units))
+        # 篇幅上限先算好告诉模型：实测白鞋那篇七个薄节五个被"篇幅跑偏"拒掉 ——
+        # 短节配了一张十几行的大表。给它条数区间和词数上限，落地率才上得去。
+        max_words = int(max(0.6 * words, 220))
+        if added + max_words > budget:            # 这块补完会超预算 → 不开工，别事后才发现
+            continue
         try:
             raw = await complete(
-                _BOOST_SECTION.format(words=words, material=material[:12000], section=block),
+                _BOOST_ADDENDUM.format(need_new=need_new, max_new=need_new + 6, max_words=max_words,
+                                       have_list="\n".join(f"- {u}" for u in sorted(old_units)[:40]) or "- (none)",
+                                       material=material[:12000], section=block),
                 task="polish", temperature=0.3)
         except Exception:  # noqa: BLE001  补写失败不该拖垮整篇交付
             continue
-        new = (raw or "").strip()
-        if is_intro:
-            new = re.sub(r"^#{1,6}\s+.*$", "", new, count=1, flags=re.M).lstrip()
-        elif not new.startswith("#"):
-            new = f"## {head}\n{new}"
-        # 把原块尾部的空行原样接回去。不接的话下一个 "## " 会紧贴在句号后面
-        # （实测产出过 "...reducing asset sizes.## How to make a Shopify store..."），
-        # markdown 里那就不是标题了，整篇结构从这里开始塌。
-        new += block[len(block.rstrip()):] or "\n\n"
+        add = re.sub(r"^```[a-z]*\s*|\s*```$", "", (raw or "").strip()).strip()
+        # 附加块里绝不能有标题：有就整块不要，别去"修"它
+        add = "\n".join(l for l in add.split("\n") if not re.match(r"^\s*#{1,6}\s", l)).strip()
+        if not add:
+            continue
+        trailing = block[len(block.rstrip()):] or "\n\n"
+        new = block.rstrip() + "\n\n" + add + trailing
 
-        before = density_audit.density(block)["evidence_per100"]
-        after = density_audit.density(new)["evidence_per100"]
+        gained = density_audit._evidence_units(new) - old_units
+        invented = invented_assertions(add, allowed | {_norm(y) for y in _NUM.findall(block)})
         n_new = density_audit.word_count(new)
-        invented = invented_assertions(new, allowed | {_norm(y) for y in _NUM.findall(block)})
-        if after <= before or invented or not (0.75 * words <= n_new <= 1.25 * words):
+        # 篇幅上限：与告诉模型的 max_words 对齐再留一成余量。
+        # 短节配一张表本来就会超 1.6 倍，实测白鞋那篇七个薄节五个因此被拒，而那正是最该补的地方。
+        too_long = n_new > words + max_words * 1.1
+        if len(gained) < 3 or invented or too_long:
             reason = ("编了新数字 " + "、".join(invented[:3]) if invented
-                      else "密度没提升" if after <= before else "篇幅跑偏")
+                      else "篇幅跑偏" if too_long
+                      else f"只加了 {len(gained)} 条")
             logger.info("补写「%s」已丢弃：%s", head, reason)
             continue
-        # 只有真的替换成功才记账 —— 报告"改了什么"必须是实际发生的事
         replaced = text.replace(block, new, 1)
         if replaced == text:
             logger.warning("补写「%s」未能定位原文，已跳过", head)
             continue
-        # 结构守卫：标题数一个都不许变。实测踩过 —— 补写块尾部少了个换行，
-        # 下一个 "## " 紧贴到句号后面（"...asset sizes.## How to..."），
-        # 那一行就不再是标题，整篇的 H2 结构从这里塌一半。
-        if [len(re.findall(p, replaced, re.M)) for p in (r"^#{1,6} ",)] != \
-           [len(re.findall(p, text, re.M)) for p in (r"^#{1,6} ",)]:
-            logger.warning("补写「%s」改变了标题结构，已丢弃", head)
-            continue
+        before = density_audit.density(block)["evidence_per100"]
+        after = density_audit.density(new)["evidence_per100"]
         text = replaced
-        changes.append(f"补写空转小节「{head[:32]}」：证据密度 {before}→{after}/100词")
+        added += n_new - words
+        changes.append(f"补写空转小节「{head[:32]}」：+{len(gained)} 条具体信息，证据密度 {before}→{after}/100词")
     return text, changes
 
 
@@ -457,6 +466,25 @@ def dedupe_repeated_stats(text: str) -> tuple[str, list[str]]:
     return "".join(out_secs), changes
 
 
+def weakest_sections(report: dict, limit: int = 3) -> list[str]:
+    """整篇密度不达标时该补哪几节：证据密度最低的几节（FAQ 不算，它天然是复述）。"""
+    rows = (report.get("density") or {}).get("sections") or []
+    rows = [r for r in rows if r.get("words", 0) >= 80
+            and not re.search(r"(?i)^(frequently asked|faq|常见问题)", r.get("head", ""))]
+    rows.sort(key=lambda r: r.get("per100", 0))
+    return [r["head"] for r in rows[:limit]]
+
+
+def density_short(report: dict, tolerance: float = 0.8) -> bool:
+    """整篇证据密度是否低于竞品中位数的 tolerance（默认 80%，即差 20% 以上就打标）。
+    没有竞品基线就不打标 —— 拿不到锚点的时候不给结论。"""
+    bench = report.get("benchmark") or {}
+    if not bench.get("measurable"):
+        return False
+    mine = (report.get("density") or {}).get("evidence_per100") or 0
+    return mine < tolerance * float(bench.get("median") or 0)
+
+
 async def ensure_paa_coverage(text: str, report: dict, material: str, language: str,
                               complete: Optional[CompleteFn]) -> tuple[str, list[str]]:
     """搜索页的子问题一个都不能漏 —— 正文没答到的，补一个 FAQ 小节答掉。
@@ -497,6 +525,165 @@ async def ensure_paa_coverage(text: str, report: dict, material: str, language: 
                        + "；".join(q[:36] for q in missing[:3])]
 
 
+# --------------------------------------------------------------------------- #
+# ④ 三个句子级的局部修：开头空转 / H2 首句接上文 / 标题体裁
+#    规矩（用户 2026-09-05）：每处最多三轮，不行就算了；差不多就算过关。
+#    这三处各只改**一次** —— 都是一句话或一段话的事，改一次不成说明模型就是这么想的，
+#    再逼两轮只会换个说法重复失败。
+# --------------------------------------------------------------------------- #
+#: 全流程局部修的总轮数上限（密度补写：薄节一轮 + 整篇不达标最多再两轮）
+MAX_FIX_ROUNDS = 3
+
+_LEAD_REWRITE = """Rewrite ONLY the opening paragraph of this article so that its first two sentences
+deliver the most concrete, actionable answer the article contains. The first two sentences MUST
+contain at least one specific value with units (a temperature, a size, a time, a quantity, a
+setting) or an exact tool / product / file name — the reader should be able to act on them
+without reading further. No scene-setting, no "in today's world", no restating the title.
+Keep every concrete item already in the paragraph. Same language, same or shorter length.
+Statistics are locked: no new percentage, price, or "studies show" claim.
+Output the rewritten paragraph only.
+
+Paragraph:
+{para}"""
+
+_SELF_CONTAINED = """Rewrite this single sentence so it can stand alone as the first sentence of a
+section titled "{head}": name the subject explicitly instead of "this / that / it / they / as
+mentioned", keep every fact and number, same language, similar length. Output the sentence only.
+
+Sentence: {sent}"""
+
+_TITLE_SHAPE = """Rewrite this article title so it reads as {hint}, while keeping the phrase
+"{kw}" in it. 6-12 words, sentence case, no quotes. Output the title only.
+
+Title: {h1}"""
+_SHAPE_HINT = {
+    "how_to": "a how-to guide (starts with 'How to …')",
+    "listicle": "a numbered list ('7 ways to …' / '10 best …')",
+    "comparison": "a head-to-head comparison ('A vs B: …')",
+    "definition": "an explainer ('What is … and …')",
+    "tool": "a practical guide ('How to … with …')",
+}
+
+
+async def fix_opening_gap(text: str, material: str, complete: Optional[CompleteFn],
+                          max_gap: int = 120) -> tuple[str, list[str]]:
+    """开头 120 词之内没有任何可照做的信息 → 只重写第一段，让它两句内给出答案。
+
+    验证：空转词数真的变小、没编统计、没丢原段里的具体信息、没变长。一条不过就丢。
+    """
+    if complete is None or not text:
+        return text, []
+    gap = density_audit.density(text)["opening_gap"]
+    if gap <= max_gap:
+        return text, []
+    # 找**第一个散文块**，不是"H1 后面那一块"：实测白鞋那篇 H1 下面直接是 H2，
+    # 没有导语，第一段正文在 H2 底下。跳过标题 / 表格 / 列表 / 图片占位，
+    # 但 "**粗体开头**" 的段落是正文，不能按首字符一刀切跳掉。
+    m2 = None
+    for cand in re.compile(r"\S.*?(?=\n\s*\n|\Z)", re.S).finditer(text):
+        if _STRUCT_LINE.match(cand.group(0)):
+            continue
+        if density_audit.word_count(cand.group(0)) >= 25:
+            m2 = cand
+            break
+        if cand.start() > 1500:
+            break
+    if not m2:
+        return text, []
+    para = m2.group(0)
+    try:
+        raw = await complete(_LEAD_REWRITE.format(para=para), task="polish", temperature=0.3)
+    except Exception:  # noqa: BLE001
+        return text, []
+    new = re.sub(r"^```[a-z]*\s*|\s*```$", "", (raw or "").strip()).strip()
+    if not new or re.search(r"^\s*#", new, re.M):
+        return text, []
+    allowed = _facts_numbers(material) | {_norm(y) for y in _NUM.findall(para)}
+    if invented_assertions(new, allowed):
+        logger.info("开头改写已丢弃：编了统计")
+        return text, []
+    old_units = density_audit._evidence_units(para)
+    if old_units and len(density_audit.lost_units(para, new)) > 0.2 * len(old_units):
+        logger.info("开头改写已丢弃：丢了原有具体信息")
+        return text, []
+    if density_audit.word_count(new) > 1.2 * density_audit.word_count(para):
+        logger.info("开头改写已丢弃：变长了")
+        return text, []
+    candidate = text[:m2.start()] + new + text[m2.end():]
+    gap2 = density_audit.density(candidate)["opening_gap"]
+    # 要么进到 120 词以内，要么至少砍一半；381→357 这种"改了但没改到"不收（一次不成就算了）
+    if not (gap2 <= max_gap or gap2 <= gap * 0.5):
+        logger.info("开头改写已丢弃：空转没实质缩短（%d→%d）", gap, gap2)
+        return text, []
+    return candidate, [f"开头改成先给答案：第一个可照做的信息从第 {gap} 词提前到第 {gap2} 词"]
+
+
+async def fix_orphan_h2(text: str, complete: Optional[CompleteFn],
+                        max_heads: int = 3) -> tuple[str, list[str]]:
+    """H2 首句靠 This / 因此 接上文 → 单句改写成自足的，最多改三节。
+    验证：改完不再以指代词开头、句里的具体信息一个不少。"""
+    if complete is None or not text:
+        return text, []
+    orphans = density_audit.structural_readability(text)["orphan_h2"][:max_heads]
+    if not orphans:
+        return text, []
+    changes: list[str] = []
+    cjk = prose_audit.is_cjk(text)
+    for head in orphans:
+        body = dict(density_audit.sections(text)).get(head, "")
+        sents = prose_audit.split_sentences(body, cjk)
+        if not sents:
+            continue
+        first = sents[0].strip()
+        if first not in body:
+            continue
+        try:
+            raw = await complete(_SELF_CONTAINED.format(head=head, sent=first),
+                                 task="polish", temperature=0.2)
+        except Exception:  # noqa: BLE001
+            continue
+        new = _clean_llm_line(raw)
+        if (not new or density_audit._ANAPHORA.match(new)
+                or density_audit.lost_units(first, new)
+                or len(new.split()) > 1.5 * max(len(first.split()), 4)):
+            logger.info("H2「%s」首句改写已丢弃", head)
+            continue
+        new_body = body.replace(first, new, 1)
+        text = text.replace(body, new_body, 1)
+        changes.append(f"「{head[:32]}」首句改成自足的")
+    return text, changes
+
+
+async def fix_title_shape(text: str, report: dict, keyword: str,
+                          complete: Optional[CompleteFn]) -> tuple[str, list[str]]:
+    """标题体裁和搜索页主流体裁不符（一票否决项）→ 只改 H1，改一次。
+    验证：新标题的体裁落在搜索页主流体裁里、关键词还在。正文结构不动 —— 那不是局部修能管的。"""
+    intent = report.get("intent") or {}
+    if complete is None or intent.get("shape_match", True) or not intent.get("serp_shapes"):
+        return text, []
+    m = re.search(r"^#\s+(.+)$", text or "", re.M)
+    if not m:
+        return text, []
+    h1 = m.group(1).strip()
+    shape = intent["serp_shapes"][0]
+    try:
+        raw = await complete(_TITLE_SHAPE.format(hint=_SHAPE_HINT.get(shape, "a how-to guide"),
+                                                 kw=keyword, h1=h1), task="polish", temperature=0.3)
+    except Exception:  # noqa: BLE001
+        return text, []
+    new = _clean_llm_line(raw).strip("#").strip()
+    if not new or not (density_audit._shapes_of(new) & set(intent["serp_shapes"])):
+        logger.info("标题体裁改写已丢弃：仍不匹配")
+        return text, []
+    if keyword and keyword.lower() not in new.lower() and not all(
+            w in new.lower() for w in re.findall(r"[a-z]{4,}", keyword.lower())[:2]):
+        logger.info("标题体裁改写已丢弃：关键词丢了")
+        return text, []
+    text = text[:m.start(1)] + new + text[m.end(1):]
+    return text, [f"标题改成搜索页的体裁（{shape}）：「{new[:48]}」"]
+
+
+
 async def postfix(text: str, keywords: list[str], facts: str,
                   complete: Optional[CompleteFn],
                   report: Optional[dict] = None,
@@ -506,7 +693,12 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t2, c2 = await fix_keyword_stuffing(t1, keywords, complete)
     if not report:
         return t2, c1 + c2
+    changes = c1 + c2
     t3, c3 = await boost_thin_sections(t2, report, facts, material, complete)
     t4, c4 = await ensure_paa_coverage(t3, report, material, language, complete)
     t5, c5 = dedupe_repeated_stats(t4)
-    return t5, c1 + c2 + c3 + c4 + c5
+    # 句子级的三个局部修，各只改一次
+    t6, c6 = await fix_opening_gap(t5, material, complete)
+    t7, c7 = await fix_orphan_h2(t6, complete)
+    t8, c8 = await fix_title_shape(t7, report, (keywords or [""])[0], complete)
+    return t8, changes + c3 + c4 + c5 + c6 + c7 + c8

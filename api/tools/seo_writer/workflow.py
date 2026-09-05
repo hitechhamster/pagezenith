@@ -85,10 +85,13 @@ def reading_grade(article: str, language: str) -> Optional[float]:
     """
     if not (language or "").lower().startswith("english"):
         return None
-    body = IMAGE_TAG.sub("", article or "")
+    # 与 density_audit 同一套预处理：表格单元格当独立短句。
+    # 以前把 "|" 换成空格，一整张表变成一个几十词的"句子"，FK 被抬到 14 —— 同一篇文章
+    # 成绩单上显示 10.4，润色却按 14.3 判成全量重写，多压掉一成篇幅。
+    body = density_audit._body(article or "")
     body = re.sub(r"^#{1,6}\s+", "", body, flags=re.MULTILINE)   # 标题不参与计算
     body = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", body)          # 链接只留锚文本
-    body = body.replace("**", "").replace("|", " ")
+    body = body.replace("**", "")
     try:
         import textstat
         return round(textstat.flesch_kincaid_grade(body), 1)
@@ -297,7 +300,10 @@ class SEOWriter:
         不会给模型留一个空标题。
         """
         corpus = "\n".join(x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
-        brief = density_audit.gap_brief(corpus, ctx.get("main_keyword", ""))
+        wc = writing_target(ctx.get("wordcounts") or 0)
+        h2 = len(re.findall(r"^##\s", ctx.get("outline") or "", re.M)) or 5
+        brief = density_audit.gap_brief(corpus, ctx.get("main_keyword", ""),
+                                        wordcount=wc, h2_count=h2)
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
 
     # ------------------------------------------------------------ 主题分类
@@ -418,6 +424,17 @@ class SEOWriter:
         }
 
     @staticmethod
+    def polish_lost_units(before: str, after: str) -> list[str]:
+        """润色弄丢的硬信息（参数 / 专名 / 带出处的统计）。
+
+        润色只准改表达，不准删信息 —— 但实测 3PL 那篇全量润色砍掉 15% 篇幅，
+        信息增益从 0.56 掉到 0.46。可读性是加分项，硬信息才是这篇文章的货。
+        用去空白的子串匹配，不要求逐字同位 —— 换个说法、"40 kHz"写成"40kHz"都没关系，
+        东西还在就行。
+        """
+        return density_audit.lost_units(before, after)
+
+    @staticmethod
     def polish_added_numbers(before: str, after: str) -> list[str]:
         """润色**新增**了哪些数字。空列表 = 合规。
 
@@ -501,7 +518,7 @@ class SEOWriter:
         return "full", "非中英文"
 
     def stream_polish(self, ctx: dict[str, Any], article: str,
-                      strict: bool = False) -> AsyncIterator[str]:
+                      strict: bool = False, keep: list[str] | None = None) -> AsyncIterator[str]:
         """润色。两档力度：
 
         - **full**：整篇改写到「12 年级能读懂」（输入偏难时）
@@ -545,6 +562,9 @@ class SEOWriter:
             voice_polish=_voice_instructions(ctx, "polish"))
         if strict:
             prompt += P.POLISH_STRICT_RETRY
+        if keep:
+            # 上一轮润色弄丢的具体信息，这一轮点名要求原样保留（与 strict 一样是重试路径）
+            prompt += P.POLISH_KEEP_UNITS.format(units="\n".join(f"- {u}" for u in keep[:40]))
         return self.llm.stream(prompt, task="polish")
 
     # ----------------------------------------------------------- SEO 元数据

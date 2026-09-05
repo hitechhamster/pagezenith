@@ -84,6 +84,8 @@ def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
         # 锚点：竞品页面的密度中位数。用户不懂 4.9/100词，但懂"竞品 2.8、你 4.9"
         "competitor_density": bench.get("median") if bench.get("measurable") else None,
         "competitor_pages": bench.get("pages", 0),
+        # 打标规则（用户定）：证据密度低于竞品中位数 20% 以上才标；没基线不标
+        "density_flag": postfix.density_short(report),
         "veto": veto, "veto_reasons": intent.get("reasons") or [],
         "density": den.get("per100"), "evidence": den.get("evidence_per100"),
         "opening_gap": den.get("opening_gap"),
@@ -367,6 +369,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 job.emit({"type": "step", "key": "seo", "message": "生成 SEO 标题与描述…"})
                 seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])
                 job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
+                h1_at_seo = extract_h1(text)
 
                 image_map: dict[str, bytes] = {}
                 if n_images:
@@ -418,6 +421,32 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                                           + ("…" if len(fixes) > 3 else ""))})
                     # 补写过就重算 —— 推给用户的必须是成品的分数，不是补写前的
                     report = density_audit.audit(text, **q_kwargs)
+
+                # 整篇密度仍低于竞品中位数 20% 以上 → 局部再补一轮（挑最稀的三节），不重跑。
+                # 用户 2026-09-05 定的规矩：没达标就局部修，重跑是浪费。
+                # 最多再两轮（薄节那轮算第一轮，总共不超过 postfix.MAX_FIX_ROUNDS）；
+                # 一轮一条都没落地就停 —— 再逼也是同样的失败。
+                for _round in range(postfix.MAX_FIX_ROUNDS - 1):
+                    if not postfix.density_short(report):
+                        break
+                    weak = postfix.weakest_sections(report)
+                    job.emit({"type": "step", "key": "postfix",
+                              "message": (f"信息密度低于竞品 20% 以上，局部补写最稀的 "
+                                          f"{len(weak)} 节（第 {_round + 2} 轮）…")})
+                    text, more = await postfix.boost_thin_sections(
+                        text, report, ctx.get("facts", ""),
+                        ctx.get("facts", "") + "\n" + serp_corpus, wf.llm.complete,
+                        sections=weak)
+                    if not more:
+                        break
+                    fixes += more
+                    job.emit({"type": "step", "key": "postfix",
+                              "message": "局部补写 " + "；".join(f[:44] for f in more[:3])})
+                    report = density_audit.audit(text, **q_kwargs)
+                # 标题被体裁修改过就重出一次 SEO 元数据，别让 SEO Title 和 H1 对不上
+                if extract_h1(text) and extract_h1(text) != h1_at_seo:
+                    seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])
+                    job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
                 job.emit({"type": "quality", **_quality_payload(report)})
 
                 docx_bytes = build_docx(text, image_map)
@@ -506,6 +535,33 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                         job.emit({"type": "step", "key": "polish",
                                   "message": f"重试仍破坏结构（{broke2}），已保留润色前的版本，本次不扣点。"})
                         raise PolishStructureError(broke2)
+
+                # 信息护栏：润色只准改表达，不准删货。实测 3PL 那篇全量润色砍掉 15% 篇幅，
+                # 信息增益 0.56→0.46。丢得多就点名重来一次；还丢就退还原稿、退点 ——
+                # 可读性是加分项，硬信息才是用户花钱买的东西。
+                total_units = len(density_audit._evidence_units(before))
+                lost = wf.polish_lost_units(before, text)
+                # 十条硬信息丢一条以上就算删货（下限 3 条，短文别误伤）
+                if total_units >= 10 and len(lost) > max(3, 0.10 * total_units):
+                    job.emit({"type": "step", "key": "polish",
+                              "message": (f"润色删掉了 {len(lost)} 条具体信息"
+                                          f"（{'、'.join(lost[:3])}…），正在点名保留重试…")})
+                    job.emit({"type": "reset"})
+                    buf = []
+                    async for piece in wf.stream_polish(ctx, before, keep=lost):
+                        buf.append(piece)
+                        job.emit({"type": "chunk", "text": piece})
+                    text2 = "".join(buf)
+                    lost2 = wf.polish_lost_units(before, text2)
+                    if (not wf.polish_broke_structure(before, text2)
+                            and not wf.polish_added_numbers(before, text2)
+                            and len(lost2) <= max(3, 0.10 * total_units)):
+                        text = text2
+                    else:
+                        job.emit({"type": "step", "key": "polish",
+                                  "message": (f"重试仍丢 {len(lost2)} 条具体信息，"
+                                              f"已保留润色前的版本，本次不扣点。")})
+                        raise PolishStructureError(f"润色丢失 {len(lost2)} 条硬信息")
 
                 actual = count_words(text)
                 level, wc_msg = wordcount_status(actual, ctx.get("wordcounts", 0))

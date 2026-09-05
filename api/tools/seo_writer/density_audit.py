@@ -57,11 +57,37 @@ _PARAM = re.compile(
     r"""|(?:\b[\w-]+\.(?:js|css|liquid|json|html|png|jpe?g|webp|avif|svg|mp4|txt|xml)\b)"""
 )
 
-#: 带单位的数值 = 参数（"2.5 seconds"、"1600 pixels"、"300KB"）。读者照着设。
+#: 带单位的数值 = 参数（"2.5 seconds"、"1600 pixels"、"40 kHz"、"1 tbsp"）。读者照着设。
+#:
+#: 2026-09-05 实测三篇非网页题材（工业超声波清洗机 / 3PL / 白鞋清洗）：单位表只认
+#: ms/KB/px 这类 web 单位，"204 gallons""40kHz""60°C""90 PSI""1 tbsp""30 minutes"
+#: 一个都不算，工业买家文密度算出 1.2，开头空转算成整篇 —— 那是检测器瞎，不是文章空。
+#: 所以单位表按题材分组补全：数据/网页、物理量、商业量、厨房量、时间。
 _NUM_UNIT = re.compile(
     r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?"
-    r"(ms|kb|mb|gb|px|pixels?|seconds?|milliseconds?|megabytes?|kilobytes?|items?|"
-    r"monitors?|columns?|rows?|秒|毫秒|像素|个|条|列)\b", re.I)
+    r"("
+    # 数据 / 网页
+    r"ms|kb|mb|gb|tb|px|pixels?|seconds?|milliseconds?|megabytes?|kilobytes?|gigabytes?|"
+    r"items?|monitors?|columns?|rows?|fps|dpi|"
+    # 物理量：频率、功率、电、体积、长度、温度、压力、重量、速度
+    # 单字母单位只留不会撞上普通英文的：a（"1 a day"）和 in（"3 in 10 sellers"）不收
+    r"k?hz|k?w|kwh|v|amps?|watts?|volts?|"
+    r"l|ml|liters?|litres?|gal|gallons?|fl\.? ?oz|oz|ounces?|cc|m3|"
+    r"mm|cm|m|km|meters?|metres?|inch|inches|ft|feet|foot|yd|yards?|"
+    r"°\s?[cf]|degrees?(?: [cf])?|celsius|fahrenheit|"
+    r"psi|bar|kpa|mpa|"
+    r"mg|g|kg|grams?|kilograms?|lbs?|pounds?|tons?|tonnes?|"
+    r"mph|km/h|rpm|"
+    # 商业 / 运营量
+    r"orders?|skus?|units?|pallets?|packages?|shipments?|pieces?|pcs|"
+    r"words?|characters?|pages?|"
+    # 厨房 / 家用量
+    r"tbsp|tsp|tablespoons?|teaspoons?|cups?|drops?|scoops?|"
+    # 时间
+    r"mins?|minutes?|hours?|hrs?|days?|weeks?|months?|years?|"
+    # 中文
+    r"秒|毫秒|像素|个|条|列|升|毫升|克|千克|公斤|米|厘米|毫米|度|分钟|小时|天|周|月|年"
+    r")\b", re.I)
 
 #: 论据统计 = 用来论证、不是用来照着设的数（百分比、金额、拼写数字、无单位大数）。
 #: 计入信息密度，**不计入证据密度** —— 用户判「B 开头 320 词是立场铺垫、无硬信息」，
@@ -243,6 +269,37 @@ def sourced_stats(text: str) -> set[str]:
     return out
 
 
+def squash(s: str) -> str:
+    """去空白小写化，用于"这个单元还在不在文里"的判断。
+    单元是按 "40 khz" 归一化存的，正文里可能写成 "40kHz" —— 不压掉空白就会误报丢失
+    （实测两处护栏都因此误拒过：只加不减的补写被判"丢了 1.0 mm"）。"""
+    return re.sub(r"\s+", "", (s or "").lower())
+
+
+_NUM_LEAD = re.compile(r"^(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*[a-z°%]")
+
+
+def lost_units(before: str, after: str) -> list[str]:
+    """before 里有、after 里找不到的证据单元。
+
+    数值型单元（"1 tablespoon"、"15 minutes"、"0.2 mm"）只认**数字还在不在**：
+    改写成 "1 tbsp"、"15 min"、折进 "0.1–0.3 mm" 的区间都算保留。
+    实测这条闸把 4 次补写拒了 3 次，拒的理由全是这种同义改写 —— 那是误杀，不是保护。
+    名称型单元（产品名、路径、文件名）仍按去空白子串严格比。
+    """
+    low = squash(after)
+    nums = set(re.findall(r"\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?", after or ""))
+    out = []
+    for u in _evidence_units(before):
+        if squash(u) in low:
+            continue
+        m = _NUM_LEAD.match(u)
+        if m and m.group(1) in nums:
+            continue
+        out.append(u)
+    return sorted(out)
+
+
 def _evidence_units(text: str) -> set[str]:
     """证据档 = 参数 + 专名 + **带出处的统计**。
 
@@ -358,7 +415,9 @@ def intent_coverage(article: str, serp: dict[str, Any], keyword: str = "") -> di
     reasons = []
     if not shape_match:
         reasons.append(f"SERP 主流形态是 {sorted(dominant)}，本文是 {sorted(mine)}")
-    if ratio is not None and ratio < 0.5:
+    # 一票否决只在"问题不少于两个、答到的不到一半"时触发。只有一个问题没答到，
+    # 那是漏了一处，不是文章写错了方向（用户：差不多就算过关）。
+    if ratio is not None and ratio < 0.5 and len(questions) >= 2:
         reasons.append(f"SERP 相关子问题只覆盖 {len(hit)}/{len(questions)}")
     return {"serp_shapes": sorted(dominant), "article_shapes": sorted(mine),
             "shape_match": shape_match, "questions": questions, "off_topic": dropped,
@@ -409,11 +468,14 @@ def sections(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def density(text: str) -> dict[str, Any]:
+def density(text: str, floor: float = 3.0) -> dict[str, Any]:
     """绝对密度 + 分节明细 + 开头空转 + 跨节重复。
 
     分节明细才是能拿来改的东西：总分 8.0 但某一节 0.9，要改的是那一节，
     不是让模型「整体再具体一点」。
+
+    floor = "薄节"的判定线。默认 3.0；audit() 会按竞品基线传一个相对值进来 ——
+    固定 3.0 的问题是补写救到 3.0 就停手，而竞品在 3.5–6。
     """
     u = hard_units(text)
     words = max(word_count(text), 1)
@@ -450,9 +512,8 @@ def density(text: str) -> dict[str, Any]:
             "param": len(u["param"]), "entity": len(u["entity"]), "stat": len(u["stat"]),
             "evidence": evid, "evidence_per100": round(evid / words * 100, 2),
             "opening_gap": gap, "gzip_bits": round(gz, 2), "sections": rows,
-            # 3.0 是补写的触发线。定 2.5 时实测漏过一节：399 词只有 10 个单元、
-            # per100=2.51，整篇最长也最空的一节刚好从阈值下溜过去。
-            "thin": [r["head"] for r in rows if r["per100"] < 3.0 and r["words"] >= 100],
+            "floor": floor,
+            "thin": [r["head"] for r in rows if r["per100"] < floor and r["words"] >= 100],
             # FAQ 天然是把正文答过的东西再答一遍给搜索页看，重复度高是设计不是缺陷，
             # 不能把它标成"该删"。
             "repetitive": [r["head"] for r in rows
@@ -589,9 +650,11 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
     serp = parse_serp(search_text)
     intent = intent_coverage(article, serp, keyword)
     gain = information_gain(article, serp.get("corpus", ""))
-    den = density(article)
-    read = structural_readability(article, topic_type, language)
     bench = competitor_density(search_text)
+    tgt = density_target(search_text)
+    # 薄节线相对竞品：目标的 80%，下限 3.0。补写按这条线救，不是救到 3.0 就停。
+    den = density(article, floor=max(3.0, round(tgt["per100"] * 0.8, 1)))
+    read = structural_readability(article, topic_type, language)
 
     clamp = lambda x: max(0.0, min(1.0, x))
     parts: dict[str, float | None] = {
@@ -609,11 +672,27 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
     return {"score": score,
             "parts": {k: (None if v is None else round(v * 100)) for k, v in parts.items()},
             "intent": intent, "gain": gain, "density": den, "readability": read,
-            "benchmark": bench,
+            "benchmark": bench, "target": tgt,
             "unmeasured": [k for k, v in parts.items() if v is None]}
 
 
-def gap_brief(search_text: str, keyword: str = "", max_items: int = 14) -> str:
+def density_target(search_text: str, wordcount: int = 0) -> dict[str, Any]:
+    """这篇该写多密：竞品中位数 × 1.2，下限 4 条/100 词。
+
+    为什么必须量化：旧规则"每个 H2 至少 3 条具体信息"换算下来是每 100 词 1 条，
+    而实测竞品是 3.5–6 条 —— 目标定得比竞品低，产出当然低于竞品。
+    没有竞品基线时用 4.0（同题四篇实测里"高于竞品"那篇是 4.7）。
+    """
+    bench = competitor_density(search_text)
+    base = bench.get("median") if bench.get("measurable") else None
+    per100 = max(4.0, round((base or 0) * 1.2, 1))
+    total = int(per100 * wordcount / 100) if wordcount else 0
+    return {"per100": per100, "competitor": base, "pages": bench.get("pages", 0),
+            "total": total}
+
+
+def gap_brief(search_text: str, keyword: str = "", max_items: int = 14,
+              wordcount: int = 0, h2_count: int = 5) -> str:
     """写作前的**素材**块：竞品的信息基线 + 搜索页上没人答好的问题。
 
     为什么是素材不是规则：让 prompt 写「要提高信息增益」等于没说 —— 模型不知道
@@ -651,7 +730,28 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14) -> str:
                      + "、".join(names.get(s, s) for s in dominant)
                      + f"（{n_titles} 条结果里统计出来的）。\n"
                        "**本文必须写成同一体裁** —— 标题和结构都要对得上。"
-                       "体裁不对，内容再好也接不住这批搜索的人。")
+                       "体裁不对，内容再好也接不住这批搜索的人。"
+                     + ("\n搜索页是清单 / 对比 / 工具形态：读者来是要**看到具体选项的名字**的。"
+                        "本文必须点名列出主要选项（产品、服务商、工具），写成事实（它是什么、"
+                        "规格 / 价格 / 适用范围），**不背书、不排名、不说「最佳」**。"
+                        "不列名字 = 既丢密度也丢意图。"
+                        if set(dominant) & {"listicle", "comparison", "tool"} else ""))
+
+    # 密度目标：量化到这篇的条数。写手不知道"够"是多少，就永远写不够。
+    tgt = density_target(search_text, wordcount)
+    if tgt["competitor"] is not None:
+        line = (f"**信息密度目标：** 排在前面的 {tgt['pages']} 篇竞品平均每 100 词有 "
+                f"{tgt['competitor']} 条具体信息（参数值、型号、文件名、设置路径、带出处的数据）。"
+                f"本文要 **≥ {tgt['per100']} 条 / 100 词**")
+    else:
+        line = f"**信息密度目标：≥ {tgt['per100']} 条具体信息 / 100 词**（参数值、型号、文件名、设置路径、带出处的数据）"
+    if tgt["total"]:
+        per_h2 = max(6, int(tgt["total"] / max(h2_count, 1)))
+        line += f"，按 {wordcount} 词算就是 **全文 ≥ {tgt['total']} 条，每个 H2 ≥ {per_h2} 条**"
+    line += ("。\n密度住在结构里：**每个 H2 至少一个结构化块**（参数表 / 规格表 / 对照表 / "
+             "检查清单 / 带具体值的步骤表）—— 一张 60 词的规格表能装 15 条信息，60 词散文只装 2 条。"
+             "同一个值重复说不算新信息。")
+    parts.append(line)
 
     if questions:
         parts.append("**搜索页上读者正在问的（People Also Ask，真实数据不是推测）：**\n"
@@ -663,6 +763,40 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14) -> str:
     if serp["related"]:
         parts.append("**相关搜索（次级意图，能覆盖就覆盖）：** "
                      + "、".join(serp["related"][:8]))
+    # 竞品都在点名的实体：多家竞品都提到的产品 / 服务商 / 工具名。读者搜到这个词，
+    # 预期看到这些名字 —— 3PL 那篇竞品密度 6.25 我们只有 4.3，差的就是每家服务商
+    # 一行参数（价格档、仓库数、起订量）。这是给素材：点名 + 给参数，不背书。
+    kw_words = set(re.findall(r"[a-z]{3,}", (keyword or "").lower()))
+    named = [u for u in baseline
+             if u.replace(" ", "").isalpha() and not any(w in kw_words for w in u.split())
+             and 3 <= len(u) <= 32 and not _NOT_NAME_SUFFIX.search(u.split()[-1])
+             and u not in _STOP and seen.get(u, 0) >= 2]
+    # 品牌在句中是大写的（ShipBob、Flexport），普通词不是（scale、connect、improve）。
+    # 在竞品正文里数一下：大写形态占比不到六成的，不是名字，是词。
+    corpus_raw = serp.get("corpus", "")
+    def _mostly_capitalized(u: str) -> bool:
+        # 不区分大小写地找，再看命中里首字母大写的占几成（"ShipBob" 内部还有大写，
+        # 拼一个 "Shipbob" 去精确匹配是匹配不到的）
+        first = u.split()[0]
+        if len(first) < 5 and " " not in u:          # DTC / SLA 这类缩写是术语不是产品
+            return False
+        cap = low = 0
+        for m in re.finditer(r"\b" + re.escape(first) + r"\b", corpus_raw, re.I):
+            pre = corpus_raw[max(0, m.start() - 2):m.start()]
+            if not pre.strip() or pre.rstrip()[-1:] in ".!?:|#-":   # 句首 / 表头 / 列表首
+                continue                                          # 这里的大写不说明是名字
+            if m.group(0)[:1].isupper():
+                cap += 1
+            else:
+                low += 1
+        return cap >= 3 and cap / max(cap + low, 1) >= 0.6
+    named = [u for u in named
+             if u not in {"google", "amazon", "shopify", "reddit", "youtube"} and _mostly_capitalized(u)][:10]
+    if len(named) >= 3:
+        parts.append("**多家竞品都点名的产品 / 服务商 / 工具：** " + "、".join(named)
+                     + "\n读者搜这个词就是预期看到这些名字。本文要覆盖它们，"
+                       "**每个给 2–3 条具体参数**（价格档位、规格、起订量、适用范围）"
+                       "—— 写成事实对照（表格最好），不背书、不排名。")
     if baseline:
         parts.append("**竞品已经写透的（≥2 家都写了，属于行业基线）：**\n"
                      + "、".join(baseline[:max_items])

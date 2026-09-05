@@ -764,7 +764,8 @@ function renderInfo(){
     const rows=E("div","rows");
     // ② 增益
     if(q.gain!=null){
-      const pct=Math.round(q.gain*100), lv=q.gain>=0.45?"ok":(q.gain>=0.3?"warn":"bad");
+      // 过关线放宽（用户定："差不多就显示过关"）：增益 ≥0.35 算过，0.2 以下才标红
+      const pct=Math.round(q.gain*100), lv=q.gain>=0.35?"ok":(q.gain>=0.2?"warn":"bad");
       const r=row("比竞品多给的", lv, `${pct}% 的具体信息，排在前面的页面都没写`,
         "参数值、文件名、设置路径这类读者能照做的东西，有多少是竞品没有的。Google 判断「有没有必要收录你」看的就是这个。");
       if((q.gain_samples||[]).length){
@@ -775,7 +776,8 @@ function renderInfo(){
     }
     // ③ 意图
     if(q.intent_total){
-      const lv = q.veto ? "bad" : (q.intent_covered===q.intent_total ? "ok" : "warn");
+      // 答到三分之二就算过；只有一票否决（不到一半）才红
+      const lv = q.veto ? "bad" : (q.intent_covered/q.intent_total>=0.66 ? "ok" : "warn");
       const r=row("搜索者的问题", lv,
         `${q.intent_covered}/${q.intent_total} 个都有专门的回答`,
         "这些是 Google 搜索页上真实显示的「大家还在问」，不是猜的。每个问题在文里都有一段能单独摘出来当答案。");
@@ -789,12 +791,14 @@ function renderInfo(){
     }
     // ④ 密度
     if(q.density!=null){
-      const cd=q.competitor_density;
-      const lv = cd==null ? "ok" : (q.evidence>=cd*1.2 ? "ok" : (q.evidence>=cd*0.8 ? "warn" : "bad"));
-      const r=row("信息密度", lv,
+      // 打标规则：低于竞品中位数 20% 以上才标红；20% 以内算持平，不打扰。没基线不评。
+      const cd=q.competitor_density, flag=!!q.density_flag;
+      const r=row("信息密度", flag?"bad":"ok",
         `每 100 词 ${q.evidence} 条能照做的信息`
-          + (cd!=null ? `<span class="cmp">竞品中位数 ${cd}</span>` : ""),
-        "数字、参数、文件名、功能名的密度。读者一段话里能拿走几样东西，而不是读了三百词全是立场铺垫。", true);
+          + (cd!=null ? `<span class="cmp">竞品中位数 ${cd}</span>` : "")
+          + (flag ? `<span class="cmp" style="background:var(--redbg);color:var(--red)">低于竞品 20% 以上</span>` : ""),
+        flag ? "已对最稀的几节做过局部补写；仍低说明这个题材竞品是规格表 / 目录页，正文形态追不上。要么接受，要么在「特殊要求」里让它加参数表。"
+             : "数字、参数、文件名、功能名的密度。读者一段话里能拿走几样东西，而不是读了三百词全是立场铺垫。", true);
       rows.append(r);
     }
     // ⑤ 可读性：不报 FK 数字，报人话
@@ -838,7 +842,7 @@ function verdictLine(q){
   if(q.veto) return "文章形态和搜索页不匹配，先看下面的说明。";
   if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
   if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
-  if(q.competitor_density!=null&&q.evidence!=null) parts.push(q.evidence>=q.competitor_density*1.2 ? "信息密度高于竞品" : (q.evidence<q.competitor_density*0.8 ? "信息密度低于竞品" : "信息密度和竞品持平"));
+  if(q.competitor_density!=null&&q.evidence!=null) parts.push(q.density_flag ? "信息密度低于竞品" : (q.evidence>=q.competitor_density ? "信息密度高于竞品" : "信息密度和竞品持平"));
   return parts.length ? parts.join("，")+"。" : "已完成打分。";
 }
 
