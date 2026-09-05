@@ -465,6 +465,11 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                     job.emit({"type": "step", "key": "postfix",
                               "message": "局部补写 " + "；".join(f[:44] for f in more[:3])})
                     report = density_audit.audit(text, **q_kwargs)
+                # 补写可能又加了表 —— 整篇最多 3 张，超出的转列表
+                text, _ct = postfix.cap_tables(text)
+                if _ct:
+                    fixes += _ct
+                    report = density_audit.audit(text, **q_kwargs)
                 # 标题被体裁修改过就重出一次 SEO 元数据，别让 SEO Title 和 H1 对不上
                 if extract_h1(text) and extract_h1(text) != h1_at_seo:
                     seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])

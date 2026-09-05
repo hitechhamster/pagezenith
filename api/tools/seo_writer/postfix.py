@@ -279,8 +279,8 @@ _BOOST_ADDENDUM = """Write an ADDITION to one section of an article. The section
 checkable information; your job is to supply what it is missing, not to rewrite it.
 
 Output ONLY a compact markdown block to be appended to the end of the section:
-a table (2-4 columns) or a bullet list of concrete items — between {need_new} and {max_new} items,
-and no more than {max_words} words in total. Short cells, no explanations inside the table.
+{shape} — between {need_new} and {max_new} items,
+and no more than {max_words} words in total. Short cells, no explanations inside.
 Each item must be something a reader can act on or verify: an exact value with units,
 a model / product / tool name, a menu path or file name, a threshold, a specific failure symptom.
 
@@ -355,6 +355,9 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         try:
             raw = await complete(
                 _BOOST_ADDENDUM.format(need_new=need_new, max_new=need_new + 6, max_words=max_words,
+                                       shape=("a table (2-4 columns) or a bullet list of concrete items"
+                                              if count_tables(text) < MAX_TABLES
+                                              else "a bullet list of concrete items (NO table — the article already has enough tables)"),
                                        have_list="\n".join(f"- {u}" for u in have[:80]) or "- (none)",
                                        material=material[:12000], section=block),
                 task="polish", temperature=0.3)
@@ -526,6 +529,56 @@ def fix_title_cliche(text: str) -> tuple[str, list[str]]:
     if len(new.split()) < 3:
         return text, []
     return text[:m.start(1)] + new + text[m.end(1):], [f"标题去俗套词：「{m.group(1)[:40]}」→「{new[:40]}」"]
+
+
+#: 整篇最多几张表（用户 2026-09-05）。超出的按信息量小到大转成列表，一条信息不丢。
+MAX_TABLES = 3
+_TABLE_BLOCK = re.compile(r"(?:^[ \t]*\|.*\|[ \t]*$\n?){2,}", re.M)
+
+
+def count_tables(text: str) -> int:
+    return sum(1 for m in _TABLE_BLOCK.finditer(text or "") if _is_table(m.group(0)))
+
+
+def _is_table(block: str) -> bool:
+    lines = [l for l in block.strip("\n").split("\n") if l.strip()]
+    return len(lines) >= 2 and bool(re.match(r"^\s*\|?\s*:?-{3,}", lines[1]))
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _table_to_list(block: str) -> str:
+    lines = [l for l in block.strip("\n").split("\n") if l.strip()]
+    head = _cells(lines[0])
+    out = []
+    for row in lines[2:]:
+        cs = _cells(row)
+        if not any(cs):
+            continue
+        first = cs[0] if cs else ""
+        rest = [f"{h}: {c}" for h, c in zip(head[1:], cs[1:]) if c]
+        out.append(f"- {first}" + (" — " + "; ".join(rest) if rest else ""))
+    return "\n".join(out)
+
+
+def cap_tables(text: str, max_tables: int = MAX_TABLES) -> tuple[str, list[str]]:
+    """表超过 max_tables 张 → 信息量最小的几张转成列表（每行一条，列名带上），一条信息不丢。"""
+    blocks = [m for m in _TABLE_BLOCK.finditer(text or "") if _is_table(m.group(0))]
+    if len(blocks) <= max_tables:
+        return text, []
+    size = lambda m: sum(len(_cells(l)) for l in m.group(0).strip().split("\n")[2:])
+    keep = set(sorted(range(len(blocks)), key=lambda i: -size(blocks[i]))[:max_tables])
+    out, last = [], 0
+    for i, m in enumerate(blocks):
+        if i in keep:
+            continue
+        out.append(text[last:m.start()])
+        out.append(_table_to_list(m.group(0)) + "\n")
+        last = m.end()
+    out.append(text[last:])
+    return "".join(out), [f"表格 {len(blocks)} 张超过 {max_tables} 张，{len(blocks) - max_tables} 张转成列表"]
 
 
 def density_short(report: dict, tolerance: float = 0.8) -> bool:
@@ -797,4 +850,5 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t8, c8 = await fix_title_shape(t7, report, (keywords or [""])[0], complete)
     t9, c9 = fix_stale_year(t8)
     t10, c10 = fix_title_cliche(t9)
-    return t10, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10
+    t11, c11 = cap_tables(t10)
+    return t11, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11
