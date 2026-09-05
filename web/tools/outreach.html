@@ -13,6 +13,7 @@
   .bar .f{display:flex;flex-direction:column;gap:4px}
   .bar .f.full{grid-column:1/-1}
   .bar label{font-size:12px;color:var(--muted)}
+  .kwnote{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4}
   .bar input,.bar select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit}
   .form{padding:18px 20px}
   .form .bar{margin:0}
@@ -66,11 +67,12 @@
 </div>
 <div class="wrap" style="max-width:920px">
   <h1 style="font-size:22px;margin:0 0 4px">外链拓客</h1>
-  <div class="sub">输入主题关键词（或你的网址），自动用搜索足迹在全网找可能给外链的站点，抓取联系邮箱，并按站点性质生成英文外联邮件草稿，汇总成 Excel。全程免费、用你自己的 key。</div>
+  <div class="sub">输入主题关键词（或你的网址），自动用搜索足迹在全网找可能给外链的站点，抓取联系邮箱，并按站点性质生成对应语言的外联邮件草稿，汇总成 Excel。全程免费、用你自己的 key。</div>
 
   <div class="panel form">
     <div class="bar">
-      <div class="f"><label>主题关键词（英文）</label><input id="kw" placeholder="如 forex broker review" /></div>
+      <div class="f"><label>主题关键词<span id="kwHint">（英文）</span></label><input id="kw" placeholder="如 forex broker review" />
+        <div class="kwnote" id="kwNote">选什么语言就写什么语言的关键词</div></div>
       <div class="f"><label>语言</label><select id="lang">
         <option value="en">English</option>
         <option value="zh">中文</option>
@@ -125,6 +127,12 @@ const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
 // 只按语言（外链拓客不关心国家）；location_code 取该语言的一个合理默认，不外露。
 const LANG={en:[2840,"en"],zh:[2156,"zh"],es:[2724,"es"],de:[2276,"de"],fr:[2250,"fr"],ja:[2392,"ja"],pt:[2076,"pt"],it:[2380,"it"]};
+// 关键词必须跟语言同语种：足迹是按语言出的（法语用「article invité」而不是「write for us」），
+// 配英文词等于两种语言混搜，搜出来还是英文站。这里把语种要求直接写在标签上。
+const KW_HINT={en:["（英文）","如 forex broker review"],zh:["（中文）","如 外汇经纪商 点评"],
+  es:["（西班牙语）","如 broker de forex opiniones"],de:["（德语）","如 forex broker erfahrungen"],
+  fr:["（法语）","如 courtier forex avis"],ja:["（日语）","如 FX業者 評判"],
+  pt:["（葡萄牙语）","如 corretora forex avaliação"],it:["（意大利语）","如 broker forex opinioni"]};
 let LAST=null, tbody=null;
 
 function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
@@ -132,6 +140,16 @@ syncKeyBtn();
 function setStatus(m,e){ $("status").textContent=m||""; $("status").className=e?"err":""; }
 function relColor(v){ return v>=70?"#137333":v>=45?"#b06000":"#c5221f"; }
 function relBg(v){ return v>=70?"#e6f4ea":v>=45?"#fef7e0":"#fce8e6"; }
+
+function syncKwHint(){ const v=$("lang").value; const [t,ph]=KW_HINT[v]||KW_HINT.en;
+  $("kwHint").textContent=t; $("kw").placeholder=ph;
+  // 足迹是按语言出的（法语用「article invité」而不是「write for us」），
+  // 关键词跟语言不同语种就等于混搜，搜出来还是英文站——所以这句得说死。
+  const L=t.slice(1,-1);
+  const warn = v==="en" ? "" : (v==="zh" ? "（别写英文）" : "（别写英文或中文）");
+  $("kwNote").textContent =
+    `选什么语言就写什么语言的关键词 —— 这里选的是${L}，就写${L}词${warn}`; }
+$("lang").addEventListener("change",syncKwHint); syncKwHint();
 
 $("run").onclick=run;
 $("kw").addEventListener("keydown",e=>{if(e.key==="Enter")run();});

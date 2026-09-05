@@ -20,7 +20,7 @@ from ..seo_gap.config import Settings, get_settings
 from .emails import extract_emails, find_contact_links, has_contact_form
 from .footprints import build_footprints
 from .models import OutreachRequest, Prospect, ProspectEmail
-from .prompts import CLASSIFY_SYSTEM, build_classify_user
+from .prompts import build_classify_system, build_classify_user, lang_name
 
 logger = logging.getLogger(__name__)
 
@@ -53,28 +53,37 @@ class OutreachFinder:
         self.llm = LLMClient(self.s)
         self.fetcher = PageFetcher(self.s)
 
-    async def _derive_keyword(self, url: str) -> str:
-        """网址驱动、未给关键词时：抓页面让 LLM 提一个最合适的英文主题词。"""
+    async def _derive_keyword(self, url: str, lang: str = "en") -> str:
+        """网址驱动、未给关键词时：抓页面让 LLM 提一个最合适的主题词。
+
+        必须出**目标语言**的词：足迹是目标语言的，配英文词等于两种语言混搜，命中率崩。
+        """
         try:
             page = await self.fetcher.fetch(url)
         except Exception:
             return ""
         sample = ((page.title or "") + "\n" + page.text)[:2500]
+        ln = lang_name(lang)
         mock = {"keyword": "forex broker scam"}
         raw = await self.llm.complete_json(
-            "从给定网页内容提炼一个最适合用来找外链机会的英文主题词/短语。只输出 JSON。",
-            f"网页内容：\n{sample}\n\n输出 JSON：{{\"keyword\":\"...\"}}", mock=mock)
+            f"从给定网页内容提炼一个最适合用来找外链机会的主题词/短语，"
+            f"**必须用{ln}书写**（不要翻译成中文或英文）。只输出 JSON。",
+            f'网页内容：\n{sample}\n\n输出 JSON（keyword 用{ln}）：{{"keyword":"..."}}',
+            mock=mock)
         return (raw.get("keyword", "") if isinstance(raw, dict) else "") or ""
 
-    async def _expand_keywords(self, keyword: str, n: int) -> list[str]:
-        """让 LLM 生成 n 个相关（非同义）关键词，用来扩大候选站范围。"""
+    async def _expand_keywords(self, keyword: str, n: int, lang: str = "en") -> list[str]:
+        """让 LLM 生成 n 个相关（非同义）关键词扩大候选站范围。同样必须是目标语言。"""
         if n <= 0:
             return []
+        ln = lang_name(lang)
         mock = {"keywords": [f"{keyword} guide", f"best {keyword}", f"{keyword} tips"][:n]}
         raw = await self.llm.complete_json(
-            "你是 SEO 拓客助手。给一个主题词，生成若干**相关但不同角度**的英文关键词，"
-            "用于扩大外链候选站范围（不要近义词堆砌，要覆盖相邻子话题）。只输出 JSON。",
-            f"主题词：{keyword}\n生成 {n} 个。输出 JSON：{{\"keywords\":[\"...\"]}}", mock=mock)
+            f"你是 SEO 拓客助手。给一个主题词，生成若干**相关但不同角度**的关键词，"
+            f"用于扩大外链候选站范围（不要近义词堆砌，要覆盖相邻子话题）。"
+            f"关键词**必须用{ln}书写**。只输出 JSON。",
+            f'主题词：{keyword}\n生成 {n} 个（{ln}）。输出 JSON：{{"keywords":["..."]}}',
+            mock=mock)
         kws = raw.get("keywords", []) if isinstance(raw, dict) else []
         return [k.strip() for k in kws if isinstance(k, str) and k.strip()][:n]
 
@@ -83,7 +92,7 @@ class OutreachFinder:
         """跨多个关键词跑足迹搜索，按域名去重，返回 [{domain,url,title,hint}]（最多 cap 个）。"""
         queries: list[tuple[str, str]] = []
         for kw in keywords:
-            queries += build_footprints(kw, n_footprints)
+            queries += build_footprints(kw, n_footprints, lang)
         results = await asyncio.gather(*[
             self.serp.fetch_serp(q, loc, lang, depth=depth) for q, _ in queries
         ], return_exceptions=True)
@@ -134,10 +143,11 @@ class OutreachFinder:
             emails, has_form = await self._emails_for(seed["url"], home.raw_html or "")
             try:
                 raw = await self.llm.complete_json(
-                    CLASSIFY_SYSTEM,
+                    build_classify_system(req.language_code),
                     build_classify_user(req.keyword, req.your_url, req.your_brief,
                                         req.generate_emails and bool(emails),
-                                        home.title or seed["title"], home.text),
+                                        home.title or seed["title"], home.text,
+                                        req.language_code),
                     mock=_CLS_MOCK, model=self.s.writer_model or None)
             except Exception as exc:
                 logger.warning("候选站分析失败 %s: %s", seed["domain"], exc)
@@ -158,9 +168,10 @@ class OutreachFinder:
 
     async def stream(self, req: OutreachRequest):
         """SSE 生成器：start → discovered → prospect* → done。"""
+        lang = req.language_code or "en"
         keyword = req.keyword.strip()
         if not keyword and req.your_url:
-            keyword = await self._derive_keyword(req.your_url)
+            keyword = await self._derive_keyword(req.your_url, lang)
             req.keyword = keyword
         if not keyword:
             yield {"type": "error", "message": "请填写主题关键词（或提供可抓取的目标网址）。"}
@@ -172,13 +183,14 @@ class OutreachFinder:
 
         keywords = [keyword]
         if cfg["kw_expand"]:
-            keywords += await self._expand_keywords(keyword, cfg["kw_expand"])
+            keywords += await self._expand_keywords(keyword, cfg["kw_expand"], lang)
         yield {"type": "start", "keyword": keyword, "keywords": keywords}
 
-        seeds = await self.discover(keywords, req.location_code, req.language_code, your_domain,
+        seeds = await self.discover(keywords, req.location_code, lang, your_domain,
                                     cap, cfg["footprints"], cfg["depth"])
         if not seeds:
-            yield {"type": "error", "message": "没找到候选站点。换个更常见的英文主题词试试。"}
+            yield {"type": "error", "message":
+                   f"没找到候选站点。换个更常见的{lang_name(lang)}主题词试试。"}
             return
         yield {"type": "discovered", "total": len(seeds)}
 

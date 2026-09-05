@@ -20,8 +20,34 @@ _ROLE_ORDER = ("editor", "editorial", "contribute", "guest", "press", "pr@",
                "partnership", "partner", "outreach", "marketing", "hello", "contact",
                "team", "hi@", "info", "admin", "support")
 
-_CONTACT_HINTS = ("contact", "about", "team", "write-for-us", "write_for_us",
-                  "contribute", "advertise", "connect")
+# 多语种：只认英文 slug 会漏掉大量非英文站的邮箱。
+# impressum / mentions-legales 是德法法定页面，几乎必然带真实邮箱，价值最高。
+_CONTACT_HINTS = (
+    # 英
+    "contact", "about", "team", "write-for-us", "write_for_us",
+    "contribute", "advertise", "connect", "imprint",
+    # 法
+    "contactez", "nous-contacter", "a-propos", "apropos", "qui-sommes-nous",
+    "mentions-legales", "redaction",
+    # 德
+    "impressum", "kontakt", "ueber-uns", "uber-uns", "über-uns", "unternehmen",
+    # 西 / 葡
+    "contacto", "contactar", "contato", "quienes-somos", "sobre-nosotros",
+    "sobre-nos", "quem-somos", "acerca",
+    # 意
+    "contatti", "contattaci", "chi-siamo", "redazione",
+    # 荷 / 北欧 / 波 / 土
+    "over-ons", "kontakta", "kontakty", "iletisim",
+    # 日 / 中
+    "inquiry", "toiawase", "otoiawase", "kaisha", "company",
+    "lianxi", "guanyu", "gywm", "lxwm",
+)
+# URL slug 之外，还按链接**文字**认（CJK 站常用 /page/12 这种无语义路径）。
+_CONTACT_TEXTS = (
+    "contact", "about", "impressum", "kontakt", "contatti", "contacto",
+    "お問い合わせ", "問い合わせ", "会社概要", "運営者", "運営会社",
+    "联系我们", "联系方式", "关于我们", "聯絡我們", "關於我們", "商务合作",
+)
 
 
 def extract_emails(html: str) -> list[str]:
@@ -75,7 +101,8 @@ def find_contact_links(html: str, base_url: str) -> list[str]:
             continue
         text = (a.text() or "").lower()
         hay = (href.lower() + " " + text)
-        if not any(h in hay for h in _CONTACT_HINTS):
+        if not (any(h in hay for h in _CONTACT_HINTS)
+                or any(t in text for t in _CONTACT_TEXTS)):
             continue
         absu = urljoin(base_url, href)
         if urlparse(absu).netloc.replace("www.", "") != base_host:
