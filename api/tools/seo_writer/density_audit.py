@@ -339,7 +339,7 @@ def _content_words(s: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]{4,}", (s or "").lower()) if w not in _ANGLE_STOP}
 
 
-def angle_sections(text: str, angles: list[str]) -> dict[str, Any]:
+def angle_sections(text: str, angles: list[str], keyword: str = "") -> dict[str, Any]:
     """哪些 H2 是从「竞品没覆盖的角度」起的，占全文多少字。
 
     硬信息增益只数带出处的数字和专名；模型按新角度写的判断、流程、取舍条件一个都不计分
@@ -349,14 +349,17 @@ def angle_sections(text: str, angles: list[str]) -> dict[str, Any]:
     """
     if not text or not angles:
         return {"sections": [], "words": 0, "share": 0.0}
+    # 去掉主关键词的实词再算重叠，否则 "temperature sensor calibration" 和
+    # "Types of Temperature Sensors" 因为共享 temperature+sensor 就匹配了（2026-09-06）。
+    kw_words = _content_words(keyword)
     total = max(word_count(text), 1)
     hits, words = [], 0
     for head, body in sections(text):
         if head == "(intro)":
             continue
-        hw = _content_words(head)
+        hw = _content_words(head) - kw_words
         for a in angles:
-            aw = _content_words(a)
+            aw = _content_words(a) - kw_words
             if not aw:
                 continue
             ov = len(hw & aw)
