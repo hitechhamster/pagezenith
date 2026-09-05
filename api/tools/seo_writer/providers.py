@@ -418,11 +418,51 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
                 pass
             return {"title": it.get("title", ""), "url": it.get("link", ""), "content": text}
 
-        out = await asyncio.gather(*[one(it) for it in items])
+        out = list(await asyncio.gather(*[one(it) for it in items]))
+
+        # 竞品得是文章。工厂目录 / 产品页 / 店铺列表抓下来全是导航和规格堆砌，拿它们当
+        # 密度基线和增益语料没意义（用户 2026-09-05）。前几名里散文页不足 3 篇就继续往后抓，
+        # 第一页抓完还不够就翻第二页，最多看 20 条，凑够 3 篇文章为止。
+        scraped = len(items)
+        pool = list(organic)
+        page = 1
+        while _prose_pages(out) < _MIN_PROSE and scraped < _MAX_RESULTS:
+            if scraped >= len(pool) and page < 2:
+                page += 1
+                try:
+                    r3 = await client.post(f"{s.serper_base_url}/search", headers=headers,
+                                           json={"q": query, "num": 10, "page": page})
+                    if r3.status_code == 200:
+                        pool += r3.json().get("organic") or []
+                except Exception:  # noqa: BLE001
+                    break
+            if scraped >= len(pool):
+                break
+            batch = pool[scraped: scraped + 3]
+            scraped += len(batch)
+            out += list(await asyncio.gather(*[one(it) for it in batch]))
+        organic = pool
+        items = pool[:scraped]
     # 没抓全文的那几条也把标题留下 —— 判断 SERP 主流形态要看整页，不能只看前四名
     rest = [{"title": it.get("title", ""), "url": it.get("link", ""),
              "content": it.get("snippet", "")} for it in organic[len(items):]]
-    return _fmt(list(out) + rest, questions, related)
+    return _fmt(out + rest, questions, related)
+
+
+_MIN_PROSE = 3        # 至少要有这么多篇文章型竞品，密度基线才有资格算（与 density_audit 一致）
+_MAX_RESULTS = 20     # 最多往后看到第几名
+
+
+def _is_prose(text: str) -> bool:
+    """和 density_audit.competitor_density 同一条判据：>150 词，且短行（<6 词）不超过 40%。"""
+    if len(re.findall(r"\S+", text or "")) < 150:
+        return False
+    lines = [l for l in (text or "").splitlines() if l.strip()]
+    return bool(lines) and sum(1 for l in lines if len(l.split()) < 6) / len(lines) <= 0.4
+
+
+def _prose_pages(results: list[dict]) -> int:
+    return sum(1 for r in results if _is_prose(r.get("content", "")))
 
 
 #: 被讨论产品的官网 / 帮助中心 —— 这类页面的形容词是营销文案，不是事实。

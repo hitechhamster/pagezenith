@@ -25,6 +25,33 @@ from .voices import get_voice
 logger = logging.getLogger(__name__)
 
 
+_META_LINE = re.compile(
+    r"(?im)^\s*(?:[-*•]\s*)?\**\s*(?:\[?E-?E-?A-?T|预估字数|预估篇幅|Purpose|Value for User|写作要求|写作要点|"
+    r"人称|关键词次数|字数指导|重要性)\b.*$")
+_META_INLINE = re.compile(r"\s*`?\[E-?E-?A-?T[^\]]*\]`?")
+#: 整行只是一个括号标注：「**(核心章节，需深度阐述)**」「(背景信息，简要介绍)」
+_META_PAREN = re.compile(r"^\s*\**\s*[（(][^()（）]{2,60}[)）]\s*\**\s*$")
+#: 写作动作而不是内容：「在首段自然融入核心关键词 X 一次」「给出建议型数字：…」
+_META_ACTION = re.compile(r"(?:融入|植入|出现).{0,12}关键词|关键词.{0,20}(?:一次|N 次|\d+ 次)|^\s*[-*•]?\s*\**给出建议型数字")
+#: 标题里的「H1: / H2: / H3:」前缀 —— 那是大纲模板的层级标记，不是标题的一部分
+_HEAD_TAG = re.compile(r"^(#{1,6})\s*H[1-6]\s*[:：]\s*", re.M)
+
+
+def clean_outline(text: str) -> str:
+    """把大纲里说给写手听的话删掉（代码闭环，不指望 prompt 完全听话）。
+
+    2026-09-05 实测：大纲里的「[E-E-A-T提示：…]」「使用 We 的专业视角」「预估字数 250」
+    原样进了正文 prompt，也原样显示给用户。这些行整行删，行内方括号标注抠掉。
+    """
+    out = []
+    for line in (text or "").split("\n"):
+        if _META_LINE.match(line) or _META_PAREN.match(line) or _META_ACTION.search(line):
+            continue
+        out.append(_META_INLINE.sub("", line))
+    cleaned = _HEAD_TAG.sub(r"\1 ", "\n".join(out))
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip() + "\n"
+
+
 def _date_line() -> str:
     """今天几号 —— 模型没有时间概念，不说就把 2024 当最新。"""
     import datetime as _dt

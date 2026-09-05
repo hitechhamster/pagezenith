@@ -343,7 +343,7 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         words = density_audit.word_count(block)
         if words < 60:
             continue
-        old_units = density_audit._evidence_units(block)
+        old_units = density_audit._evidence_units(block, material)
         need_new = max(3, int(per100 * words / 100) - len(old_units))
         # 篇幅上限先算好告诉模型：实测白鞋那篇七个薄节五个被"篇幅跑偏"拒掉 ——
         # 短节配了一张十几行的大表。给它条数区间和词数上限，落地率才上得去。
@@ -351,7 +351,7 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         if added + max_words > budget:            # 这块补完会超预算 → 不开工，别事后才发现
             continue
         # 整篇不达标触发的补写，把全文已有的单元都列给模型 —— 它才知道什么算"新"
-        have = sorted(density_audit._evidence_units(text) if sections is not None else old_units)
+        have = sorted(density_audit._evidence_units(text, material) if sections is not None else old_units)
         try:
             raw = await complete(
                 _BOOST_ADDENDUM.format(need_new=need_new, max_new=need_new + 6, max_words=max_words,
@@ -368,12 +368,12 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         trailing = block[len(block.rstrip()):] or "\n\n"
         new = block.rstrip() + "\n\n" + add + trailing
 
-        gained = density_audit._evidence_units(new) - old_units
+        gained = density_audit._evidence_units(new, material) - old_units
         if sections is not None:
             # 触发点是"整篇低于竞品"时，只认**全文里没有的**单元。实测 Martin 那篇两轮落地
             # 四块（每块 +15~19 条），整篇证据密度只从 3.81 挪到 4.16 —— 加的东西别的节早写过，
             # 对整篇指标是零，对读者也是重复。
-            gained -= density_audit._evidence_units(text)
+            gained -= density_audit._evidence_units(text, material)
         invented = invented_assertions(add, allowed | {_norm(y) for y in _NUM.findall(block)})
         n_new = density_audit.word_count(new)
         # 篇幅上限：与告诉模型的 max_words 对齐再留一成余量。

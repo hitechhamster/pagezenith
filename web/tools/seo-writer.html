@@ -992,11 +992,11 @@ function renderInfo(){
     + `<span>Description <b>${MD.escape(ev.seo_description||"—")}</b> <span style="color:var(--faint)">${(ev.seo_description||"").length} 字符</span></span>`;
   card.append(minor);
 
-  // ⑦ 只在真有问题时出现
-  const notes=[].concat(q.veto?q.veto_reasons:[], q.todo||[]);
+  // ⑦ 只有一票否决才出现；「发布前值得顺手改的」清单不再显示（用户 2026-09-05：这个地方不要）
+  const notes=q.veto?q.veto_reasons:[];
   if(notes.length){
-    const d=E("div","todo"+(q.veto?" bad":""));
-    d.append(E("div","k", q.veto ? "⛔ 文章形态和搜索页不匹配 —— 这一项不过，其余分数没意义" : "发布前值得顺手改的"));
+    const d=E("div","todo bad");
+    d.append(E("div","k", "⛔ 文章形态和搜索页不匹配 —— 这一项不过，其余分数没意义"));
     const ul=document.createElement("ul");
     notes.slice(0,6).forEach(t=>{const li=document.createElement("li"); li.textContent=String(t).replace(/^-\s*/,""); ul.append(li);});
     d.append(ul); card.append(d);

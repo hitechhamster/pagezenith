@@ -37,7 +37,7 @@ from .models import ArticleRequest, LANGUAGES, OutlineRequest, PolishRequest, Re
 from .providers import LLM, ProviderError, resolve_llm
 from .session import get_store
 from .voices import VOICES, image_style_list, recommend_voice, voice_list
-from .workflow import (SEOWriter, count_words, extract_h1, grade_verdict,
+from .workflow import (SEOWriter, clean_outline, count_words, extract_h1, grade_verdict,
                        reading_grade, wordcount_status)
 
 # 配图字节存进会话是为了润色后能重新拼一份带图的 Word。
@@ -235,7 +235,7 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                     buf.append(piece)
                     job.emit({"type": "chunk", "text": piece})
 
-                ctx["outline"] = "".join(buf)
+                ctx["outline"] = clean_outline("".join(buf))
                 sid = get_store().create(ctx)
                 tx.set_result(
                     title=f"大纲：{ctx['main_keyword']}",
@@ -281,7 +281,7 @@ async def outline_revise(req: ReviseRequest, card: Card = Depends(require_card))
                 async for piece in wf.stream_revise(ctx, req.feedback.strip()):
                     buf.append(piece)
                     job.emit({"type": "chunk", "text": piece})
-                new_outline = "".join(buf)
+                new_outline = clean_outline("".join(buf))
                 # 修订是整篇重生成，好的节会无声消失（实测三版连丢）。
                 # 锁定节功能上线前，先把「删了哪些节」摆到用户面前，让他能拒绝。
                 diff = wf.outline_section_diff(ctx.get("outline", ""), new_outline)
@@ -401,8 +401,11 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 # 全确定性、零 LLM。增益是对着**真实 SERP 抓取正文**算的，不是凭感觉。
                 serp_corpus = "\n".join(
                     x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
+                # material：事实清单 + 搜索页语料。证据密度只认在这里出现过的数字 ——
+                # 编出来的数不计分，补写也就不会靠编数过关（用户 2026-09-05：堵住刷分）。
                 q_kwargs = dict(search_text=serp_corpus, topic_type=ctx.get("topic_type", ""),
-                                keyword=ctx.get("main_keyword", ""), language=ctx["language"])
+                                keyword=ctx.get("main_keyword", ""), language=ctx["language"],
+                                material=ctx.get("facts", "") + "\n" + serp_corpus)
                 report = density_audit.audit(text, **q_kwargs)
                 words_at_draft = density_audit.word_count(text)   # 篇幅预算的基准：正文原稿
 
@@ -610,12 +613,11 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                                           + "；".join(f[:44] for f in fixes[:3])
                                           + ("…" if len(fixes) > 3 else ""))})
 
+                _serp = "\n".join(x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
                 report = density_audit.audit(
-                    text,
-                    search_text="\n".join(x for x in (ctx.get("main_search"),
-                                                      ctx.get("sec_search")) if x),
+                    text, search_text=_serp,
                     topic_type=ctx.get("topic_type", ""), keyword=main_keyword,
-                    language=language)
+                    language=language, material=ctx.get("facts", "") + "\n" + _serp)
                 job.emit({"type": "quality", **_quality_payload(report)})
 
                 docx_bytes = build_docx(text, image_map)

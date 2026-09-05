@@ -300,14 +300,32 @@ def lost_units(before: str, after: str) -> list[str]:
     return sorted(out)
 
 
-def _evidence_units(text: str) -> set[str]:
+_DIGITS = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def material_numbers(material: str) -> set[str]:
+    """素材（事实清单 + 搜索页语料）里出现过的所有数字，去逗号。"""
+    return {m.replace(",", "") for m in _DIGITS.findall(material or "")}
+
+
+def _evidence_units(text: str, material: str | None = None) -> set[str]:
     """证据档 = 参数 + 专名 + **带出处的统计**。
 
     无出处的论据统计不算 —— 它证明「问题严重」，既不告诉读者该设成多少，
     也没给读者核实的入口。
+
+    material 给了的话，**带数字的参数只有在素材里出现过才算**：密度是优化目标，
+    任何数字都计分的话模型就编数字凑分（实测 `Bill_of_Materials.xlsx`、"45–60 days lead time"）。
+    竞品页不传 material —— 它们自己就是语料。
     """
     u = hard_units(text)
-    return u["param"] | u["entity"] | (sourced_stats(text) & u["stat"])
+    params = u["param"]
+    if material is not None:
+        known = material_numbers(material)
+        params = {p for p in params
+                  if not _DIGITS.search(p)
+                  or all(d.replace(",", "") in known for d in _DIGITS.findall(p))}
+    return params | u["entity"] | (sourced_stats(text) & u["stat"])
 
 
 # --------------------------------------------------------------------------- #
@@ -468,7 +486,7 @@ def sections(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def density(text: str, floor: float = 3.0) -> dict[str, Any]:
+def density(text: str, floor: float = 3.0, material: str | None = None) -> dict[str, Any]:
     """绝对密度 + 分节明细 + 开头空转 + 跨节重复。
 
     分节明细才是能拿来改的东西：总分 8.0 但某一节 0.9，要改的是那一节，
@@ -479,14 +497,14 @@ def density(text: str, floor: float = 3.0) -> dict[str, Any]:
     """
     u = hard_units(text)
     words = max(word_count(text), 1)
-    evid = len(u["param"]) + len(u["entity"])
-    total = evid + len(u["stat"])
+    evid = len(_evidence_units(text, material))
+    total = len(u["param"]) + len(u["entity"]) + len(u["stat"])
 
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     stat_where: dict[str, list[str]] = {}
     for head, body in sections(text):
-        bu = _evidence_units(body)
+        bu = _evidence_units(body, material)
         n = word_count(body)
         if n < 20:
             continue
@@ -634,7 +652,8 @@ _FULL = {"gain": 0.70, "evidence": 5.0, "density": 6.5}
 
 
 def audit(article: str, *, search_text: str = "", topic_type: str = "",
-          keyword: str = "", language: str = "English") -> dict[str, Any]:
+          keyword: str = "", language: str = "English",
+          material: str | None = None) -> dict[str, Any]:
     """跑完五项，返回可直接 emit 给前端的结构。
 
     意图覆盖**不参与加权** —— 它是闸门。形态不对或子问题覆盖不到一半，
@@ -653,7 +672,7 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
     bench = competitor_density(search_text)
     tgt = density_target(search_text)
     # 薄节线相对竞品：目标的 80%，下限 3.0。补写按这条线救，不是救到 3.0 就停。
-    den = density(article, floor=max(3.0, round(tgt["per100"] * 0.8, 1)))
+    den = density(article, floor=max(3.0, round(tgt["per100"] * 0.8, 1)), material=material)
     read = structural_readability(article, topic_type, language)
 
     clamp = lambda x: max(0.0, min(1.0, x))
