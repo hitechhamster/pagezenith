@@ -404,6 +404,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 q_kwargs = dict(search_text=serp_corpus, topic_type=ctx.get("topic_type", ""),
                                 keyword=ctx.get("main_keyword", ""), language=ctx["language"])
                 report = density_audit.audit(text, **q_kwargs)
+                words_at_draft = density_audit.word_count(text)   # 篇幅预算的基准：正文原稿
 
                 # 交付前后处理：假经验句（纯代码三分支）+ 塞词（单句改写 + 检测闭环，两轮不过就删）
                 # + 空转小节补写（同样是"检测→改→再检测，没变好就退回"）。
@@ -426,8 +427,11 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 # 用户 2026-09-05 定的规矩：没达标就局部修，重跑是浪费。
                 # 最多再两轮（薄节那轮算第一轮，总共不超过 postfix.MAX_FIX_ROUNDS）；
                 # 一轮一条都没落地就停 —— 再逼也是同样的失败。
+                # 篇幅预算跨轮累计：整篇最多比正文原稿长两成，用完就不补了。
+                words_now = density_audit.word_count(text)
+                budget_left = max(0, int(1.2 * words_at_draft) - words_now)
                 for _round in range(postfix.MAX_FIX_ROUNDS - 1):
-                    if not postfix.density_short(report):
+                    if not postfix.density_short(report) or budget_left < 120:
                         break
                     weak = postfix.weakest_sections(report)
                     job.emit({"type": "step", "key": "postfix",
@@ -436,7 +440,8 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                     text, more = await postfix.boost_thin_sections(
                         text, report, ctx.get("facts", ""),
                         ctx.get("facts", "") + "\n" + serp_corpus, wf.llm.complete,
-                        sections=weak)
+                        sections=weak, budget=budget_left)
+                    budget_left = max(0, int(1.2 * words_at_draft) - density_audit.word_count(text))
                     if not more:
                         break
                     fixes += more

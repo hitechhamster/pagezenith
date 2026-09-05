@@ -292,7 +292,7 @@ Hard rules:
   Concrete operating values from your own expertise are fine, stated as recommendations.
 - Same language as the section.
 
-## Items the section already has (do not repeat)
+## Items the article already has (do not repeat any of these)
 {have_list}
 
 ## Reference material (the only source of statistics you may use)
@@ -305,7 +305,8 @@ Hard rules:
 async def boost_thin_sections(text: str, report: dict, facts: str, material: str,
                               complete: Optional[CompleteFn],
                               max_sections: int = 4,
-                              sections: Optional[list[str]] = None) -> tuple[str, list[str]]:
+                              sections: Optional[list[str]] = None,
+                              budget: Optional[int] = None) -> tuple[str, list[str]]:
     """给检测器判为「空转」的小节**追加**一块具体信息，原文一个字不动。
 
     2026-09-05 从「整节重写」改成「只加不换」。重写版实测 8 次补写落地 0 次：
@@ -325,7 +326,10 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
     changes: list[str] = []
     # 全文篇幅预算：补写总共最多加两成。实测 3PL 三块附加表把 2280 词撑到 2956（+30%），
     # 会把用户定的字数目标顶成"偏多"。预算用完就停，剩下的薄节留给用户看提示。
-    budget = int(0.2 * density_audit.word_count(text))
+    # budget 由调用方跨轮传入（router 算一次原稿的 20%，每轮扣减）；不传就按本次文本算。
+    # 实测三轮各算各的 20%，Dana 那篇 2206 → 2842 词（+29%），Martin +41%。
+    if budget is None:
+        budget = int(0.2 * density_audit.word_count(text))
     added = 0
     for head, body in density_audit.sections(text):
         if head not in thin or len(changes) >= max_sections or added >= budget:
@@ -346,10 +350,12 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         max_words = int(max(0.6 * words, 220))
         if added + max_words > budget:            # 这块补完会超预算 → 不开工，别事后才发现
             continue
+        # 整篇不达标触发的补写，把全文已有的单元都列给模型 —— 它才知道什么算"新"
+        have = sorted(density_audit._evidence_units(text) if sections is not None else old_units)
         try:
             raw = await complete(
                 _BOOST_ADDENDUM.format(need_new=need_new, max_new=need_new + 6, max_words=max_words,
-                                       have_list="\n".join(f"- {u}" for u in sorted(old_units)[:40]) or "- (none)",
+                                       have_list="\n".join(f"- {u}" for u in have[:80]) or "- (none)",
                                        material=material[:12000], section=block),
                 task="polish", temperature=0.3)
         except Exception:  # noqa: BLE001  补写失败不该拖垮整篇交付
@@ -363,6 +369,11 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         new = block.rstrip() + "\n\n" + add + trailing
 
         gained = density_audit._evidence_units(new) - old_units
+        if sections is not None:
+            # 触发点是"整篇低于竞品"时，只认**全文里没有的**单元。实测 Martin 那篇两轮落地
+            # 四块（每块 +15~19 条），整篇证据密度只从 3.81 挪到 4.16 —— 加的东西别的节早写过，
+            # 对整篇指标是零，对读者也是重复。
+            gained -= density_audit._evidence_units(text)
         invented = invented_assertions(add, allowed | {_norm(y) for y in _NUM.findall(block)})
         n_new = density_audit.word_count(new)
         # 篇幅上限：与告诉模型的 max_words 对齐再留一成余量。
