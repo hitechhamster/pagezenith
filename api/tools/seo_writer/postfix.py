@@ -332,9 +332,13 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
     if budget is None:
         budget = int(0.2 * density_audit.word_count(text))
     added = 0
-    for head, body in density_audit.sections(text):
+    secs = density_audit.sections(text)
+    last_head = secs[-1][0] if len(secs) > 1 else None
+    for head, body in secs:
         if head not in thin or len(changes) >= max_sections or added >= budget:
             continue
+        if head == last_head and head != "(intro)":
+            continue      # 文章最后一节不补：追加块会变成全文的结尾
         is_intro = head == "(intro)"
         if is_intro:
             m = re.match(r"\A\s*#\s+.*(?:\n|$)\s*", body)
@@ -356,9 +360,11 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         try:
             raw = await complete(
                 _BOOST_ADDENDUM.format(need_new=need_new, max_new=need_new + 6, max_words=max_words,
-                                       shape=("a table (2-4 columns) or a bullet list of concrete items"
+                                       shape=("a table (2-4 columns), or 3-8 bullet points where each bullet is a COMPLETE SENTENCE "
+                                              "that states the value and what it means for the reader (no bare noun-phrase fragments)"
                                               if count_tables(text) < MAX_TABLES
-                                              else "a bullet list of concrete items (NO table — the article already has enough tables)"),
+                                              else "3-8 bullet points, each a COMPLETE SENTENCE stating the value and what it means "
+                                                   "for the reader (no bare noun-phrase fragments; NO table — the article already has enough tables)"),
                                        have_list="\n".join(f"- {u}" for u in have[:80]) or "- (none)",
                                        material=re.sub(r"`([^`\n]+)`", r"\1", material[:12000]), section=block),
                 task="polish", temperature=0.3)
@@ -370,8 +376,18 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
         if not add:
             continue
         trailing = block[len(block.rstrip()):] or "\n\n"
-        new = block.rstrip() + "\n\n" + add + trailing
+        paras = re.split(r"\n\s*\n", block.rstrip())
+        # 小节末段是散文（不是表 / 列表 / 标题）且前面还有别的段落 → 插在末段之前，让小节仍以散文收尾
+        if len(paras) >= 3 and not re.match(r"^\s*(?:\||[-*+]\s|\d+[.)]\s|#)", paras[-1]):
+            new = "\n\n".join(paras[:-1]) + "\n\n" + add + "\n\n" + paras[-1] + trailing
+        else:
+            new = block.rstrip() + "\n\n" + add + trailing
 
+        items = [l.strip() for l in add.split("\n") if re.match(r"^\s*[-*+]\s", l)]
+        if items and (sum(len(x.split()) for x in items) / len(items) < 6
+                      or sum(1 for x in items if re.search(r"\b(?:is|are|was|were|has|have|can|will|should|must|means|takes|costs|needs|runs|gives|keeps|lets|adds|holds|uses|drops|rises|falls|requires|allows|prevents|causes)\b", x, re.I)) < len(items) / 2):
+            logger.info("补写「%s」已丢弃：条目是名词碎片不是句子", head[:40])
+            continue
         gained = density_audit._evidence_units(new, material) - old_units
         if sections is not None:
             # 触发点是"整篇低于竞品"时，只认**全文里没有的**单元。实测 Martin 那篇两轮落地
