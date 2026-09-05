@@ -221,6 +221,7 @@
   .tl details summary:before{content:"▸";font-size:11px;color:var(--faint)} .tl details[open] summary:before{content:"▾"}
   .tl details[open] summary{border-bottom:1px dashed var(--line);margin-bottom:8px}
   .tl .btns{margin-top:10px} .tl .btns button{width:100%;padding:12px 18px;font-size:14px}
+  .tl .btns+.hint{margin-top:10px}   /* 老样式的 hint 是 -6px 负边距，在这里会顶到按钮上 */
   .tl .sec.folded{padding:10px 14px} .tl .sec.folded h2{margin-bottom:4px}
   .tl .foldbar{padding:0;font-size:12.5px} .tl .foldbar .op{white-space:nowrap}
   .tl #status{margin:8px 4px 0;font-size:12.5px} .tl #status:empty{display:none}
@@ -705,7 +706,14 @@ function restoreDraft(){
     hour:"2-digit",minute:"2-digit"});
   bar.append(document.createTextNode("已恢复你 "+when+" 未完成的这篇（大纲还在，接着写就行）。"));
   const btn=E("button",null,"不用了，重新开始");
-  btn.onclick=()=>{ clearDraft(); location.reload(); };
+  btn.onclick=()=>{
+    // reload 会触发 beforeunload 上的 saveDraft()，此刻内存里 S.outline 还在 ——
+    // 刚清掉的草稿会被原样写回，下次加载又恢复出来（用户 2026-09-05 报"点了还是回到半完成页"）。
+    // 先清内存、摘掉监听，再 reload。
+    window.removeEventListener("beforeunload", saveDraft);
+    S.sessionId=""; S.outline=""; S.article=""; S.docx="";
+    clearDraft(); location.reload();
+  };
   bar.append(btn);
   $("sec2").prepend(bar);
 }
