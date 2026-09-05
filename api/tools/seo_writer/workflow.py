@@ -272,9 +272,25 @@ class SEOWriter:
         full = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
                                      ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
         serp = density_audit.parse_serp(full)
+        # 竞品没覆盖的角度：模型想 3 个，各搜一层。起新 H2 的素材从这来（用户 2026-09-05）。
+        angles: list[str] = []
+        try:
+            raw = await self.llm.complete(
+                P.GAP_ANGLES_PROMPT.format(
+                    topic=ctx.get("topic", ""), main_keyword=ctx.get("main_keyword", ""),
+                    titles="\n".join(f"- {t}" for t in (serp.get("titles") or [])[:20]) or "- (none)",
+                    questions="\n".join(f"- {q}" for q in (serp.get("questions") or [])[:8]) or "- (none)"),
+                task="classify", temperature=0.4)
+            angles = [re.sub(r"^[\s\-\d.)•]+", "", l).strip().strip('"') for l in (raw or "").splitlines()]
+            angles = [a for a in angles if 3 <= len(a.split()) <= 12][:3]
+        except Exception:  # noqa: BLE001
+            logger.warning("竞品缺口角度生成失败（已跳过）", exc_info=True)
+        ctx["gap_angles"] = angles
         # 去掉和竞品语料重复的 URL 在 expand_queries 里做不了（它不知道竞品 URL），这里事后过滤
         try:
             text = await expand_queries(self.s, (serp.get("questions") or []) + (serp.get("related") or []))
+            if angles:
+                text += "\n" + await expand_queries(self.s, angles, per=1, max_q=3)
         except Exception:  # noqa: BLE001  扩展层抓不到不影响主流程
             logger.warning("子问题扩展搜索失败（已跳过）", exc_info=True)
             return ""
@@ -392,6 +408,8 @@ class SEOWriter:
         novel = density_audit.novel_facts(ctx.get("facts") or "", full)
         if novel:
             brief += P.NOVEL_FACTS_BLOCK.format(items="\n".join(f"- {x}" for x in strip_sources("\n".join(novel)).splitlines()))
+        if ctx.get("gap_angles"):
+            brief += P.GAP_ANGLES_BLOCK.format(items="\n".join(f"- {a}" for a in ctx["gap_angles"]))
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
 
     # ------------------------------------------------------------ 主题分类

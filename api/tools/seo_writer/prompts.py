@@ -194,6 +194,29 @@ FACTS_PROMPT = """从下面的参考资料里，抽出所有**可核实的事实
 #: 模型不知道竞品已经写了什么，只能凭感觉猜「什么算独特」。把竞品的信息基线
 #: **列出来**，它才知道哪些说了不算数。素材 > 规则。
 # 竞品没写的事实：事实清单 ∩ 非竞品语料。增益就是靠它们来的，单独点名让写手优先用。
+# 竞品没覆盖的角度：模型自己想 3 个，再各搜一层给素材，大纲里至少起 1–2 个 H2。
+# 用户 2026-09-05："为什么增益部分不让模型自己根据这个话题再新起几个 H2"。
+# 为什么要先搜再起：密度只认有出处的数字，凭空起的 H2 写不出可计分的东西；搜过之后它就有料。
+GAP_ANGLES_PROMPT = """Topic: {topic}
+Keyword: {main_keyword}
+
+Titles of the pages currently ranking for this keyword:
+{titles}
+
+Questions searchers ask (People Also Ask):
+{questions}
+
+List 3 angles a reader of this topic would need that NONE of the pages above cover. Each angle must be
+factual and searchable: a cost breakdown, a regulation or standard, a procedure, a comparison, a failure
+mode, a spec range, a timeline. Not "case studies", not "our experience", not "future trends".
+Output exactly 3 lines, each a short English search query (4-9 words) for that angle. No numbering, no commentary."""
+
+GAP_ANGLES_BLOCK = """
+
+**竞品都没覆盖的角度（已另行搜索，素材已并入事实清单）：**
+{items}
+大纲里至少为其中 1–2 个各起一个 H2 —— 这是本文比竞品多给的东西。"""
+
 NOVEL_FACTS_BLOCK = """
 
 **下面这些事实排在前面的竞品页面都没写（优先用，它们是本文的信息增益）：**
@@ -352,7 +375,8 @@ OUTLINE_PROMPT = """# 指令：创建以用户为中心的内容大纲
     * **全面性与实质性内容 (Completeness & Substance):** 确保大纲覆盖了用户围绕该主题可能关心的所有关键方面，提供足够深入、实质性的信息，避免内容过于肤浅或遗漏关键点。
 
 2.  **原创性 & 显著附加价值 (Originality & Significant Added Value):**
-    * **超越参考，创造独特：** 大纲中必须明确规划出 **至少1-2个核心部分**，其目标是提供现有高排名内容（见下文参考）**所缺乏的独特价值**。这可以是：**原创的深入分析、独特的视角/观点、把机制讲透（别人只说"要做X"，你说清"为什么X有效、什么情况下无效"）、实用的、非泛泛而谈的操作步骤、判断标准与取舍条件、或者对现有信息的批判性整合与提炼**。请在这些部分明确标注其【独特价值点】。
+    * **超越参考，创造独特：** 大纲中必须明确规划出 **至少1-2个核心部分**，其目标是提供现有高排名内容（见下文参考）**所缺乏的独特价值**。
+      上面「搜索页实况」若列了「竞品都没覆盖的角度」，**至少选 1–2 个各起一个 H2**（素材已经搜好在事实清单里）。这可以是：**原创的深入分析、独特的视角/观点、把机制讲透（别人只说"要做X"，你说清"为什么X有效、什么情况下无效"）、实用的、非泛泛而谈的操作步骤、判断标准与取舍条件、或者对现有信息的批判性整合与提炼**。请在这些部分明确标注其【独特价值点】。
       ⚠️ **不要规划「第一手经验分享」「我们的客户案例」这类需要亲身经历的内容** ——
       写手没有经历，只会编（实测七篇产出全部编出了假案例或假经验句）。
     * **避免同质化：** 除非能提供显著不同的解释、更深层次的洞察或更新的信息，否则应避免重复参考内容中已经泛滥且无新意的信息点。
