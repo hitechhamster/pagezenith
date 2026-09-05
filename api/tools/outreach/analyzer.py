@@ -111,10 +111,15 @@ class OutreachFinder:
                     return out
         return out
 
-    async def _emails_for(self, home_url: str, home_html: str) -> tuple[list[ProspectEmail], bool]:
-        """首页 + contact/about 页抓邮箱（contact 页=高，首页=中），并判是否有表单。"""
+    async def _emails_for(self, home_url: str, home_html: str,
+                          home_text: str = "") -> tuple[list[ProspectEmail], bool]:
+        """首页 + contact/about 页抓邮箱（contact 页=高，首页=中），并判是否有表单。
+
+        home_html 为空 = 这页是抓取接口回退来的（直连被反爬挡了），只有正文没有 HTML：
+        表单和 contact 页链接都判不了，邮箱只能从正文里捞。
+        """
         conf: dict[str, str] = {}
-        for e in extract_emails(home_html):
+        for e in extract_emails(home_html or home_text):
             conf.setdefault(e, "中")
         has_form = has_contact_form(home_html)
         for cl in find_contact_links(home_html, home_url):
@@ -140,7 +145,8 @@ class OutreachFinder:
                 logger.info("候选站抓取失败 %s: %s", seed["url"], exc)
                 return Prospect(domain=seed["domain"], url=seed["url"], title=seed["title"],
                                 fetched=False)
-            emails, has_form = await self._emails_for(seed["url"], home.raw_html or "")
+            emails, has_form = await self._emails_for(seed["url"], home.raw_html or "",
+                                                      home.text or "")
             try:
                 raw = await self.llm.complete_json(
                     build_classify_system(req.language_code),

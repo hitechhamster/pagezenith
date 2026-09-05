@@ -6,6 +6,8 @@ mock 模式下返回构造的占位正文。
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 from selectolax.parser import HTMLParser
 
@@ -72,6 +74,14 @@ _BROWSER_HEADERS = {
 }
 
 
+#: 直连被挡时才回退：这些状态码是"机器人管理器拒绝"，不是"页面不存在"。
+#: 404/410 是真没有，回退也没用，别白花额度。
+_BLOCKED_STATUS = {401, 403, 405, 406, 409, 418, 429, 503}
+
+
+logger = logging.getLogger(__name__)
+
+
 class PageFetcher:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()
@@ -80,17 +90,68 @@ class PageFetcher:
         if self.s.use_mocks:
             return _mock_page(url)
         if self.s.block_private_urls:
-            assert_safe_url(url)
-        # event_hooks：重定向的每一跳都会再过一次 SSRF 校验。
-        # 只在入口校验是不够的 —— 挂个 302 到 169.254.169.254 就能绕过（2026-09-04）。
-        async with httpx.AsyncClient(
-            timeout=self.s.fetch_timeout, follow_redirects=True, headers=_BROWSER_HEADERS,
-            event_hooks=SAFE_HOOKS if self.s.block_private_urls else {},
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            html = resp.text
-        return _extract(url, html)
+            assert_safe_url(url)        # 回退前也必须先过：内网地址不能外发给第三方
+        try:
+            # event_hooks：重定向的每一跳都会再过一次 SSRF 校验。
+            # 只在入口校验是不够的 —— 挂个 302 到 169.254.169.254 就能绕过（2026-09-04）。
+            async with httpx.AsyncClient(
+                timeout=self.s.fetch_timeout, follow_redirects=True, headers=_BROWSER_HEADERS,
+                event_hooks=SAFE_HOOKS if self.s.block_private_urls else {},
+            ) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                html = resp.text
+        except Exception as exc:  # noqa: BLE001
+            if not _should_fallback(exc):
+                raise
+            page = await self._scrape_fallback(url)
+            if page is None:
+                raise
+            return page
+        page = _extract(url, html)
+        # 200 但正文是拦截页（"请开启 JavaScript" / "Access denied"）→ 同样回退
+        if looks_blocked(page.text):
+            alt = await self._scrape_fallback(url)
+            if alt is not None and len(alt.text) > len(page.text):
+                return alt
+        return page
+
+    async def _scrape_fallback(self, url: str) -> PageContent | None:
+        """走搜索源的抓取接口。
+
+        为什么需要它（2026-09-06 实测）：香港机房 IP 被 fluke / belimo / veris /
+        senseanywhere / atlas-scientific 的机器人管理器一律 403，同一份代码在住宅 IP
+        能拿到其中两个 —— 挡的是 IP 段不是请求头。外链工具因此整屏"抓取失败"。
+        代价：每页 2 额度，只在直连失败时才花。
+        注意：抓取接口只返回正文和标题，**没有 HTML**，所以回退页拿不到联系表单和
+        contact 页链接（邮箱改从正文里捞）。
+        """
+        from . import serper_pool
+        if self.s.use_mocks or not serper_pool.has_key(self.s):
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=max(self.s.fetch_timeout, 45.0),
+                                         trust_env=False,
+                                         proxy=self.s.proxy_for("serper")) as client:
+                r = await serper_pool.post(client, self.s,
+                                           f"{self.s.serper_base_url}/scrape", {"url": url})
+            if r.status_code != 200:
+                return None
+            j = r.json()
+        except Exception:  # noqa: BLE001  回退失败就当没回退，把原错误抛回去
+            logger.info("抓取接口回退失败 %s", url, exc_info=True)
+            return None
+        text = (j.get("text") or "").strip()
+        if len(text) < 120:               # 太短说明也没拿到，别拿它当成功
+            return None
+        meta = j.get("metadata") or {}
+        logger.info("直连被挡，改用抓取接口取到 %s（%d 字）", url, len(text))
+        return PageContent(
+            url=url,
+            title=(meta.get("title") or meta.get("og:title") or None),
+            text=_strip_boilerplate_lines(text),
+            raw_html="",                  # 抓取接口不给 HTML
+        )
 
     async def capture(self, url: str):
         """httpx 无法截图：返回 (PageContent, None)，接口与 BrowserFetcher 一致。"""
@@ -99,6 +160,14 @@ class PageFetcher:
     async def aclose(self) -> None:
         """与 BrowserFetcher 统一接口；httpx 每次请求自管理，无需关闭。"""
         return None
+
+
+def _should_fallback(exc: Exception) -> bool:
+    """这个异常值不值得再花 2 额度换个通道试一次。"""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _BLOCKED_STATUS
+    return isinstance(exc, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout,
+                            httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError))
 
 
 def _extract(url: str, html: str) -> PageContent:

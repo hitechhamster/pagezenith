@@ -198,7 +198,7 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 _xp = len(re.findall(r"^URL:", ctx["expansion"] or "", re.M))
                 job.emit({"type": "step", "key": "search",
                           "message": (f"扩展层：另抓了 {_xp} 篇竞品之外的页面" if _xp else "扩展层：没有额外页面")
-                                     + f"（本篇 Serper 调用 {_sc[0]} 次）"})
+                                     + f"（本轮搜索 {_sc[0]} 次）"})
                 logger.info("Serper 调用 %d 次（%s）", _sc[0], ctx["main_keyword"])
 
                 # 社媒真实讨论：与全网搜索互补 —— 那边是竞品成品文，这边是真人原话
