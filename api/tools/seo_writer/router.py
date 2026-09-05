@@ -65,6 +65,7 @@ def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
     gain = report.get("gain") or {}
     den = report.get("density") or {}
     read = report.get("readability") or {}
+    bench = report.get("benchmark") or {}
     veto = bool(intent.get("veto"))
     score = report.get("score", 0)
     level = "bad" if veto else ("warn" if score < 60 else "ok")
@@ -74,9 +75,15 @@ def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
         "parts": report.get("parts") or {},
         "gain": gain.get("ratio") if gain.get("measurable") else None,
         "gain_note": None if gain.get("measurable") else gain.get("reason"),
+        # 竞品没写的具体东西 —— 给用户看的不是 52% 这个数，是"52% 指的是这些"
+        "gain_samples": (gain.get("samples") or [])[:8],
         "intent_covered": len(intent.get("covered") or []),
         "intent_total": len(intent.get("questions") or []),
+        "intent_questions": (intent.get("covered") or [])[:6],
         "intent_missing": (intent.get("missing") or [])[:6],
+        # 锚点：竞品页面的密度中位数。用户不懂 4.9/100词，但懂"竞品 2.8、你 4.9"
+        "competitor_density": bench.get("median") if bench.get("measurable") else None,
+        "competitor_pages": bench.get("pages", 0),
         "veto": veto, "veto_reasons": intent.get("reasons") or [],
         "density": den.get("per100"), "evidence": den.get("evidence_per100"),
         "opening_gap": den.get("opening_gap"),
@@ -205,7 +212,7 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 job.emit({"type": "facts", "count": len(_fact_lines),
                           "facts": ctx.get("facts", ""),
                           "message": (f"已锁定 {len(_fact_lines)} 条可核实事实（带出处），"
-                                      f"正文只允许使用清单内的数字"
+                                      f"统计类数字只准用清单里的"
                                       if _fact_lines else "资料里没抽到可核实事实，跳过")})
 
                 job.emit({"type": "step", "key": "classify", "message": "判断主题类型…"})
@@ -463,7 +470,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                 tt = ctx.get("topic_type", "")
                 g0 = reading_grade(before, language)
                 job.emit({"type": "step", "key": "polish",
-                          "message": f"润色到 12 年级可读水平…（原文 {g0 if g0 is not None else '—'} 年级）"})
+                          "message": f"润色：拆长句、去绕话，硬信息一条不少…（原文 FK {g0 if g0 is not None else '—'}）"})
 
                 buf: list[str] = []
                 async for piece in wf.stream_polish(ctx, before):

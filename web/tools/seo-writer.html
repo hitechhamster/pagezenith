@@ -120,6 +120,57 @@
   .wc.ok{background:var(--greenbg);color:var(--green);border:1px solid var(--greenline)}
   .wc.warn{background:var(--amberbg);color:var(--amber);border:1px solid var(--amberline)}
   .wc.bad{background:var(--redbg);color:var(--red);border:1px solid var(--redline)}
+  /* 折叠：走过的步骤收成一行摘要，当前步骤才展开。用户不该为了看正文翻三屏。 */
+  .sec.folded>*:not(h2):not(.foldbar){display:none !important}
+  .foldbar{display:none;align-items:center;gap:10px;font-size:13px;color:var(--muted);
+    padding:2px 0 0;cursor:pointer}
+  .sec.folded .foldbar{display:flex}
+  .sec.folded h2{margin-bottom:6px}
+  .foldbar b{color:var(--text);font-weight:500}
+  .foldbar .op{margin-left:auto;font-size:12px;color:var(--faint)}
+  .foldbar:hover .op{color:var(--accent)}
+  /* 进度流水默认只露当前一行 + "展开"，展开才看全部 */
+  .log.fold .li:not(.now):not(.last){display:none}
+  .log .more{display:none;padding:6px 14px;font-size:11.5px;color:var(--faint);cursor:pointer;
+    border-top:1px dashed var(--line);text-align:right}
+  .log.fold .more,.log.open .more{display:block}
+  .log .more:hover{color:var(--accent)}
+  /* 成绩单：一张卡讲清楚"这篇比竞品好在哪"，不是十个灰格子 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);
+    padding:16px 18px;margin:0 0 14px}
+  .card .hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .card .big{font-family:var(--font-display);font-size:44px;font-weight:700;line-height:1;
+    color:var(--text);min-width:64px}
+  .card .big small{font-size:14px;color:var(--faint);font-weight:400;margin-left:2px}
+  .card .big.warn{color:var(--amber)} .card .big.bad{color:var(--red)}
+  .card .verdict{flex:1;min-width:220px;font-size:14px;line-height:1.6;color:var(--text)}
+  .card .verdict .sub{font-size:12.5px;color:var(--muted);margin:2px 0 0;max-width:none}
+  .rows{display:grid;gap:0;border-top:1px solid var(--line)}
+  .rw{display:grid;grid-template-columns:150px 1fr;gap:12px;padding:10px 0;
+    border-bottom:1px dashed var(--line);align-items:baseline}
+  .rw:last-child{border-bottom:0}
+  .rw .k{font-size:13px;font-weight:600;color:var(--text)}
+  .rw .k .st{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;
+    vertical-align:1px;background:var(--green)}
+  .rw .k .st.warn{background:var(--amber)} .rw .k .st.bad{background:var(--red)}
+  .rw .v{font-size:13.5px;color:var(--text);line-height:1.6}
+  .rw .v .why{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.55}
+  .rw .v .cmp{display:inline-block;margin-left:8px;font-size:12px;color:var(--muted);
+    background:var(--soft);border-radius:6px;padding:1px 8px}
+  .rw .v ul{margin:4px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted)}
+  .rw .v li{margin:1px 0}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{font-family:var(--font-mono);font-size:11.5px;background:var(--soft);
+    border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--text)}
+  .card .minor{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:12px;padding-top:10px;
+    border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+  .card .minor b{color:var(--text);font-weight:500}
+  .card .todo{margin-top:12px;padding:10px 13px;border-radius:9px;background:var(--amberbg);
+    border:1px solid var(--amberline);font-size:12.5px;color:var(--text)}
+  .card .todo.bad{background:var(--redbg);border-color:var(--redline)}
+  .card .todo .k{font-weight:600;margin-bottom:4px}
+  .card .todo ul{margin:0;padding-left:18px;line-height:1.6}
+  @media(max-width:600px){.rw{grid-template-columns:1fr;gap:4px}}
   .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   .ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
   .ghost:hover{background:var(--soft);border-color:var(--line)}
@@ -157,10 +208,10 @@
     <li data-k="search"><b>02</b>搜全网</li>
     <li data-k="reddit"><b>03</b>抓 Reddit</li>
     <li data-k="facts"><b>04</b>锁定事实</li>
-    <li data-k="classify"><b>04</b>定类型</li>
-    <li data-k="approve" class="key"><b>05</b>你来审批</li>
-    <li data-k="article"><b>06</b>写正文</li>
-    <li data-k="polish"><b>07</b>润色</li>
+    <li data-k="classify"><b>05</b>定类型</li>
+    <li data-k="approve" class="key"><b>06</b>你来审批</li>
+    <li data-k="article"><b>07</b>写正文</li>
+    <li data-k="polish"><b>08</b>润色</li>
   </ol>
 
   <!-- 供应商 -->
@@ -174,6 +225,7 @@
   <!-- 第一步 -->
   <div class="sec" id="sec1">
     <h2><span class="step">1</span>文章参数</h2>
+    <div class="foldbar" id="fold1"><span id="fold1Text"></span><span class="op">展开修改 ▾</span></div>
     <div class="row">
       <div class="f"><label>主关键词 <b>*</b></label><input id="mainKw" placeholder="文章核心，标题和全文围绕它" /></div>
       <div class="f"><label>次关键词 <b>*</b></label><input id="secKw" placeholder="辅助关键词" /></div>
@@ -225,7 +277,8 @@
   <!-- 第二步 -->
   <div class="sec" id="sec2" style="display:none">
     <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
-    <div class="log" id="log1"></div>
+    <div class="foldbar" id="fold2"><span id="fold2Text"></span><span class="op">展开 ▾</span></div>
+    <div class="log fold" id="log1"></div>
     <div id="discovery"></div>
     <div class="sealrow" id="sealRow" style="display:none">
       <div class="seal">审</div>
@@ -248,16 +301,16 @@
   <!-- 第三步 -->
   <div class="sec" id="sec3" style="display:none">
     <h2><span class="step">3</span>文章<span class="n" id="artMeta"></span></h2>
-    <div class="log" id="log2"></div>
-    <div class="meta" id="artInfo" style="display:none"></div>
-    <div class="doc" id="articleBox"></div>
-    <div class="btns" id="artBtns" style="display:none">
-      <button id="btnDocx" class="ghost">下载 Word</button>
+    <div class="log fold" id="log2"></div>
+    <div id="artInfo" style="display:none"></div>
+    <div class="btns" id="artBtns" style="display:none;margin:0 0 14px">
+      <button id="btnDocx">下载 Word</button>
       <button id="btnCopy" class="ghost">复制 Markdown</button>
       <button id="btnRevert" class="ghost" style="display:none">还原润色前</button>
       <button id="btnRestart" class="ghost">再写一篇</button>
     </div>
-    <div class="hint" style="margin-top:8px">正文写完会<b>自动润色一遍</b>（按可读性判断力度，另计 <span id="polishPts">3</span> 点）。
+    <div class="doc" id="articleBox"></div>
+    <div class="hint" style="margin-top:8px">正文写完会<b>自动润色一遍</b>（拆长句、去绕话，硬信息一条不少；另计 <span id="polishPts">3</span> 点）。
       只改表达不动结构：标题、图片占位符、链接、表格都原样保留。不满意可以「还原润色前」。</div>
   </div>
 </div>
@@ -379,15 +432,28 @@ function logTo(id,msg){
   [...l.querySelectorAll(".li.now")].forEach(x=>x.classList.remove("now"));
   if(LOG_TICK[id]){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; }
   const row=E("div",null); row.className="li now";
-  const t=E("div",null,"0.0s"); t.className="t";
+  const t=E("div",null,"0s"); t.className="t";
   const m=E("div",null,msg); m.className="m";
-  row.append(t,m); l.append(row);
-  // 当前行的秒数自己跳。写正文要好几分钟，静止的 "0.0s" 会让人以为卡死了。
+  // "更多"那一行永远垫在最后，新行插它前面
+  let more=l.querySelector(".more");
+  if(!more){ more=E("div","more",""); more.onclick=()=>{ l.classList.toggle("open"); l.classList.toggle("fold"); syncMore(l); }; l.append(more); }
+  l.insertBefore(row, more);
+  row.append(t,m);
+  syncMore(l);
+  // 当前行的秒数自己跳。写正文要好几分钟，静止的 "0s" 会让人以为卡死了。
+  // 半秒一跳够了 —— 100ms 一跳整块日志一直在闪，用户反馈"一直闪闪闪"有它一份。
   const born=Date.now();
   LOG_TICK[id]=setInterval(()=>{
     if(!row.classList.contains("now")){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; return; }
-    t.textContent=((Date.now()-born)/1000).toFixed(1)+"s";
-  },100);
+    t.textContent=Math.round((Date.now()-born)/1000)+"s";
+  },500);
+}
+function syncMore(l){
+  const rows=l.querySelectorAll(".li"), n=rows.length, more=l.querySelector(".more");
+  rows.forEach((r,i)=>r.classList.toggle("last", i===n-1));   // 折叠态只露最后一行
+  if(!more) return;
+  more.textContent = l.classList.contains("open") ? "收起 ▴" : (n>1 ? `展开全部 ${n} 步 ▾` : "");
+  more.style.display = n>1 ? "block" : "none";
 }
 /* 长任务的"干等期"：大纲/正文用 pro 模型，思考阶段一个字都不吐
    （实测大纲 24.8s、正文 63.5s 无输出）。Gemini 流式里没有 reasoning 增量可订阅，
@@ -416,7 +482,19 @@ function logStop(id){
   if(LOG_TICK[id]){ clearInterval(LOG_TICK[id]); LOG_TICK[id]=null; }
   [...$(id).querySelectorAll(".li.now")].forEach(x=>x.classList.remove("now"));
 }
-function logReset(id){ logStop(id); delete LOG_T0[id]; $(id).innerHTML=""; }
+function logReset(id){ logStop(id); delete LOG_T0[id]; $(id).innerHTML=""; $(id).classList.add("fold"); $(id).classList.remove("open"); }
+
+/* 步骤折叠：走过的步骤收成一行摘要。展开只是看，不改状态。 */
+function foldSec(id, text){
+  const s=$(id); s.classList.add("folded");
+  const t=$("fold"+id.slice(-1)+"Text"); if(t) t.textContent=text||"";
+}
+function unfoldSec(id){ $(id).classList.remove("folded"); }
+["fold1","fold2"].forEach(fid=>{ const el=$(fid); if(el) el.onclick=()=>unfoldSec("sec"+fid.slice(-1)); });
+function paramSummary(){
+  const wc=parseInt($("wordcounts").value||"0",10);
+  return `${$("mainKw").value.trim()} · ${$("language").value}${wc?` · ${wc} 词`:" · 字数由 AI 定"}${VOICE?" · 写手 "+VOICE:""}`;
+}
 
 /* 发现面板：Reddit 真人讨论 + 带出处的事实清单。
    这两样是本产品跟"一键出文"最大的区别 —— 只在日志里写一句"已纳入"，用户看不见价值。 */
@@ -512,14 +590,34 @@ function restoreDraft(){
 /* 离开页面前再存一次 —— 覆盖「被送去充值页」这种非自愿跳转 */
 window.addEventListener("beforeunload", saveDraft);
 
+/* 流式渲染，两条规矩：
+   ① 已经写完的段落只渲染一次。旧版每 120ms 把整篇的 DOM 推倒重建，几千词的文章
+      一边写一边整块重绘 —— 用户看到的"闪闪闪"就是这个。现在按空行切块，
+      落定的块进 settled 区不再动，只有正在写的最后一块每次重画。
+   ② 不强制跳底。旧版每次重画都 scrollTop=scrollHeight，用户想往上看一眼都被拽回来。
+      现在只有他本来就在底部才跟着走。 */
 function throttleRender(box,getText){
-  let last=0,timer=null;
+  let last=0,timer=null,done=0,settled=null,tail=null;
+  const ensure=()=>{
+    if(settled && box.contains(settled)) return;
+    box.innerHTML=""; settled=E("div","settled"); tail=E("div","tail"); box.append(settled,tail); done=0;
+  };
+  const paint=(final)=>{
+    last=Date.now(); timer=null; ensure();
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+    const text=getText();
+    // 按空行切块；表格/列表内部没有空行，天然不会被切开
+    const blocks=text.split(/\n{2,}/);
+    const settle = final ? blocks.length : Math.max(0, blocks.length-1);
+    if(final && done>0 && blocks.length<done){ box.innerHTML=""; settled=null; ensure(); }
+    for(;done<settle;done++) settled.insertAdjacentHTML("beforeend", MD.render(blocks[done]));
+    tail.innerHTML = final ? "" : MD.render(blocks.slice(settle).join("\n\n"));
+    if(atBottom) box.scrollTop=box.scrollHeight;
+  };
   return (final)=>{
-    const paint=()=>{ last=Date.now(); timer=null; box.innerHTML=MD.render(getText()); box.scrollTop=box.scrollHeight; };
-    if(final){ if(timer)clearTimeout(timer); paint(); return; }
+    if(final){ if(timer)clearTimeout(timer); paint(true); return; }
     if(timer) return;
-    const wait=Math.max(0,120-(Date.now()-last));
-    timer=setTimeout(paint,wait);
+    timer=setTimeout(()=>paint(false), Math.max(0,150-(Date.now()-last)));
   };
 }
 
@@ -531,6 +629,7 @@ $("btnOutline").onclick=async()=>{
 
   $("btnOutline").disabled=true;
   $("sec2").style.display=""; $("sec3").style.display="none";
+  unfoldSec("sec2"); foldSec("sec1", paramSummary());
   logReset("log1"); discReset(); $("outlineBox").innerHTML=""; S.outline="";
   setStatus("正在生成大纲…",false,true);
   const paint=throttleRender($("outlineBox"),()=>S.outline);
@@ -589,6 +688,8 @@ $("btnArticle").onclick=async()=>{
   $("sec3").style.display=""; logReset("log2"); $("articleBox").innerHTML="";
   $("artInfo").style.display="none"; $("artInfo").innerHTML=""; $("artBtns").style.display="none";
   S.article=""; S.images={};
+  // 大纲已通过，收成一行；文章区成为页面上唯一展开的东西，用户是看着文章长出来，不是追着页面跑
+  foldSec("sec2", `大纲已通过 · ${(S.outline.match(/^##\s/gm)||[]).length} 节`);
   setStatus("正在写文章，长文可能要 2–5 分钟，别关页面…",false,true);
   $("sec3").scrollIntoView({behavior:"smooth",block:"start"});
   const paint=throttleRender($("articleBox"),()=>S.article);
@@ -639,48 +740,106 @@ function applyImages(){
   });
 }
 
+/* 成绩单：一张卡讲清楚"这篇比竞品好在哪"。
+   四项全是确定性计算、零 AI 成本；增益和密度是拿本文去比对**真实搜索页抓来的竞品正文**，
+   不是模型自评。每一行都给"人话标签 + 一句为什么 + 竞品对照"，用户不需要懂术语。 */
 function renderInfo(){
-  const ev=S.info, box=$("artInfo"); box.innerHTML=""; box.style.display="grid";
-  const item=(k,v)=>{const d=E("div","metaitem");d.append(E("div","k",k));d.append(E("div","v",v||"—"));return d;};
-  const badge=(k,level,msg)=>{const d=E("div","metaitem");d.append(E("div","k",k));
-    const wrap=E("div","v"); wrap.append(E("span","wc "+(level||"ok"),msg)); d.append(wrap); return d;};
-  box.append(item("SEO Title（"+(ev.seo_title||"").length+" 字符）",ev.seo_title));
-  box.append(item("SEO Description（"+(ev.seo_description||"").length+" 字符）",ev.seo_description));
-  box.append(badge("字数",ev.wordcount_level,ev.wordcount_message||String(ev.word_count||"")));
-  if(ev.grade_message){
-    const before=(ev.grade_before!=null&&ev.grade_before!==ev.grade)?`（润色前 FK ${ev.grade_before}）`:"";
-    box.append(badge("阅读年级",ev.grade_level,ev.grade_message+before));
+  const ev=S.info, box=$("artInfo"); box.innerHTML=""; box.style.display="";
+  const q=ev.quality||{};
+  const card=E("div","card");
+  const has=q.score!=null;
+
+  // ① 结论行：大数字 + 一句人话
+  const hero=E("div","hero");
+  const big=E("div","big"+(q.level&&q.level!=="ok"?" "+q.level:""));
+  big.textContent = has ? q.score : "—"; big.append(Object.assign(E("small"),{textContent:"/100"}));
+  const v=E("div","verdict");
+  v.append(E("div",null, has ? verdictLine(q) : "这篇没有打分（太短或没有竞品语料）。"));
+  v.append(E("p","sub", has
+    ? `对照的是搜索页排你前面的 ${q.competitor_pages||"几"} 篇真实竞品，不是模型自评。分数只在同一主题内可比。`
+    : ""));
+  hero.append(big,v); card.append(hero);
+
+  if(has){
+    const rows=E("div","rows");
+    // ② 增益
+    if(q.gain!=null){
+      const pct=Math.round(q.gain*100), lv=q.gain>=0.45?"ok":(q.gain>=0.3?"warn":"bad");
+      const r=row("比竞品多给的", lv, `${pct}% 的具体信息，排在前面的页面都没写`,
+        "参数值、文件名、设置路径这类读者能照做的东西，有多少是竞品没有的。Google 判断「有没有必要收录你」看的就是这个。");
+      if((q.gain_samples||[]).length){
+        const c=E("div","chips"); q.gain_samples.slice(0,8).forEach(s=>c.append(E("span","chip",s)));
+        r.querySelector(".v").append(c);
+      }
+      rows.append(r);
+    }
+    // ③ 意图
+    if(q.intent_total){
+      const lv = q.veto ? "bad" : (q.intent_covered===q.intent_total ? "ok" : "warn");
+      const r=row("搜索者的问题", lv,
+        `${q.intent_covered}/${q.intent_total} 个都有专门的回答`,
+        "这些是 Google 搜索页上真实显示的「大家还在问」，不是猜的。每个问题在文里都有一段能单独摘出来当答案。");
+      const ul=document.createElement("ul");
+      (q.intent_questions||[]).forEach(t=>{const li=document.createElement("li");li.textContent="✓ "+t;ul.append(li);});
+      (q.intent_missing||[]).forEach(t=>{const li=document.createElement("li");li.textContent="✗ "+t;li.style.color="var(--red)";ul.append(li);});
+      if(ul.children.length) r.querySelector(".v").append(ul);
+      rows.append(r);
+    }else{
+      rows.append(row("搜索者的问题","warn","这次搜索页没返回「大家还在问」","Google 偶尔不给这块数据，这一项没法算，不影响其他分。"));
+    }
+    // ④ 密度
+    if(q.density!=null){
+      const cd=q.competitor_density;
+      const lv = cd==null ? "ok" : (q.evidence>=cd*1.2 ? "ok" : (q.evidence>=cd*0.8 ? "warn" : "bad"));
+      const r=row("信息密度", lv,
+        `每 100 词 ${q.evidence} 条能照做的信息`
+          + (cd!=null ? `<span class="cmp">竞品中位数 ${cd}</span>` : ""),
+        "数字、参数、文件名、功能名的密度。读者一段话里能拿走几样东西，而不是读了三百词全是立场铺垫。", true);
+      rows.append(r);
+    }
+    // ⑤ 可读性：不报 FK 数字，报人话
+    if(q.fk!=null){
+      const st=q.fk_state, lv= st==="ok"?"ok":"warn";
+      const txt = st==="ok" ? "读起来顺，术语没被删" : (st==="hard" ? "句子偏绕，润色会拆长句" : "写得太碎，专业感可能不够");
+      const r=row("可读性", lv, txt,
+        `阅读年级 FK ${q.fk}`+(ev.grade_before!=null&&ev.grade_before!==q.fk?`（润色前 ${ev.grade_before}）`:"")+`，可接受 ${q.fk_band?q.fk_band[0]+"–"+q.fk_band[1]:"7–13"}。这个数字对 SEO 意义不大，只用来抓两头。`);
+      rows.append(r);
+    }
+    card.append(rows);
   }
-  renderQuality(ev.quality,box);
+
+  // ⑥ 次要信息：一行带过
+  const minor=E("div","minor");
+  minor.innerHTML = `<span><b>${ev.word_count||"—"}</b> 词${ev.wordcount_level&&ev.wordcount_level!=="ok"?"（"+MD.escape(ev.wordcount_message||"")+"）":""}</span>`
+    + `<span>SEO Title <b>${MD.escape(ev.seo_title||"—")}</b> <span style="color:var(--faint)">${(ev.seo_title||"").length} 字符</span></span>`
+    + `<span>Description <b>${MD.escape(ev.seo_description||"—")}</b> <span style="color:var(--faint)">${(ev.seo_description||"").length} 字符</span></span>`;
+  card.append(minor);
+
+  // ⑦ 只在真有问题时出现
+  const notes=[].concat(q.veto?q.veto_reasons:[], q.todo||[]);
+  if(notes.length){
+    const d=E("div","todo"+(q.veto?" bad":""));
+    d.append(E("div","k", q.veto ? "⛔ 文章形态和搜索页不匹配 —— 这一项不过，其余分数没意义" : "发布前值得顺手改的"));
+    const ul=document.createElement("ul");
+    notes.slice(0,6).forEach(t=>{const li=document.createElement("li"); li.textContent=String(t).replace(/^-\s*/,""); ul.append(li);});
+    d.append(ul); card.append(d);
+  }
+  box.append(card);
 }
-
-/* 内容分：意图覆盖 / 信息增益 / 密度 / 结构。全部确定性计算，零 AI 成本。
-   增益是拿本文的硬信息去比对**真实搜索页抓来的竞品正文**，不是模型自评。 */
-function renderQuality(q,box){
-  if(!q||q.score==null) return;
-  const badge=(k,level,msg)=>{const d=E("div","metaitem");d.append(E("div","k",k));
-    const wrap=E("div","v"); wrap.append(E("span","wc "+(level||"ok"),msg)); d.append(wrap); return d;};
-  box.append(badge("内容分",q.level,`${q.score}／100`));
-  if(q.gain!=null) box.append(badge("信息增益",q.gain>=0.45?"ok":(q.gain>=0.3?"warn":"bad"),
-      `${Math.round(q.gain*100)}% 的硬信息竞品没写`));
-  if(q.intent_total) box.append(badge("意图覆盖",
-      q.intent_covered/q.intent_total>=0.5?"ok":"bad",
-      `搜索页子问题 ${q.intent_covered}/${q.intent_total}`));
-  if(q.density!=null) box.append(badge("信息密度","ok",
-      `${q.density}/100词（可照做的 ${q.evidence}）`));
-  if(q.fk!=null&&q.fk_band) box.append(badge("阅读年级",
-      q.fk_state==="ok"?"ok":"warn",
-      `FK ${q.fk}（可接受区间 ${q.fk_band[0]}–${q.fk_band[1]}）`));
-
-  const notes=[].concat(q.veto?q.veto_reasons:[],q.todo||[]);
-  if(!notes.length) return;
-  const d=E("div","metaitem"); d.style.gridColumn="1/-1";
-  d.append(E("div","k",q.veto?"⛔ 意图不匹配（这一项不过，其余分数没意义）":"发布前值得改的"));
-  const ul=document.createElement("ul");
-  ul.style.cssText="margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.65";
-  notes.slice(0,6).forEach(t=>{const li=document.createElement("li");
-    li.textContent=String(t).replace(/^-\s*/,""); ul.append(li);});
-  d.append(ul); box.append(d);
+function row(k, lv, val, why, html){
+  const r=E("div","rw");
+  const kk=E("div","k"); kk.append(E("span","st "+(lv||"ok")), document.createTextNode(k)); r.append(kk);
+  const vv=E("div","v"); if(html) vv.innerHTML=val; else vv.textContent=val;
+  if(why) vv.append(E("span","why",why));
+  r.append(vv); return r;
+}
+function verdictLine(q){
+  const parts=[];
+  if(q.veto) return "文章形态和搜索页不匹配，先看下面的说明。";
+  if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
+  if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
+  if(q.competitor_density!=null&&q.evidence!=null) parts.push(q.evidence>=q.competitor_density*1.2 ? "信息密度高于竞品" : (q.evidence<q.competitor_density*0.8 ? "信息密度低于竞品" : "信息密度和竞品持平"));
+  return parts.length ? parts.join("，")+"。" : "已完成打分。";
 }
 
 /* ---------- 独立环节：润色 ---------- */
@@ -690,7 +849,7 @@ async function runPolish(){
   S.pre={article:S.article, docx:S.docx, filename:S.filename, info:{...S.info}};
   $("btnDocx").disabled=true;
   setStatus("润色中，整篇重写一遍，时间和写文差不多…",false,true);
-  logTo("log2","—— 开始润色（目标：美国 12 年级学生能读懂）——");
+  logTo("log2","—— 开始润色：拆长句、去绕话，硬信息一条不少 ——");
   S.article="";
   const paint=throttleRender($("articleBox"),()=>S.article);
   try{
@@ -750,6 +909,7 @@ $("btnRestart").onclick=()=>{
   S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={}; S.info={}; S.pre=null;
   $("btnRevert").style.display="none";
   $("sec2").style.display="none"; $("sec3").style.display="none"; setStatus("");
+  unfoldSec("sec1"); unfoldSec("sec2");
   window.scrollTo({top:0,behavior:"smooth"});
 };
 </script>

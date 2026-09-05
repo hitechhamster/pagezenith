@@ -457,9 +457,41 @@ def density(text: str) -> dict[str, Any]:
             # 不能把它标成"该删"。
             "repetitive": [r["head"] for r in rows
                            if r["repeat"] >= 0.5 and r["units"] >= 4
-                           and not re.search(r"(?i)^(frequently asked|faq|常见问题)", r["head"])],
+                           and not re.search(r"(?i)^(frequently asked|faq|常见问题|preguntas frecuentes|"
+                                             r"questions fréquentes|häufige fragen|よくある質問|"
+                                             r"perguntas frequentes|자주 묻는|domande frequenti|"
+                                             r"pertanyaan umum)", r["head"])],
             "repeated_stats": [{"value": v, "sections": sorted(set(w))}
                                for v, w in stat_where.items() if len(set(w)) >= 2]}
+
+
+def competitor_density(search_text: str) -> dict[str, Any]:
+    """竞品页面的证据密度中位数 —— 给用户看的**锚点**。
+
+    "每 100 词 4.9 条硬信息"用户看不懂，"竞品 2.8、你 4.9"一眼就懂。
+    同一套 _evidence_units 口径，所以可以直接比。只算抓到全文的页面（>150 词），
+    只有摘要的那几条比出来没意义。
+    """
+    pages = [m.group(1) for m in re.finditer(
+        r"^Content:\s*(.*?)(?=^---\s*$|^Title:|^Q:|^Rel:|\Z)", search_text or "", re.M | re.S)]
+    vals = []
+    for p in pages:
+        n = word_count(p)
+        if n < 150:
+            continue
+        # 只比散文页。应用商店列表页抓下来全是导航和功能名堆砌（实测 69 行里 39 行不足 6 词，
+        # 密度算出 14.09），拿它当基线会让每一篇正经文章都显得"低于竞品"。
+        lines = [l for l in p.splitlines() if l.strip()]
+        if lines and sum(1 for l in lines if len(l.split()) < 6) / len(lines) > 0.4:
+            continue
+        vals.append(len(_evidence_units(p)) / n * 100)
+    # 少于三页不给中位数 —— 两个数的"中位数"就是随机挑一个，没资格当锚点
+    if len(vals) < 3:
+        return {"measurable": False, "pages": len(vals)}
+    vals.sort()
+    mid = vals[len(vals) // 2] if len(vals) % 2 else (vals[len(vals) // 2 - 1] + vals[len(vals) // 2]) / 2
+    return {"measurable": True, "pages": len(vals), "median": round(mid, 2),
+            "max": round(vals[-1], 2)}
 
 
 # --------------------------------------------------------------------------- #
@@ -559,6 +591,7 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
     gain = information_gain(article, serp.get("corpus", ""))
     den = density(article)
     read = structural_readability(article, topic_type, language)
+    bench = competitor_density(search_text)
 
     clamp = lambda x: max(0.0, min(1.0, x))
     parts: dict[str, float | None] = {
@@ -576,6 +609,7 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
     return {"score": score,
             "parts": {k: (None if v is None else round(v * 100)) for k, v in parts.items()},
             "intent": intent, "gain": gain, "density": den, "readability": read,
+            "benchmark": bench,
             "unmeasured": [k for k, v in parts.items() if v is None]}
 
 

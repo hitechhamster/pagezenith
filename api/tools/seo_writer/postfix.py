@@ -399,6 +399,64 @@ Rules:
 {material}"""
 
 
+#: FAQ 小节标题按文章语言走。写死英文的话，一篇西班牙语文章末尾会冒出
+#: "Frequently asked questions" —— 交付物里最显眼的位置出一个外语标题。
+_FAQ_HEADS = {
+    "english": "Frequently asked questions", "chinese": "常见问题",
+    "spanish": "Preguntas frecuentes", "french": "Questions fréquentes",
+    "german": "Häufige Fragen", "japanese": "よくある質問", "portuguese": "Perguntas frequentes",
+    "korean": "자주 묻는 질문", "italian": "Domande frequenti", "indonesian": "Pertanyaan umum",
+}
+
+
+def _faq_heading(language: str) -> str:
+    low = (language or "").lower()
+    for k, v in _FAQ_HEADS.items():
+        if low.startswith(k):
+            return v
+    return _FAQ_HEADS["english"]
+
+
+def dedupe_repeated_stats(text: str) -> tuple[str, list[str]]:
+    """同一条论据统计写进两个以上小节的，只留第一次，后面的整句删。纯代码，零 LLM。
+
+    实测：Yottaa「63% / 5 亿访问 / 1300 站」被写进三个小节，读者读到第三遍，
+    信息量一个单位都没增加。检测器（density.repeated_stats）能抓到，
+    这里把它收口。
+
+    删得很保守 —— 一句话只有同时满足三条才删：
+      ① 含一个前文已经出现过的统计；② 带引用信号（according to / study / data…），
+      说明它就是在复述那条统计，不是顺带提了个数；③ 句里没有任何**前文没出现过的**硬信息。
+    三条缺一不删。宁可留一句重复，也不能删掉一句带新东西的话。
+    """
+    if not text:
+        return text, []
+    seen_stats: set[str] = set()
+    seen_units: set[str] = set()
+    changes: list[str] = []
+    out_secs: list[str] = []
+    for head, body in density_audit.sections(text):
+        lines = body.split("\n")
+        for i, line in enumerate(lines):
+            if _STRUCT_LINE.match(line) or not line.strip():
+                continue
+            kept: list[str] = []
+            for sent in _split_sentences(line):
+                u = density_audit.hard_units(sent)
+                stats = u["stat"]
+                new_units = (u["param"] | u["entity"] | stats) - seen_units
+                repeat = stats & seen_stats
+                if repeat and _CLAIM_SENT.search(sent) and not (new_units - repeat):
+                    changes.append(f"删重复统计句（{'、'.join(sorted(repeat)[:2])}）：「{sent.strip()[:44]}…」")
+                    continue
+                kept.append(sent)
+                seen_units |= u["param"] | u["entity"] | stats
+                seen_stats |= stats
+            lines[i] = "".join(kept)
+        out_secs.append(("" if head == "(intro)" else f"## {head}") + "\n".join(lines))
+    return "".join(out_secs), changes
+
+
 async def ensure_paa_coverage(text: str, report: dict, material: str, language: str,
                               complete: Optional[CompleteFn]) -> tuple[str, list[str]]:
     """搜索页的子问题一个都不能漏 —— 正文没答到的，补一个 FAQ 小节答掉。
@@ -430,7 +488,7 @@ async def ensure_paa_coverage(text: str, report: dict, material: str, language: 
         logger.info("FAQ 补写已丢弃：编了统计 %s", bad[:3])
         return text, []
 
-    candidate = text.rstrip() + "\n\n## Frequently asked questions\n\n" + block + "\n"
+    candidate = text.rstrip() + f"\n\n## {_faq_heading(language)}\n\n" + block + "\n"
     covered = [q for q in missing if density_audit._answers(candidate, q)]
     if len(covered) < len(missing):
         logger.info("FAQ 补写已丢弃：%d/%d 个问题仍未答到", len(covered), len(missing))
@@ -450,4 +508,5 @@ async def postfix(text: str, keywords: list[str], facts: str,
         return t2, c1 + c2
     t3, c3 = await boost_thin_sections(t2, report, facts, material, complete)
     t4, c4 = await ensure_paa_coverage(t3, report, material, language, complete)
-    return t4, c1 + c2 + c3 + c4
+    t5, c5 = dedupe_repeated_stats(t4)
+    return t5, c1 + c2 + c3 + c4 + c5
