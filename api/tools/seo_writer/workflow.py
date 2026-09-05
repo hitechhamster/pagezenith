@@ -458,6 +458,39 @@ class SEOWriter:
         return out
 
     @staticmethod
+    def polish_lost_code(before: str, after: str) -> list[str]:
+        """润色弄碎 / 弄丢的反引号片段（文件名、代码、路径）。
+
+        实测把 `Bill_of_Materials.xlsx` 从中间拆成 "`Bill_of_Materials.Verify the xlsx file"，
+        lost_units 只看参数和专名，看不见这个。反引号里的东西一个字符都不能变。
+        """
+        have = density_audit.squash(after or "")
+        out, seen = [], set()
+        for m in density_audit._CODE.findall(before or ""):
+            k = density_audit.squash(m.strip("` "))
+            if k and k not in seen and k not in have:
+                seen.add(k)
+                out.append(m.strip("` "))
+        return out
+
+    @staticmethod
+    def polish_added_we(before: str, after: str) -> list[str]:
+        """润色**新加**的第一人称经手声明（"We control / We audit …"）。空列表 = 合规。
+
+        润色提示词原来写"人称统一用 We"，模型就把无主语句改成 "We control these exact
+        specifications on the shared assembly lines" —— 凭空多出一个假工厂主。
+        """
+        from tools.seo_writer.postfix import _NEW_WE
+        had = {density_audit.squash(x) for x in _NEW_WE.findall(before or "")}
+        out, seen = [], set()
+        for m in _NEW_WE.findall(after or ""):
+            k = density_audit.squash(m)
+            if k not in had and k not in seen:
+                seen.add(k)
+                out.append(m)
+        return out
+
+    @staticmethod
     def polish_broke_structure(before: str, after: str) -> str:
         """润色是否破坏了结构？返回空串=没问题，否则返回人话原因。
 

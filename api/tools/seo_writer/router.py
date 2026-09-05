@@ -546,25 +546,34 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                 # 可读性是加分项，硬信息才是用户花钱买的东西。
                 total_units = len(density_audit._evidence_units(before))
                 lost = wf.polish_lost_units(before, text)
+                # 反引号片段碎了 / 新加了 "We control…" 这种假经手声明 —— 一条都不放过，
+                # 和"删货"走同一条点名重试路径（2026-09-05 ebike 那篇两样都中了）
+                lost_code = wf.polish_lost_code(before, text)
+                added_we = wf.polish_added_we(before, text)
+                too_many = total_units >= 10 and len(lost) > max(3, 0.10 * total_units)
                 # 十条硬信息丢一条以上就算删货（下限 3 条，短文别误伤）
-                if total_units >= 10 and len(lost) > max(3, 0.10 * total_units):
+                if too_many or lost_code or added_we:
+                    why = (f"删掉了 {len(lost)} 条具体信息（{'、'.join(lost[:3])}…）" if too_many
+                           else f"弄碎了 {'、'.join(lost_code[:2])}" if lost_code
+                           else f"擅自加了第一人称「{added_we[0]}」")
                     job.emit({"type": "step", "key": "polish",
-                              "message": (f"润色删掉了 {len(lost)} 条具体信息"
-                                          f"（{'、'.join(lost[:3])}…），正在点名保留重试…")})
+                              "message": f"润色{why}，正在点名保留重试…"})
                     job.emit({"type": "reset"})
                     buf = []
-                    async for piece in wf.stream_polish(ctx, before, keep=lost):
+                    async for piece in wf.stream_polish(ctx, before, keep=lost + lost_code):
                         buf.append(piece)
                         job.emit({"type": "chunk", "text": piece})
                     text2 = "".join(buf)
                     lost2 = wf.polish_lost_units(before, text2)
                     if (not wf.polish_broke_structure(before, text2)
                             and not wf.polish_added_numbers(before, text2)
+                            and not wf.polish_lost_code(before, text2)
+                            and not wf.polish_added_we(before, text2)
                             and len(lost2) <= max(3, 0.10 * total_units)):
                         text = text2
                     else:
                         job.emit({"type": "step", "key": "polish",
-                                  "message": (f"重试仍丢 {len(lost2)} 条具体信息，"
+                                  "message": (f"重试仍不合规（丢 {len(lost2)} 条具体信息），"
                                               f"已保留润色前的版本，本次不扣点。")})
                         raise PolishStructureError(f"润色丢失 {len(lost2)} 条硬信息")
 

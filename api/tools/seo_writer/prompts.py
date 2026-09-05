@@ -758,8 +758,13 @@ POLISH_PROMPT = """**Task: Rewrite the following text in {language}.**
     每一个事实、数字、步骤、条件都必须留在输出里。
 11. **不许自造术语。** 给常识现象起个名字再反复用（"mockup blindness"
     "the lazy buyer principle"），尤其不许加引号把它装成行业术语。直接描述现象。
-12. **人称统一用 "We"。** 原文里的 "I / my / in my experience" 一律改掉或删掉，
-    不许 I 和 we 混用。
+12. **人称：原文有 "I / my / in my experience" 才改成 we 或删掉，不许 I 和 we 混用。
+    原文没有第一人称的句子，不许改成 "We …"。** 润色不是作者，不能替作者声称
+    "我们控制 / 我们审核 / 我们做过" —— 实测把 "Controlling these specs on the line is what
+    determines quality" 润成 "We control these exact specifications directly on the shared
+    assembly lines"，凭空多出一个假工厂主。被动句、无主语句保持原样。
+13. **反引号里的文件名 / 代码 / 路径 / 菜单路径原样搬。** 不许在里面断句、拆开、改大小写。
+    实测把 `Bill_of_Materials.xlsx` 从中间拆成两句，文件名当场碎掉。
 13. **结尾必须落地。** 最后一段不许写"策略比工具更重要""专注长期价值""保持专业"
     这类零信息量的收束。要么给一个具体动作，要么给一个数字或判断标准。
     写不出来就直接在最后一个实质段落结束，不要硬加收尾段。

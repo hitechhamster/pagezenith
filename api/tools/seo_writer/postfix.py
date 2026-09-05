@@ -545,17 +545,54 @@ async def ensure_paa_coverage(text: str, report: dict, material: str, language: 
 #: 全流程局部修的总轮数上限（密度补写：薄节一轮 + 整篇不达标最多再两轮）
 MAX_FIX_ROUNDS = 3
 
-_LEAD_REWRITE = """Rewrite ONLY the opening paragraph of this article so that its first two sentences
-deliver the most concrete, actionable answer the article contains. The first two sentences MUST
-contain at least one specific value with units (a temperature, a size, a time, a quantity, a
-setting) or an exact tool / product / file name — the reader should be able to act on them
-without reading further. No scene-setting, no "in today's world", no restating the title.
-Keep every concrete item already in the paragraph. Same language, same or shorter length.
-Statistics are locked: no new percentage, price, or "studies show" claim.
+_LEAD_REWRITE = """Rewrite ONLY this opening paragraph so its first two sentences lead with the most
+concrete, actionable point the paragraph ALREADY contains — a value with units, a setting, a named
+tool / product / file, or a specific condition. Cut scene-setting, "in today's world", and any
+restating of the title.
+
+Hard limits — the rewrite is discarded if any is broken:
+- Use ONLY facts, names, numbers and files that are already in this paragraph. Do NOT introduce a
+  new tool, product, file name, spreadsheet, template, standard, number or percentage. If the
+  paragraph has no concrete item, just get to the point faster; do not invent one.
+- Do not add first-person claims ("we control / we audit / in our work").
+- Keep every concrete item already in the paragraph. Same language, same or shorter length.
 Output the rewritten paragraph only.
 
 Paragraph:
 {para}"""
+
+_FILE_TOKEN = re.compile(r"\b[\w-]+\.(?:xlsx|xls|csv|pdf|docx?|json|txt|ya?ml|liquid|js|py|xml|md)\b", re.I)
+_NEW_WE = re.compile(r"(?i)\b(?:we|our team)\s+(?:control|audit|inspect|verify|enforce|manage|run|operate|"
+                     r"own|dictate|handle|monitor|supervise|source|build|test|check|require)\b")
+
+
+def introduced_names(new: str, *sources: str) -> list[str]:
+    """改写稿里冒出来、而原材料里没有的专名 / 文件 / 代码段 / 第一人称经手声明。
+
+    2026-09-05 ebike 那篇：开头改写的提示词要求「必须给一个具体值或工具/文件名」，
+    模型就编了个 `Bill_of_Materials.xlsx` 放在第一句，核验只查数字，放行了。
+    专名和文件也得核验：没在原段 / 事实清单里出现过的，一律算编造。
+    """
+    pool = density_audit.squash(" ".join(s or "" for s in sources))
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(x: str) -> None:
+        k = density_audit.squash(x)
+        if k and k not in seen and k not in pool:
+            seen.add(k)
+            out.append(x)
+
+    for m in density_audit._CODE.findall(new or ""):
+        add(m.strip("` "))
+    for m in _FILE_TOKEN.findall(new or ""):
+        add(m)
+    for ent in density_audit.hard_units(new or "").get("entity", set()):
+        add(ent)
+    m = _NEW_WE.search(new or "")
+    if m and not _NEW_WE.search(" ".join(s or "" for s in sources)):
+        out.append(m.group(0))
+    return out
 
 _SELF_CONTAINED = """Rewrite this single sentence so it can stand alone as the first sentence of a
 section titled "{head}": name the subject explicitly instead of "this / that / it / they / as
@@ -612,6 +649,10 @@ async def fix_opening_gap(text: str, material: str, complete: Optional[CompleteF
     allowed = _facts_numbers(material) | {_norm(y) for y in _NUM.findall(para)}
     if invented_assertions(new, allowed):
         logger.info("开头改写已丢弃：编了统计")
+        return text, []
+    made_up = introduced_names(new, para, material, text)   # 全文里出现过的名字不算编
+    if made_up:
+        logger.info("开头改写已丢弃：引入了原段没有的专名/文件（%s）", "、".join(made_up[:3]))
         return text, []
     old_units = density_audit._evidence_units(para)
     if old_units and len(density_audit.lost_units(para, new)) > 0.2 * len(old_units):
