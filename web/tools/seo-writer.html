@@ -188,21 +188,103 @@
   .sitefoot a:hover{color:var(--accent)}
   .sitefoot span{opacity:.5}
 </style>
+<style id="shell">
+  /* ── 工作台壳（2026-09-05 重做）——
+     从"一叠卡片往下滚"改成"左控制台 + 右画布"。左边是参数和当前步骤的动作，
+     右边是文档本身；顶栏放步骤进度和费用。组件级样式（表单、日志、成绩单、正文排版）
+     沿用上面两段，这一层只管布局和外观覆盖，元素 id 一个没动，脚本零改动。 */
+  body.app{background:var(--bg) radial-gradient(var(--dot) 1px,transparent 1px);background-size:22px 22px}
+  .appbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+    height:56px;padding:0 20px;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .ab-l{display:flex;align-items:center;gap:10px;min-width:0;flex-shrink:0}
+  .ab-brand{display:flex;align-items:center;gap:8px;color:var(--text);font-family:var(--font-display);font-weight:600;font-size:15px}
+  .ab-brand img{width:26px;height:26px;border-radius:7px;background:var(--accent);object-fit:cover}
+  .ab-sep{color:var(--faint)}
+  .ab-tool{font-size:13.5px;font-weight:600;color:var(--text)}
+  .ab-r{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
+  .ab-r .keybtn{text-decoration:none;padding:6px 12px;font-size:12.5px}
+  .ab-cost{font-size:12.5px;color:var(--muted);padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--card);white-space:nowrap}
+  .ab-cost b{color:var(--text);font-family:var(--font-mono);font-size:13px}
+  .ab-cost .dim{color:var(--faint);font-size:11.5px}
+  /* 步骤进度：顶栏里的细分段条，取代原来那条胶囊轨 */
+  .appbar .track{margin:0;flex:1;min-width:0;border:0;background:transparent;border-radius:0;overflow:hidden;gap:6px;justify-content:center}
+  .appbar .track li{flex:0 1 auto;padding:5px 10px;border:0;border-radius:999px;font-size:11.5px;color:var(--faint);
+    background:transparent;gap:5px}
+  .appbar .track li b{display:none}
+  .appbar .track li:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--line);flex-shrink:0}
+  .appbar .track li.done{color:var(--muted)} .appbar .track li.done:before{background:var(--muted)}
+  .appbar .track li.on{background:var(--accentsoft);color:var(--text);font-weight:500} .appbar .track li.on:before{background:var(--accent)}
+  .appbar .track li.key.on{background:var(--redbg);color:var(--seal)} .appbar .track li.key.on:before{background:var(--seal)}
+  .appbar .track li.done b:after{content:none}
+
+  .ws{display:grid;grid-template-columns:352px minmax(0,1fr);gap:20px;max-width:1240px;margin:0 auto;padding:20px 20px 80px;align-items:start}
+  /* 左：控制台。贴顶，自己滚，不跟页面走 */
+  .side{position:sticky;top:72px;max-height:calc(100vh - 92px);overflow:auto;padding:18px 18px 16px}
+  .side .sec{background:transparent;border:0;box-shadow:none;padding:0;margin:0}
+  .side .sec h2{font-size:14px;margin:0 0 12px}
+  .side .row{margin-bottom:10px}
+  .side .f{min-width:0}
+  .side .f label{font-size:11.5px;letter-spacing:.02em}
+  .side .f input,.side .f select,.side .f textarea{font-size:13.5px;padding:9px 11px}
+  .side .f.narrow{flex:0 0 108px;min-width:108px}
+  .side .voices{grid-template-columns:repeat(3,1fr);gap:6px}
+  .side .vo{padding:6px}
+  .side .vo .vn{font-size:12px} .side .vo .vr{font-size:10.5px}
+  .side .btns{margin-top:12px}
+  .side .btns button{width:100%;padding:13px 18px;font-size:14.5px}
+  .side .hint{margin-top:6px}
+  .side details{margin:2px 0 10px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--card)}
+  .side details summary{cursor:pointer;font-size:12.5px;color:var(--muted);padding:9px 0;list-style:none;display:flex;align-items:center;gap:6px}
+  .side details summary::-webkit-details-marker{display:none}
+  .side details summary:before{content:"▸";font-size:11px;color:var(--faint);transition:transform .15s}
+  .side details[open] summary:before{transform:rotate(90deg)}
+  .side details[open] summary{border-bottom:1px dashed var(--line);margin-bottom:10px}
+  .side #status{margin:10px 2px 0}
+  .side #status:empty{display:none}
+  .side .sec.folded .foldbar{padding:4px 0 8px;align-items:flex-start}
+  .side .foldbar>span:first-child{flex:1;min-width:0;line-height:1.5}
+  .foldbar .op{white-space:nowrap;flex-shrink:0}
+
+  /* 右：画布。文档就是一张纸 */
+  .canvas{min-width:0}
+  .canvas .sec{margin-top:0;padding:26px 30px;box-shadow:var(--shadow)}
+  .canvas .sec + .sec{margin-top:16px}
+  .canvas .sec h2{font-size:14px;color:var(--muted);font-weight:500;font-family:var(--font-ui);margin-bottom:12px}
+  .canvas .sec h2 .step{width:20px;height:20px;font-size:11px}
+  .canvas .doc{max-height:none;overflow:visible;padding-right:0}
+  .canvas .doc h1{font-size:28px;margin:6px 0 12px}
+  .canvas .log{margin:0 0 14px}
+  .canvas .card{margin-bottom:16px}
+  .canvas .disc{margin-bottom:12px}
+  /* 空态：还没生成时右边不是空白，告诉用户接下来会发生什么 */
+  .empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--radius-lg);padding:56px 32px;text-align:center;color:var(--muted)}
+  .empty .t{font-family:var(--font-display);font-size:20px;color:var(--text);margin-bottom:8px}
+  .empty .d{font-size:13px;line-height:1.7;max-width:46ch;margin:0 auto}
+  .empty ol{display:inline-flex;gap:18px;list-style:none;padding:0;margin:22px 0 0;font-size:12.5px;color:var(--faint);flex-wrap:wrap;justify-content:center}
+  .empty ol li b{display:block;font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-bottom:2px}
+  .empty ol li span{color:var(--muted)}
+
+  @media(max-width:960px){
+    .ws{grid-template-columns:1fr;padding:14px 12px 60px}
+    .side{position:static;max-height:none}
+    .appbar{height:auto;flex-wrap:wrap;padding:10px 14px;gap:8px}
+    .appbar .track{order:3;flex:1 0 100%;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
+    .appbar .track li{white-space:nowrap}
+    .ab-cost{display:none}
+    .canvas .sec{padding:18px 16px}
+  }
+  .sitefoot{max-width:1240px}
+</style>
 </head>
-<body>
-<div class="nav">
-  <div class="logo"><img src="/assets/brand/logo-128.png" alt="页面科技" onerror="this.style.display='none'" /></div><a class="brand" href="/" style="color:var(--text)">页面科技</a>
-  <a class="navlink" href="/">← 全部工具</a>
-  <div class="grow"></div>
-  <a class="keybtn" href="/login?mode=register" data-when="anon" style="text-decoration:none;margin-right:8px;border-color:var(--accent);background:var(--accentsoft);color:var(--accent);font-weight:600">注册送 <span data-signup-credits>11</span> 点</a><a class="keybtn" href="/buy" data-when="user" style="text-decoration:none;margin-right:8px">充值</a><a class="keybtn" href="/history" data-when="user" style="text-decoration:none;margin-right:8px">我的记录</a><button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录</button>
-</div>
-
-<div class="wrap" style="max-width:860px">
-  <h1 style="font-size:22px;margin:0 0 4px">SEO 文章生成</h1>
-  <div class="sub">填关键词 → <b>全网搜索 + Reddit 真实讨论</b> → 出 EEAT 大纲给你审批（可反复改）→ 按大纲写整篇长文，
-    出 SEO 标题描述、可选配图，最后导出 Word。标题全用疑问句 + 黄金答案句结构。</div>
-
-  <!-- 七步动线：设计稿的步骤轨。用户随时知道走到哪、还剩几步、哪一步要他拍板 -->
+<body class="app">
+<header class="appbar">
+  <div class="ab-l">
+    <a class="ab-brand" href="/"><img src="/assets/brand/logo-128.png" alt="" onerror="this.style.display='none'" /><span>页面科技</span></a>
+    <span class="ab-sep">/</span>
+    <span class="ab-tool">SEO 文章生成</span>
+  </div>
+  <!-- 步骤进度：复用后端 step 事件的 key，顺序写死在前端（"第几步"是产品动线） -->
   <ol class="track" id="track">
     <li data-k="wordcount"><b>01</b>定字数</li>
     <li data-k="search"><b>02</b>搜全网</li>
@@ -213,107 +295,122 @@
     <li data-k="article"><b>07</b>写正文</li>
     <li data-k="polish"><b>08</b>润色</li>
   </ol>
-
-  <!-- 供应商 -->
-  <div class="sec">
-    <div class="row" style="margin-bottom:0">
-      <div class="f"><label>本次消耗</label><div class="costbox" id="costBox">—</div></div>
-    </div>
-    <div class="hint" id="provHint" style="margin-top:8px;margin-bottom:0"></div>
+  <div class="ab-r">
+    <span class="ab-cost" id="costBox">—</span>
+    <a class="keybtn" href="/login?mode=register" data-when="anon" style="border-color:var(--accent);background:var(--accentsoft);color:var(--accent);font-weight:600">注册送 <span data-signup-credits>11</span> 点</a>
+    <a class="keybtn" href="/buy" data-when="user">充值</a>
+    <a class="keybtn" href="/history" data-when="user">我的记录</a>
+    <button class="keybtn" id="keybtn" data-card-badge onclick="CARD.onBadgeClick()">登录</button>
   </div>
+</header>
 
-  <!-- 第一步 -->
-  <div class="sec" id="sec1">
-    <h2><span class="step">1</span>文章参数</h2>
-    <div class="foldbar" id="fold1"><span id="fold1Text"></span><span class="op">展开修改 ▾</span></div>
-    <div class="row">
-      <div class="f"><label>主关键词 <b>*</b></label><input id="mainKw" placeholder="文章核心，标题和全文围绕它" /></div>
-      <div class="f"><label>次关键词 <b>*</b></label><input id="secKw" placeholder="辅助关键词" /></div>
-    </div>
-    <div class="row">
-      <div class="f"><label>主题 <b>*</b></label><input id="topic" placeholder="这篇文章要讲什么" /></div>
-    </div>
-    <div class="row">
-      <div class="f"><label>特殊要求（最高优先级，会覆盖其他规则）</label>
-        <textarea id="specific" placeholder="想让这篇文章特别做到什么？直接写。"></textarea></div>
-    </div>
-    <div class="hint" id="specHint">
-      这一栏优先级最高，和其他设置冲突时以它为准。常用法：
-      <a href="#" data-spec="文末推荐这个产品，写成自然的锚文本链接（这是全文唯一允许的链接）：\n产品名：\n链接：\n卖点：">推荐产品</a> ·
-      <a href="#" data-spec="读者是刚开店的新手，不要预设他懂任何术语。">指定读者</a> ·
-      <a href="#" data-spec="必须回答这几个问题：">必答问题</a> ·
-      <a href="#" data-spec="不要出现这些说法：">回避说法</a> ·
-      <a href="#" data-spec="品牌名固定写作：">固定写法</a>
-      <br />要在文末推荐自己的产品，就在这里写清楚<b>产品信息和链接</b>，会写成自然的锚文本。
-    </div>
-    <div class="row">
-      <div class="f narrow"><label>字数</label><input id="wordcounts" type="number" min="0" max="5000" value="0" /></div>
-      <div class="f"><label>语言</label><select id="language"></select></div>
-    </div>
-    <div class="hint">字数填 0 = 让 AI 按主题复杂度自己判断（800–3000）。</div>
-    <div class="row">
-      <div class="f">
-        <label class="chk" id="imgLabel"><input type="checkbox" id="enableImages" /> AI 配图</label>
+<main class="ws">
+  <!-- 左：控制台 -->
+  <aside class="panel side">
+    <div class="sec" id="sec1">
+      <h2><span class="step">1</span>文章参数</h2>
+      <div class="foldbar" id="fold1"><span id="fold1Text"></span><span class="op">展开修改 ▾</span></div>
+      <div class="row">
+        <div class="f"><label>主关键词 <b>*</b></label><input id="mainKw" placeholder="文章核心，标题和全文围绕它" /></div>
       </div>
-      <div class="f narrow"><label>配图张数</label>
-        <select id="imagesPer" disabled><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></div>
+      <div class="row">
+        <div class="f"><label>次关键词 <b>*</b></label><input id="secKw" placeholder="辅助关键词" /></div>
+      </div>
+      <div class="row">
+        <div class="f"><label>主题 <b>*</b></label><input id="topic" placeholder="这篇文章要讲什么" /></div>
+      </div>
+      <div class="row">
+        <div class="f"><label>特殊要求（优先级最高，会覆盖其他规则）</label>
+          <textarea id="specific" placeholder="想让这篇文章特别做到什么？直接写。"></textarea></div>
+      </div>
+      <div class="hint" id="specHint">
+        常用：
+        <a href="#" data-spec="文末推荐这个产品，写成自然的锚文本链接（这是全文唯一允许的链接）：\n产品名：\n链接：\n卖点：">推荐产品</a> ·
+        <a href="#" data-spec="读者是刚开店的新手，不要预设他懂任何术语。">指定读者</a> ·
+        <a href="#" data-spec="必须回答这几个问题：">必答问题</a> ·
+        <a href="#" data-spec="不要出现这些说法：">回避说法</a> ·
+        <a href="#" data-spec="品牌名固定写作：">固定写法</a>
+      </div>
+
+      <label style="font-size:11.5px;color:var(--muted);font-weight:500;display:block;margin:12px 0 6px">写手（选一个文风，不额外扣点）</label>
+      <div class="voices" id="voices"></div>
+      <div class="hint" id="voiceHint">不选也可以，那就用通用文风。</div>
+
+      <details>
+        <summary>字数 · 语言 · 配图</summary>
+        <div class="row">
+          <div class="f narrow"><label>字数</label><input id="wordcounts" type="number" min="0" max="5000" value="0" /></div>
+          <div class="f"><label>语言</label><select id="language"></select></div>
+        </div>
+        <div class="hint">字数填 0 = 让 AI 按主题复杂度自己判断（800–3000）。</div>
+        <div class="row">
+          <div class="f"><label class="chk" id="imgLabel"><input type="checkbox" id="enableImages" /> AI 配图</label></div>
+          <div class="f narrow"><label>张数</label>
+            <select id="imagesPer" disabled><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></div>
+        </div>
+        <div class="hint" id="imgHint"></div>
+        <div class="row">
+          <div class="f"><label>配图风格</label><select id="imageStyle" disabled></select></div>
+        </div>
+      </details>
+
+      <div class="btns"><button id="btnOutline">生成大纲</button></div>
+      <div class="hint" id="provHint"></div>
     </div>
-    <div class="hint" id="imgHint"></div>
-    <div class="row">
-      <div class="f narrow"><label>配图风格</label>
-        <select id="imageStyle" disabled></select></div>
+    <div id="status"></div>
+  </aside>
+
+  <!-- 右：画布 -->
+  <section class="canvas">
+    <div class="empty" id="emptyState">
+      <div class="t">大纲会出现在这里</div>
+      <div class="d">填好左侧参数，先搜全网和 Reddit、锁定可核实的事实，再出大纲给你审批。你不点「通过」，正文一个字不写、一点不扣。</div>
+      <ol>
+        <li><b>01–05</b><span>搜索 · 事实 · 分类</span></li>
+        <li><b>06</b><span>你来审批大纲</span></li>
+        <li><b>07–08</b><span>写正文 · 润色 · 打分</span></li>
+      </ol>
     </div>
 
-    <label style="font-size:12px;color:var(--muted);font-weight:500;display:block;margin:14px 0 6px">
-      写手（选一个文风，不额外扣点）</label>
-    <div class="voices" id="voices"></div>
-    <div class="hint" id="voiceHint">不选也可以，那就用通用文风。</div>
-
-    <div class="btns"><button id="btnOutline">生成大纲</button></div>
-  </div>
-
-  <div id="status"></div>
-
-  <!-- 第二步 -->
-  <div class="sec" id="sec2" style="display:none">
-    <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
-    <div class="foldbar" id="fold2"><span id="fold2Text"></span><span class="op">展开 ▾</span></div>
-    <div class="log fold" id="log1"></div>
-    <div id="discovery"></div>
-    <div class="sealrow" id="sealRow" style="display:none">
-      <div class="seal">审</div>
-      <div>
-        <div class="st">大纲出来了，你先过目</div>
-        <div class="sd" id="sealNote"></div>
+    <div class="sec" id="sec2" style="display:none">
+      <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
+      <div class="foldbar" id="fold2"><span id="fold2Text"></span><span class="op">展开 ▾</span></div>
+      <div class="log fold" id="log1"></div>
+      <div id="discovery"></div>
+      <div class="sealrow" id="sealRow" style="display:none">
+        <div class="seal">审</div>
+        <div>
+          <div class="st">大纲出来了，你先过目</div>
+          <div class="sd" id="sealNote"></div>
+        </div>
+      </div>
+      <div class="doc" id="outlineBox"></div>
+      <div class="row" style="margin-top:16px;margin-bottom:0">
+        <div class="f"><label>修改意见（可反复改，直到满意）</label>
+          <input id="feedback" placeholder="例如：第二章太浅，改成对比三种方案；删掉最后一节" /></div>
+      </div>
+      <div class="btns">
+        <button id="btnRevise" class="ghost">按意见修改大纲</button>
+        <button id="btnArticle">✓ 通过，开始写文章</button>
       </div>
     </div>
-    <div class="doc" id="outlineBox"></div>
-    <div class="row" style="margin-top:14px;margin-bottom:0">
-      <div class="f"><label>修改意见（可反复改，直到满意）</label>
-        <input id="feedback" placeholder="例如：第二章太浅，改成对比三种方案；删掉最后一节" /></div>
-    </div>
-    <div class="btns">
-      <button id="btnRevise" class="ghost">按意见修改大纲</button>
-      <button id="btnArticle">✓ 通过，开始写文章</button>
-    </div>
-  </div>
 
-  <!-- 第三步 -->
-  <div class="sec" id="sec3" style="display:none">
-    <h2><span class="step">3</span>文章<span class="n" id="artMeta"></span></h2>
-    <div class="log fold" id="log2"></div>
-    <div id="artInfo" style="display:none"></div>
-    <div class="btns" id="artBtns" style="display:none;margin:0 0 14px">
-      <button id="btnDocx">下载 Word</button>
-      <button id="btnCopy" class="ghost">复制 Markdown</button>
-      <button id="btnRevert" class="ghost" style="display:none">还原润色前</button>
-      <button id="btnRestart" class="ghost">再写一篇</button>
+    <div class="sec" id="sec3" style="display:none">
+      <h2><span class="step">3</span>文章<span class="n" id="artMeta"></span></h2>
+      <div class="log fold" id="log2"></div>
+      <div id="artInfo" style="display:none"></div>
+      <div class="btns" id="artBtns" style="display:none;margin:0 0 14px">
+        <button id="btnDocx">下载 Word</button>
+        <button id="btnCopy" class="ghost">复制 Markdown</button>
+        <button id="btnRevert" class="ghost" style="display:none">还原润色前</button>
+        <button id="btnRestart" class="ghost">再写一篇</button>
+      </div>
+      <div class="doc" id="articleBox"></div>
+      <div class="hint" style="margin-top:10px">正文写完会<b>自动润色一遍</b>（拆长句、去绕话，硬信息一条不少；另计 <span id="polishPts">3</span> 点）。
+        只改表达不动结构：标题、图片占位符、链接、表格都原样保留。不满意可以「还原润色前」。</div>
     </div>
-    <div class="doc" id="articleBox"></div>
-    <div class="hint" style="margin-top:8px">正文写完会<b>自动润色一遍</b>（拆长句、去绕话，硬信息一条不少；另计 <span id="polishPts">3</span> 点）。
-      只改表达不动结构：标题、图片占位符、链接、表格都原样保留。不满意可以「还原润色前」。</div>
-  </div>
-</div>
+  </section>
+</main>
 
 <script src="/shared/keys.js?v=60ca7386"></script>
 <script src="/shared/md.js"></script>
@@ -581,6 +678,7 @@ function restoreDraft(){
   S.docx=d.docx||""; S.filename=d.filename||"article.docx";
   $("outlineBox").innerHTML=MD.render(S.outline);
   $("sec2").style.display="";
+  const es=$("emptyState"); if(es) es.style.display="none";
   if(S.article){ $("articleBox").innerHTML=MD.render(S.article); $("sec3").style.display=""; }
   const bar=E("div","restored");
   const when=new Date(d.ts).toLocaleString("zh-CN",{month:"numeric",day:"numeric",
@@ -633,6 +731,7 @@ $("btnOutline").onclick=async()=>{
 
   $("btnOutline").disabled=true;
   $("sec2").style.display=""; $("sec3").style.display="none";
+  const es=$("emptyState"); if(es) es.style.display="none";
   unfoldSec("sec2"); foldSec("sec1", paramSummary());
   logReset("log1"); discReset(); $("outlineBox").innerHTML=""; S.outline="";
   setStatus("正在生成大纲…",false,true);
@@ -926,6 +1025,7 @@ $("btnRestart").onclick=()=>{
   [...$("track").children].forEach(li=>li.classList.remove("on","done"));
   document.querySelectorAll(".restored").forEach(el=>el.remove());
   unfoldSec("sec1"); unfoldSec("sec2");
+  const es=$("emptyState"); if(es) es.style.display="";
   $("mainKw").focus();
   window.scrollTo({top:0,behavior:"smooth"});
 };
