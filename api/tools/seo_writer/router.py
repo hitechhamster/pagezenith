@@ -54,7 +54,8 @@ router = APIRouter(prefix="/api/seo-writer", tags=["seo-writer"])
 _sema = asyncio.Semaphore(get_settings().writer_max_concurrent)
 
 
-def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
+def _quality_payload(report: dict[str, Any], angles: list[str] | None = None,
+                     text: str = "") -> dict[str, Any]:
     """把打分结果压成前端能直接渲染的扁平结构。
 
     等级规则：意图否决 → bad（形态不对或子问题覆盖不到一半，后面四项再高也白搭）；
@@ -77,6 +78,9 @@ def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
         "gain_note": None if gain.get("measurable") else gain.get("reason"),
         # 竞品没写的具体东西 —— 给用户看的不是 52% 这个数，是"52% 指的是这些"
         "gain_samples": (gain.get("samples") or [])[:8],
+        # 新角度小节：从竞品缺口角度起的 H2 及其篇幅占比（与硬信息增益并排，不合并）
+        "angle_sections": [x["head"] for x in (density_audit.angle_sections(text, angles or []) or {}).get("sections", [])],
+        "angle_share": density_audit.angle_sections(text, angles or []).get("share", 0.0),
         "intent_covered": len(intent.get("covered") or []),
         "intent_total": len(intent.get("questions") or []),
         "intent_questions": (intent.get("covered") or [])[:6],
@@ -486,12 +490,12 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 if extract_h1(text) and extract_h1(text) != h1_at_seo:
                     seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])
                     job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
-                job.emit({"type": "quality", **_quality_payload(report)})
+                job.emit({"type": "quality", **_quality_payload(report, ctx.get("gap_angles"), text)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "article",
-                    "quality": _quality_payload(report),
+                    "quality": _quality_payload(report, ctx.get("gap_angles"), text),
                     "article": text,
                     "filename": sanitize_filename(ctx["main_keyword"]) + ".docx",
                     "seo_title": seo.get("seo_title", ""),
@@ -648,12 +652,12 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                     text, search_text=_serp,
                     topic_type=ctx.get("topic_type", ""), keyword=main_keyword,
                     language=language, material=ctx.get("facts", "") + "\n" + _serp + "\n" + (ctx.get("expansion") or ""))
-                job.emit({"type": "quality", **_quality_payload(report)})
+                job.emit({"type": "quality", **_quality_payload(report, ctx.get("gap_angles"), text)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "polish",
-                    "quality": _quality_payload(report),
+                    "quality": _quality_payload(report, ctx.get("gap_angles"), text),
                     "article": text,
                     "filename": sanitize_filename(main_keyword) + "-polished.docx",
                     "word_count": actual, "wordcount_level": level, "wordcount_message": wc_msg,

@@ -331,6 +331,43 @@ def _evidence_units(text: str, material: str | None = None) -> set[str]:
 # --------------------------------------------------------------------------- #
 # 0. SERP 解析
 # --------------------------------------------------------------------------- #
+_ANGLE_STOP = {"with", "from", "that", "this", "your", "what", "when", "which", "into", "about", "does",
+               "have", "will", "best", "guide", "china", "chinese", "small", "large", "vs", "versus"}
+
+
+def _content_words(s: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{4,}", (s or "").lower()) if w not in _ANGLE_STOP}
+
+
+def angle_sections(text: str, angles: list[str]) -> dict[str, Any]:
+    """哪些 H2 是从「竞品没覆盖的角度」起的，占全文多少字。
+
+    硬信息增益只数带出处的数字和专名；模型按新角度写的判断、流程、取舍条件一个都不计分
+    （用户 2026-09-05："模型自己起扩展 H2 不就是新的信息增益吗"）。这里单独量出来并排显示，
+    不并进硬信息增益 —— 那条口径一松就又给编数字开门。
+    判据：H2 与某个角度的实词重合 ≥2 个，或覆盖该角度实词的一半以上。
+    """
+    if not text or not angles:
+        return {"sections": [], "words": 0, "share": 0.0}
+    total = max(word_count(text), 1)
+    hits, words = [], 0
+    for head, body in sections(text):
+        if head == "(intro)":
+            continue
+        hw = _content_words(head)
+        for a in angles:
+            aw = _content_words(a)
+            if not aw:
+                continue
+            ov = len(hw & aw)
+            if ov >= 2 or ov / len(aw) >= 0.5:
+                n = word_count(body)
+                hits.append({"head": head, "angle": a, "words": n})
+                words += n
+                break
+    return {"sections": hits, "words": words, "share": round(words / total, 2)}
+
+
 def novel_facts(facts: str, corpus: str, limit: int = 15) -> list[str]:
     """事实清单里、竞品语料没出现过的条目。每行形如「`值` — 说明 — 来源」；看反引号里的值。"""
     pool = squash(corpus or "")

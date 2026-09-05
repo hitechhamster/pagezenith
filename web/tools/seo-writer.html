@@ -943,6 +943,12 @@ function renderInfo(){
         r.querySelector(".v").append(c);
       }
       rows.append(r);
+      if((q.angle_sections||[]).length){
+        const r2=row("新角度小节", "ok", `${q.angle_sections.length} 节是排在前面的页面都没有的角度，占全文 ${Math.round((q.angle_share||0)*100)}%`,
+          "先让模型找出竞品都没覆盖的角度，再为它们单独搜素材、单独起 H2。这部分是 Google 意义上的信息增益，但不算进上面的硬信息数字。", false);
+        const c=E("div","chips"); q.angle_sections.slice(0,4).forEach(s=>c.append(E("span","chip",s)));
+        r2.querySelector(".v").append(c); rows.append(r2);
+      }
     }
     // ③ 意图
     if(q.intent_total){
@@ -1010,6 +1016,7 @@ function verdictLine(q){
   if(q.veto) return "文章形态和搜索页不匹配，先看下面的说明。";
   if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
   if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
+  if((q.angle_sections||[]).length) parts.push(`另起了 ${q.angle_sections.length} 节竞品没有的角度`);
   const said=parts.filter(Boolean);
   return said.length ? said.join("，")+"。" : "已完成体检。";
 }
@@ -1189,6 +1196,7 @@ $("btnRestart").onclick=()=>{
     if(q.gain!=null || q.intent_total || q.evidence!=null){
       const chip=(cls,html)=>{const s=E("span",cls); s.innerHTML=html; mini.append(s);};
       if(q.gain!=null) chip(q.gain>=0.35?"ok":(q.gain>=0.2?"warn":"bad"),`比竞品多给 <b>${Math.round(q.gain*100)}%</b>`);
+      if((q.angle_sections||[]).length) chip("ok",`新角度 <b>${q.angle_sections.length}</b> 节 · ${Math.round((q.angle_share||0)*100)}%`);
       if(q.intent_total) chip(q.veto?"bad":(q.intent_covered/q.intent_total>=0.66?"ok":"warn"),`搜索者问题 <b>${q.intent_covered}/${q.intent_total}</b>`);
       if(q.evidence!=null) chip("ok",`密度 <b>${q.evidence}</b>`);
     }
