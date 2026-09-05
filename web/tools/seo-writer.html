@@ -208,7 +208,8 @@
   .ab-cost b{color:var(--text);font-family:var(--font-mono);font-size:13px}
   .ab-cost .dim{color:var(--faint);font-size:11.5px}
   /* 竖向步骤栏：最左一列，贴顶。取代原来那条横向胶囊轨。 */
-  .rail{position:sticky;top:72px;padding:6px 0 0}
+  /* 步骤条跨两行：不跨的话第一行会被撑到步骤条那么高，参数卡和大纲卡之间空出一大截 */
+  .rail{position:sticky;top:72px;padding:6px 0 0;grid-row:1/3;align-self:start}
   .rail .track{display:block;margin:0;border:0;background:transparent;border-radius:0;overflow:visible;padding:0 0 0 2px}
   .rail .track li{position:relative;display:flex;align-items:center;gap:10px;padding:0 0 22px 26px;
     border:0;font-size:13px;color:var(--faint);white-space:nowrap;background:transparent;justify-content:flex-start}
@@ -235,9 +236,14 @@
   .rail .track li.key.on b{color:var(--seal)}
   .rail .track li.key.on:before{background:var(--seal);border-color:var(--seal);box-shadow:0 0 0 4px var(--redbg)}
 
-  .ws{display:grid;grid-template-columns:148px 336px minmax(0,1fr);gap:20px;max-width:1280px;margin:0 auto;padding:22px 20px 80px;align-items:start}
-  /* 左：控制台。贴顶，自己滚，不跟页面走 */
-  .side{position:sticky;top:72px;max-height:calc(100vh - 92px);overflow:auto;padding:18px 18px 16px}
+  /* 两列：左边步骤条，右边一列从上往下走 —— 参数 → 大纲 → 文章，做完的折成一行。
+     （试过参数在中、大纲在右的三列：竖向步骤条暗示内容自上而下，左右并排反而看不懂"第几步"。） */
+  .ws{display:grid;grid-template-columns:148px minmax(0,1fr);gap:22px;max-width:1120px;margin:0 auto;padding:22px 20px 80px;align-items:start}
+  .side,.canvas{grid-column:2}
+  .side{padding:20px 24px 18px;margin-bottom:16px}
+  .side .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .side .row .f{min-width:0}
+  .side .row.one{grid-template-columns:1fr}
   .side .sec{background:transparent;border:0;box-shadow:none;padding:0;margin:0}
   .side .sec h2{font-size:14px;margin:0 0 12px}
   .side .row{margin-bottom:10px}
@@ -245,11 +251,11 @@
   .side .f label{font-size:11.5px;letter-spacing:.02em}
   .side .f input,.side .f select,.side .f textarea{font-size:13.5px;padding:9px 11px}
   .side .f.narrow{flex:0 0 108px;min-width:108px}
-  .side .voices{grid-template-columns:repeat(3,1fr);gap:6px}
+  .side .voices{grid-template-columns:repeat(3,120px);gap:8px}
   .side .vo{padding:6px}
   .side .vo .vn{font-size:12px} .side .vo .vr{font-size:10.5px}
-  .side .btns{margin-top:12px}
-  .side .btns button{width:100%;padding:13px 18px;font-size:14.5px}
+  .side .btns{margin-top:14px}
+  .side .btns button{padding:13px 26px;font-size:14.5px}
   .side .hint{margin-top:6px}
   .side details{margin:2px 0 10px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--card)}
   .side details summary{cursor:pointer;font-size:12.5px;color:var(--muted);padding:9px 0;list-style:none;display:flex;align-items:center;gap:6px}
@@ -282,19 +288,18 @@
   .empty ol li b{display:block;font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-bottom:2px}
   .empty ol li span{color:var(--muted)}
 
-  @media(max-width:1080px){
-    /* 中等宽度：步骤栏收成一行横向，放在控制台上方 */
-    .ws{grid-template-columns:336px minmax(0,1fr)}
-    .rail{position:static;grid-column:1/-1;padding:0}
-    .rail .track{display:flex;flex-wrap:wrap;gap:6px 18px}
+  @media(max-width:760px){
+    /* 手机：步骤栏收成一行横向滚动，放在最上面 */
+    .ws{grid-template-columns:1fr;padding:14px 12px 60px}
+    .side,.canvas{grid-column:1}
+    .rail{position:static;padding:0;grid-row:auto}
+    .rail .track{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px 18px;padding-bottom:4px}
     .rail .track li{padding:0 0 0 22px}
     .rail .track li:after{display:none}
-  }
-  @media(max-width:760px){
-    .ws{grid-template-columns:1fr;padding:14px 12px 60px}
-    .side{position:static;max-height:none}
+    .side .row{grid-template-columns:1fr}
+    .side .voices{grid-template-columns:repeat(3,1fr)}
+    .side .btns button{width:100%}
     .appbar{height:auto;flex-wrap:wrap;padding:10px 14px;gap:8px}
-    .rail .track{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
     .ab-cost{display:none}
     .canvas .sec{padding:18px 16px}
   }
@@ -336,18 +341,16 @@
   <!-- 中：控制台 -->
   <aside class="panel side">
     <div class="sec" id="sec1">
-      <h2><span class="step">1</span>文章参数</h2>
+      <h2>参数</h2>
       <div class="foldbar" id="fold1"><span id="fold1Text"></span><span class="op">展开修改 ▾</span></div>
       <div class="row">
         <div class="f"><label>主关键词 <b>*</b></label><input id="mainKw" placeholder="文章核心，标题和全文围绕它" /></div>
-      </div>
-      <div class="row">
         <div class="f"><label>次关键词 <b>*</b></label><input id="secKw" placeholder="辅助关键词" /></div>
       </div>
-      <div class="row">
+      <div class="row one">
         <div class="f"><label>主题 <b>*</b></label><input id="topic" placeholder="这篇文章要讲什么" /></div>
       </div>
-      <div class="row">
+      <div class="row one">
         <div class="f"><label>特殊要求（优先级最高，会覆盖其他规则）</label>
           <textarea id="specific" placeholder="想让这篇文章特别做到什么？直接写。"></textarea></div>
       </div>
@@ -401,7 +404,7 @@
     </div>
 
     <div class="sec" id="sec2" style="display:none">
-      <h2><span class="step">2</span>大纲审批<span class="n" id="outlineMeta"></span></h2>
+      <h2>大纲<span class="n" id="outlineMeta"></span></h2>
       <div class="foldbar" id="fold2"><span id="fold2Text"></span><span class="op">展开 ▾</span></div>
       <div class="log fold" id="log1"></div>
       <div id="discovery"></div>
@@ -424,7 +427,7 @@
     </div>
 
     <div class="sec" id="sec3" style="display:none">
-      <h2><span class="step">3</span>文章<span class="n" id="artMeta"></span></h2>
+      <h2>文章<span class="n" id="artMeta"></span></h2>
       <div class="log fold" id="log2"></div>
       <div id="artInfo" style="display:none"></div>
       <div class="btns" id="artBtns" style="display:none;margin:0 0 14px">
