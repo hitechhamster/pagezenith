@@ -207,18 +207,35 @@
   .ab-cost{font-size:12.5px;color:var(--muted);padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--card);white-space:nowrap}
   .ab-cost b{color:var(--text);font-family:var(--font-mono);font-size:13px}
   .ab-cost .dim{color:var(--faint);font-size:11.5px}
-  /* 步骤进度：顶栏里的细分段条，取代原来那条胶囊轨 */
-  .appbar .track{margin:0;flex:1;min-width:0;border:0;background:transparent;border-radius:0;overflow:hidden;gap:6px;justify-content:center}
-  .appbar .track li{flex:0 1 auto;padding:5px 10px;border:0;border-radius:999px;font-size:11.5px;color:var(--faint);
-    background:transparent;gap:5px}
-  .appbar .track li b{display:none}
-  .appbar .track li:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--line);flex-shrink:0}
-  .appbar .track li.done{color:var(--muted)} .appbar .track li.done:before{background:var(--muted)}
-  .appbar .track li.on{background:var(--accentsoft);color:var(--text);font-weight:500} .appbar .track li.on:before{background:var(--accent)}
-  .appbar .track li.key.on{background:var(--redbg);color:var(--seal)} .appbar .track li.key.on:before{background:var(--seal)}
-  .appbar .track li.done b:after{content:none}
+  /* 竖向步骤栏：最左一列，贴顶。取代原来那条横向胶囊轨。 */
+  .rail{position:sticky;top:72px;padding:6px 0 0}
+  .rail .track{display:block;margin:0;border:0;background:transparent;border-radius:0;overflow:visible;padding:0 0 0 2px}
+  .rail .track li{position:relative;display:flex;align-items:center;gap:10px;padding:0 0 22px 26px;
+    border:0;font-size:13px;color:var(--faint);white-space:nowrap;background:transparent;justify-content:flex-start}
+  .rail .track li:last-child{padding-bottom:0}
+  /* 圆点 + 连线 */
+  .rail .track li:before{content:"";position:absolute;left:0;top:3px;width:14px;height:14px;border-radius:50%;
+    background:var(--card);border:2px solid var(--line);box-sizing:border-box;transition:background .2s,border-color .2s,box-shadow .2s}
+  .rail .track li:not(:last-child):after{content:"";position:absolute;left:6px;top:19px;bottom:2px;width:2px;background:var(--line)}
+  .rail .track li b{display:inline-block;font-family:var(--font-mono);font-size:10.5px;font-weight:500;color:var(--faint);opacity:1;width:18px}
+  .rail .track li span{font-weight:400}
+  /* 走过的：实心灰点、勾；连线加深 */
+  .rail .track li.done{color:var(--muted)}
+  .rail .track li.done:before{background:var(--muted);border-color:var(--muted)}
+  .rail .track li.done:after{background:var(--muted)}
+  .rail .track li.done b:after{content:none}
+  .rail .track li.done span:after{content:" ✓";color:var(--muted);font-size:11px}
+  /* 当前：黑点带光环，文字加粗、变黑 */
+  .rail .track li.on{color:var(--text)}
+  .rail .track li.on span{font-weight:600}
+  .rail .track li.on b{color:var(--text)}
+  .rail .track li.on:before{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 4px var(--accentsoft)}
+  /* 第 6 步（人工审批）亮起来用印泥红 —— 全程唯一要用户动手的一步 */
+  .rail .track li.key.on{color:var(--seal)}
+  .rail .track li.key.on b{color:var(--seal)}
+  .rail .track li.key.on:before{background:var(--seal);border-color:var(--seal);box-shadow:0 0 0 4px var(--redbg)}
 
-  .ws{display:grid;grid-template-columns:352px minmax(0,1fr);gap:20px;max-width:1240px;margin:0 auto;padding:20px 20px 80px;align-items:start}
+  .ws{display:grid;grid-template-columns:148px 336px minmax(0,1fr);gap:20px;max-width:1280px;margin:0 auto;padding:22px 20px 80px;align-items:start}
   /* 左：控制台。贴顶，自己滚，不跟页面走 */
   .side{position:sticky;top:72px;max-height:calc(100vh - 92px);overflow:auto;padding:18px 18px 16px}
   .side .sec{background:transparent;border:0;box-shadow:none;padding:0;margin:0}
@@ -265,12 +282,19 @@
   .empty ol li b{display:block;font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-bottom:2px}
   .empty ol li span{color:var(--muted)}
 
-  @media(max-width:960px){
+  @media(max-width:1080px){
+    /* 中等宽度：步骤栏收成一行横向，放在控制台上方 */
+    .ws{grid-template-columns:336px minmax(0,1fr)}
+    .rail{position:static;grid-column:1/-1;padding:0}
+    .rail .track{display:flex;flex-wrap:wrap;gap:6px 18px}
+    .rail .track li{padding:0 0 0 22px}
+    .rail .track li:after{display:none}
+  }
+  @media(max-width:760px){
     .ws{grid-template-columns:1fr;padding:14px 12px 60px}
     .side{position:static;max-height:none}
     .appbar{height:auto;flex-wrap:wrap;padding:10px 14px;gap:8px}
-    .appbar .track{order:3;flex:1 0 100%;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
-    .appbar .track li{white-space:nowrap}
+    .rail .track{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
     .ab-cost{display:none}
     .canvas .sec{padding:18px 16px}
   }
@@ -284,17 +308,6 @@
     <span class="ab-sep">/</span>
     <span class="ab-tool">SEO 文章生成</span>
   </div>
-  <!-- 步骤进度：复用后端 step 事件的 key，顺序写死在前端（"第几步"是产品动线） -->
-  <ol class="track" id="track">
-    <li data-k="wordcount"><b>01</b>定字数</li>
-    <li data-k="search"><b>02</b>搜全网</li>
-    <li data-k="reddit"><b>03</b>抓 Reddit</li>
-    <li data-k="facts"><b>04</b>锁定事实</li>
-    <li data-k="classify"><b>05</b>定类型</li>
-    <li data-k="approve" class="key"><b>06</b>你来审批</li>
-    <li data-k="article"><b>07</b>写正文</li>
-    <li data-k="polish"><b>08</b>润色</li>
-  </ol>
   <div class="ab-r">
     <span class="ab-cost" id="costBox">—</span>
     <a class="keybtn" href="/login?mode=register" data-when="anon" style="border-color:var(--accent);background:var(--accentsoft);color:var(--accent);font-weight:600">注册送 <span data-signup-credits>11</span> 点</a>
@@ -305,7 +318,22 @@
 </header>
 
 <main class="ws">
-  <!-- 左：控制台 -->
+  <!-- 最左：竖向步骤栏。复用后端 step 事件的 key，顺序写死在前端（"第几步"是产品动线）。
+       走到哪亮哪、走过的打勾；第 6 步是唯一要用户动手的，亮起来是印泥红。 -->
+  <aside class="rail">
+    <ol class="track" id="track">
+      <li data-k="wordcount"><b>01</b><span>定字数</span></li>
+      <li data-k="search"><b>02</b><span>搜全网</span></li>
+      <li data-k="reddit"><b>03</b><span>抓 Reddit</span></li>
+      <li data-k="facts"><b>04</b><span>锁定事实</span></li>
+      <li data-k="classify"><b>05</b><span>定类型</span></li>
+      <li data-k="approve" class="key"><b>06</b><span>你来审批</span></li>
+      <li data-k="article"><b>07</b><span>写正文</span></li>
+      <li data-k="polish"><b>08</b><span>润色 · 打分</span></li>
+    </ol>
+  </aside>
+
+  <!-- 中：控制台 -->
   <aside class="panel side">
     <div class="sec" id="sec1">
       <h2><span class="step">1</span>文章参数</h2>
