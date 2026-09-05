@@ -14,6 +14,7 @@ import logging
 import httpx
 
 from ..config import Settings, get_settings
+from . import serper_pool
 from ..models import SerpItem
 
 logger = logging.getLogger(__name__)
@@ -38,15 +39,14 @@ class SerperClient:
         self.s = settings or get_settings()
 
     async def _post(self, path: str, body: dict) -> dict:
-        if not self.s.serper_key:
+        # key 池：额度用尽自动换下一把（2026-09-06 —— 之前只有写作工具会换，
+        # Reddit 选题 / 内容差距 / 外链还在读单把 key，额度一尽全站 400）
+        if not serper_pool.has_key(self.s):
             raise SerperError("服务端未配置 SERPER_KEY")
         async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
                                      proxy=self.s.proxy_for("serper")) as client:
-            resp = await client.post(
-                f"{self.s.serper_base_url}{path}",
-                headers={"X-API-KEY": self.s.serper_key, "Content-Type": "application/json"},
-                json=body,
-            )
+            resp = await serper_pool.post(
+                client, self.s, f"{self.s.serper_base_url}{path}", body)
             if resp.status_code >= 400:
                 raise SerperError(f"HTTP {resp.status_code}: {resp.text[:200]}")
             return resp.json()

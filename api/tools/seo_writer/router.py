@@ -107,7 +107,8 @@ def _build(tier: str, usage_sink=None) -> tuple[Any, SEOWriter]:
         target = resolve_llm(s, tier)
     except ProviderError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    if not s.serper_key and not s.use_mocks:
+    from ..seo_gap.clients import serper_pool
+    if not serper_pool.has_key(s) and not s.use_mocks:
         raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY，请联系站长。")
     return s, SEOWriter(s, LLM(target, s, usage_sink=usage_sink), "serper")
 

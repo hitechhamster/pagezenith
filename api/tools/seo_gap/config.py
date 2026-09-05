@@ -171,8 +171,12 @@ class Settings(BaseSettings):
     writer_max_concurrent: int = 4
 
     def serp_key(self) -> str:
-        """当前 SERP 源实际用的 key（护栏检查用）。"""
-        return {"serper": self.serper_key, "serpapi": self.serpapi_key}.get(
+        """当前 SERP 源实际用的 key（护栏检查用，只判断配没配）。
+
+        serper 走 key 池：配了 SERPER_KEYS 就取第一把，没配才退回单把 SERPER_KEY。
+        """
+        serper = (self.serper_keys or "").split(",")[0].strip() or self.serper_key
+        return {"serper": serper, "serpapi": self.serpapi_key}.get(
             self.serp_provider, self.dataforseo_login)
 
     def with_keys(self, openrouter_key: str | None, serpapi_key: str | None,

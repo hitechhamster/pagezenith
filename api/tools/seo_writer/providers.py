@@ -341,7 +341,7 @@ _Q_PREFIXES = ("how to ", "what is ", "why is ", "does ")
 _Q_HEAD = re.compile(r"(?i)^(how|what|why|when|where|which|who|does|do|is|are|can|should)\b")
 
 
-async def _autocomplete_questions(client, headers: dict, s: Settings, query: str) -> list[str]:
+async def _autocomplete_questions(client, s: Settings, query: str) -> list[str]:
     """PAA 兜底：从 Google 自动补全里捞问句式查询。
 
     为什么需要兜底：意图覆盖是一票否决项，但 PAA 会整块缺失 —— 实测同一个词
@@ -352,8 +352,7 @@ async def _autocomplete_questions(client, headers: dict, s: Settings, query: str
     base = (query or "").strip().lower()
     for p in _Q_PREFIXES:
         try:
-            r = await client.post(f"{s.serper_base_url}/autocomplete",
-                                  headers=headers, json={"q": p + query})
+            r = await _serper_post(client, s, "autocomplete", {"q": p + query})
             if r.status_code != 200:
                 continue
             for it in (r.json().get("suggestions") or []):
@@ -382,13 +381,13 @@ async def _autocomplete_questions(client, headers: dict, s: Settings, query: str
 # --------------------------------------------------------------------------- #
 import contextvars as _cv
 
+from ..seo_gap.clients import serper_pool as _pool
+
 SERPER_CALLS: _cv.ContextVar[list] = _cv.ContextVar("serper_calls", default=None)   # [n] 可变计数
-_KEY_IDX = {"i": 0}
 
 
 def serper_keys(s: Settings) -> list[str]:
-    ks = [k.strip() for k in (getattr(s, "serper_keys", "") or "").split(",") if k.strip()]
-    return ks or ([s.serper_key] if s.serper_key else [])
+    return _pool.keys(s)
 
 
 def serper_calls_begin() -> list:
@@ -399,22 +398,13 @@ def serper_calls_begin() -> list:
 
 
 async def _serper_post(client: httpx.AsyncClient, s: Settings, path: str, payload: dict) -> httpx.Response:
-    keys = serper_keys(s)
-    if not keys:
+    """走全站共用的 key 池（seo_gap.clients.serper_pool），顺带记一次调用数。"""
+    if not _pool.has_key(s):
         raise ProviderError("服务端未配置 SERPER_KEY")
     c = SERPER_CALLS.get()
     if c is not None:
         c[0] += 1
-    for attempt in range(len(keys)):
-        key = keys[_KEY_IDX["i"] % len(keys)]
-        r = await client.post(f"{s.serper_base_url}/{path}",
-                              headers={"X-API-KEY": key, "Content-Type": "application/json"}, json=payload)
-        exhausted = (r.status_code == 400 and "credit" in r.text.lower()) or r.status_code in (401, 403)
-        if not exhausted or len(keys) == 1:
-            return r
-        _KEY_IDX["i"] = (_KEY_IDX["i"] + 1) % len(keys)
-        logger.warning("Serper key #%d 额度用尽/无效（%s），切换到 #%d", attempt, r.text[:60], _KEY_IDX["i"])
-    return r
+    return await _pool.post(client, s, f"{s.serper_base_url}/{path}", payload)
 
 
 #: 每页保留的正文上限。增益 / 密度基线对着它算，所以要装得下一篇完整文章（实测一页 1.4 万字符）。
@@ -425,9 +415,8 @@ _PAGE_CHARS = 16000
 async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
     """Serper 搜索 + 抓正文。前 n_scrape 条全部抓全文 —— 信息增益是"竞品没写的"，
     只看前四名的前 4000 字符会把竞品后半篇写过的东西算成新增（用户 2026-09-05 问到这点）。"""
-    if not s.serper_key:
+    if not _pool.has_key(s):
         raise ProviderError("服务端未配置 SERPER_KEY")
-    headers = {"X-API-KEY": s.serper_key, "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=s.request_timeout, trust_env=False,
                                  proxy=s.proxy_for("serper")) as client:
         r = await _serper_post(client, s, "search", {"q": query, "num": 10})
@@ -452,7 +441,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
             except Exception:  # noqa: BLE001  补不到就算了，下游按"这一维测不了"处理
                 logger.warning("PAA 补发失败（%s）", query)
             if not questions:
-                questions = await _autocomplete_questions(client, headers, s, query)
+                questions = await _autocomplete_questions(client, s, query)
 
         async def one(it: dict) -> dict:
             text = it.get("snippet") or ""
@@ -502,12 +491,11 @@ async def expand_queries(s: Settings, queries: list[str], per: int = 1, max_q: i
     （用户 2026-09-05 问「我怎么能让信息增益再多一些」）。返回的文本块不带 Q:/Rel: 行，
     它是素材不是竞品：只进事实清单和审计的 material，不进增益的对照语料。
     """
-    if not s.serper_key or s.use_mocks:
+    if not _pool.has_key(s) or s.use_mocks:
         return ""
     qs = [q.strip() for q in queries if q and q.strip()][:max_q]
     if not qs:
         return ""
-    headers = {"X-API-KEY": s.serper_key, "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=s.request_timeout, trust_env=False,
                                  proxy=s.proxy_for("serper")) as client:
         async def one_query(q: str) -> list[dict]:

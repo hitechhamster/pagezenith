@@ -338,10 +338,9 @@ class SEOWriter:
             import httpx
             async with httpx.AsyncClient(timeout=self.s.request_timeout, trust_env=False,
                                          proxy=self.s.proxy_for("serper")) as c:
-                r = await c.post(f"{self.s.serper_base_url}/scrape",
-                                 headers={"X-API-KEY": self.s.serper_key,
-                                          "Content-Type": "application/json"},
-                                 json={"url": url})
+                from ..seo_gap.clients import serper_pool
+                r = await serper_pool.post(c, self.s, f"{self.s.serper_base_url}/scrape",
+                                           {"url": url})
                 r.raise_for_status()
                 j = r.json()
             text = (j.get("text") or "")[:1000]
