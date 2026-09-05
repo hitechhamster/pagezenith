@@ -239,6 +239,11 @@
   /* 两列：左边步骤条，右边一列从上往下走 —— 参数 → 大纲 → 文章，做完的折成一行。
      （试过参数在中、大纲在右的三列：竖向步骤条暗示内容自上而下，左右并排反而看不懂"第几步"。） */
   .ws{display:grid;grid-template-columns:148px minmax(0,1fr);gap:22px;max-width:1120px;margin:0 auto;padding:22px 20px 80px;align-items:start}
+  /* 画布至少一屏高：① 新卡片再短也能被滚到标题栏下面，做完的卡片才真的"往上退出"
+     （余量不够时 scrollIntoView 滚不动，向导感就没了）；② 余量必须在网格**里面**——
+     放在容器 padding 里的话，步骤条的 sticky 范围只有两张卡那么高，一滚就被顶出去。 */
+  .canvas .spacer{height:calc(100vh - 140px)}
+  @media(max-width:760px){.canvas .spacer{height:40vh}}
   .side,.canvas{grid-column:2}
   .side{padding:20px 24px 18px;margin-bottom:16px}
   .side .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -272,6 +277,14 @@
   /* 右：画布。文档就是一张纸 */
   .canvas{min-width:0}
   .canvas .sec{margin-top:0;padding:26px 30px;box-shadow:var(--shadow)}
+  /* 向导式推进：新一步的卡片从下方上滑淡入；同时脚本把它滚到标题栏下面，
+     做完的卡片（已折成一行）就退到视野上方。display:none → 显示时 CSS 动画会重新跑，
+     不用脚本配合。 */
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  .canvas .sec{animation:rise .38s cubic-bezier(.2,.7,.2,1) both;scroll-margin-top:72px}
+  .side{scroll-margin-top:72px}
+  .sec.folded{transition:padding .25s}
+  @media(prefers-reduced-motion:reduce){.canvas .sec{animation:none}}
   .canvas .sec + .sec{margin-top:16px}
   .canvas .sec h2{font-size:14px;color:var(--muted);font-weight:500;font-family:var(--font-ui);margin-bottom:12px}
   .canvas .sec h2 .step{width:20px;height:20px;font-size:11px}
@@ -440,6 +453,8 @@
       <div class="hint" style="margin-top:10px">正文写完会<b>自动润色一遍</b>（拆长句、去绕话，硬信息一条不少；另计 <span id="polishPts">3</span> 点）。
         只改表达不动结构：标题、图片占位符、链接、表格都原样保留。不满意可以「还原润色前」。</div>
     </div>
+    <!-- 底部余量：让当前那张卡再短也能被滚到标题栏下面（向导式推进的前提） -->
+    <div class="spacer" aria-hidden="true"></div>
   </section>
 </main>
 
@@ -766,6 +781,8 @@ $("btnOutline").onclick=async()=>{
   unfoldSec("sec2"); foldSec("sec1", paramSummary());
   logReset("log1"); discReset(); $("outlineBox").innerHTML=""; S.outline="";
   setStatus("正在生成大纲…",false,true);
+  // 向导式推进：一点按钮就把新卡片滚到标题栏下面，参数卡退到视野上方
+  $("sec2").scrollIntoView({behavior:"smooth",block:"start"});
   const paint=throttleRender($("outlineBox"),()=>S.outline);
 
   try{
@@ -790,7 +807,7 @@ $("btnOutline").onclick=async()=>{
         else if(ev.type==="error") throw new Error(ev.message);
       });
   }catch(err){ setStatus("失败："+(err.message||err),true); }
-  finally{ $("btnOutline").disabled=false; $("sec2").scrollIntoView({behavior:"smooth",block:"start"}); }
+  finally{ $("btnOutline").disabled=false; }
 };
 
 /* ---------- 第二步：改大纲 ---------- */
