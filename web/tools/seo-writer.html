@@ -570,6 +570,10 @@ function restoreDraft(){
   let d=null;
   try{ d=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null"); }catch(e){}
   if(!d || !d.outline || (Date.now()-(d.ts||0))>DRAFT_TTL) return;
+  // 写完的文章不恢复 —— 它已经在「我的记录」里了。恢复出来的是旧大纲 + 旧 session，
+  // 用户再点「写文章」得到的还是同一篇（2026-09-05 用户报："写完一篇没法写另一篇"）。
+  // 草稿只为"大纲花了点数、正文还没写"这一种情况存在。
+  if(d.docx || d.article){ clearDraft(); return; }
   Object.entries(d.f||{}).forEach(([id,v])=>{ const el=$(id); if(el && v!=null) el.value=v; });
   const ck=$("enableImages");
   if(ck && "enableImages" in (d.f||{})){ ck.checked=!!d.f.enableImages; syncImages(); }
@@ -913,7 +917,16 @@ $("btnRestart").onclick=()=>{
   S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={}; S.info={}; S.pre=null;
   $("btnRevert").style.display="none";
   $("sec2").style.display="none"; $("sec3").style.display="none"; setStatus("");
+  // 把上一篇的痕迹全清掉：正文框、大纲框、成绩单、按钮、发现面板、两条日志、步骤轨、折叠态。
+  // 以前只藏不清，下一篇写之前旧文章还在 DOM 里；恢复条也要拿掉。
+  $("articleBox").innerHTML=""; $("outlineBox").innerHTML="";
+  $("artInfo").innerHTML=""; $("artInfo").style.display="none"; $("artBtns").style.display="none";
+  $("artMeta").textContent=""; $("outlineMeta").textContent=""; $("sealRow").style.display="none";
+  discReset(); logReset("log1"); logReset("log2");
+  [...$("track").children].forEach(li=>li.classList.remove("on","done"));
+  document.querySelectorAll(".restored").forEach(el=>el.remove());
   unfoldSec("sec1"); unfoldSec("sec2");
+  $("mainKw").focus();
   window.scrollTo({top:0,behavior:"smooth"});
 };
 </script>
