@@ -775,7 +775,7 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t4, c4 = await ensure_paa_coverage(t3, report, material, language, complete)
     t5, c5 = dedupe_repeated_stats(t4)
     # 句子级的三个局部修，各只改一次
-    t6, c6 = await fix_opening_gap(t5, material, complete)
+    t6, c6 = t5, []          # 开头改写已停用（用户 2026-09-05：不要求开头 100 词内给具体信息）
     t7, c7 = await fix_orphan_h2(t6, complete)
     t8, c8 = await fix_title_shape(t7, report, (keywords or [""])[0], complete)
     t9, c9 = fix_stale_year(t8)

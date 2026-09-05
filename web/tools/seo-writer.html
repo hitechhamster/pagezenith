@@ -962,14 +962,10 @@ function renderInfo(){
     }
     // ④ 密度
     if(q.density!=null){
-      // 打标规则：低于竞品中位数 20% 以上才标红；20% 以内算持平，不打扰。没基线不评。
-      const cd=q.competitor_density, flag=!!q.density_flag;
-      const r=row("信息密度", flag?"bad":"ok",
-        `每 100 词 ${q.evidence} 条能照做的信息`
-          + (cd!=null && q.evidence>=cd ? `<span class="cmp">竞品中位数 ${cd}</span>` : "")
-          + (flag ? `<span class="cmp" style="background:var(--redbg);color:var(--red)">低于竞品 20% 以上</span>` : ""),
-        flag ? "已对最稀的几节做过局部补写；仍低说明这个题材竞品是规格表 / 目录页，正文形态追不上。要么接受，要么在「特殊要求」里让它加参数表。"
-             : "数字、参数、文件名、功能名的密度。读者一段话里能拿走几样东西，而不是读了三百词全是立场铺垫。", true);
+      // 只显示自己的数，不显示竞品、不因竞品标红（用户 2026-09-05）。竞品基线只在后台用来决定补不补写。
+      const r=row("信息密度", "ok",
+        `每 100 词 ${q.evidence} 条能照做的信息`,
+        "数字、参数、文件名、功能名的密度。读者一段话里能拿走几样东西，而不是读了三百词全是立场铺垫。", true);
       rows.append(r);
     }
     // ⑤ 可读性：不报 FK 数字，报人话
@@ -1015,7 +1011,6 @@ function verdictLine(q){
   if(q.veto) return "文章形态和搜索页不匹配，先看下面的说明。";
   if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
   if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
-  if(q.competitor_density!=null&&q.evidence!=null) parts.push(q.density_flag ? "信息密度低于竞品" : (q.evidence>=q.competitor_density ? "信息密度高于竞品" : ""));
   const said=parts.filter(Boolean);
   return said.length ? said.join("，")+"。" : "已完成打分。";
 }
@@ -1197,10 +1192,7 @@ $("btnRestart").onclick=()=>{
       chip(q.level||"ok",`<b>${q.score}</b> 分`);
       if(q.gain!=null) chip(q.gain>=0.35?"ok":(q.gain>=0.2?"warn":"bad"),`比竞品多给 <b>${Math.round(q.gain*100)}%</b>`);
       if(q.intent_total) chip(q.veto?"bad":(q.intent_covered/q.intent_total>=0.66?"ok":"warn"),`搜索者问题 <b>${q.intent_covered}/${q.intent_total}</b>`);
-      if(q.evidence!=null){
-        const beat = q.competitor_density!=null && q.evidence>=q.competitor_density;
-        chip(q.density_flag?"bad":"ok",`密度 <b>${q.evidence}</b>`+(beat?`<i class="vs">/ 竞品 ${q.competitor_density}</i>`:""));
-      }
+      if(q.evidence!=null) chip("ok",`密度 <b>${q.evidence}</b>`);
     }
     stickTl();
   };

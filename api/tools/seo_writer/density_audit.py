@@ -680,9 +680,9 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
         "gain": clamp(gain["ratio"] / _FULL["gain"]) if gain.get("measurable") else None,
         "evidence": clamp(den["evidence_per100"] / _FULL["evidence"]),
         "density": clamp(den["per100"] / _FULL["density"]),
-        "readability": clamp(0.4 * (1 - clamp(read["lead_to_answer"] / 150))
-                             + 0.4 * (1 - clamp(len(read["orphan_h2"]) / max(read["h2"], 1)))
-                             + 0.2 * clamp(read["scan_ratio"] / 0.25)),
+        # 「开头多少词内给答案」不再计分（用户 2026-09-05：不要求这个）；只看 H2 自足 + 可扫读
+        "readability": clamp(0.6 * (1 - clamp(len(read["orphan_h2"]) / max(read["h2"], 1)))
+                             + 0.4 * clamp(read["scan_ratio"] / 0.25)),
     }
     live = {k: v for k, v in parts.items() if v is not None}
     wsum = sum(_WEIGHTS[k] for k in live) or 1
@@ -830,10 +830,9 @@ def readability_note(topic_type: str) -> str:
     lo, hi = FK_BAND.get(topic_type, _DEFAULT_BAND)
     return (f"目标阅读年级 FK {lo:.0f}–{hi:.0f}。这是一条**宽护栏不是靶心** —— "
             f"落在区间内就别为了挪动这个数字去改稿，更不许为了压低它删掉术语和具体参数。"
-            f"比分数更重要的是三条结构要求："
-            f"①开头 100 词内必须出现第一个能照做的具体信息（行业统计不算）；"
-            f"②每个 H2 的首句不许用 This/因此 接上文 —— 它要能被单独摘出来读；"
-            f"③能列表就别写成段落。")
+            f"比分数更重要的是两条结构要求："
+            f"①每个 H2 的首句不许用 This/因此 接上文 —— 它要能被单独摘出来读；"
+            f"②能列表就别写成段落。")
 
 
 def format_report(r: dict[str, Any]) -> str:
@@ -866,9 +865,6 @@ def to_prompt_block(r: dict[str, Any], max_items: int = 8) -> str:
     # 跨节重复的统计**不进用户清单**（用户 2026-09-05 定）：炼钢文里 1,600°C / 400 / 1,800
     # 这类工艺参数本来就该在多个小节出现，六条"只在一节保留"全是噪音。
     # 真正该删的（带引用信号的重复统计句）由 postfix.dedupe_repeated_stats 用代码收口，不用提示。
-    if d.get("opening_gap", 0) > 120:
-        lines.append(f"- 开头 {d['opening_gap']} 词之内没有任何可操作信息（行业统计不算）——"
-                     f"把第一个能照做的结论提到开头。")
     for h in (read.get("orphan_h2") or [])[:max_items]:
         lines.append(f"- 「{h}」首句靠上文接续（This / 因此…），单独摘出来读不懂——"
                      f"改成自足的开头。")
