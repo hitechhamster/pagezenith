@@ -494,7 +494,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
     return _fmt(out + rest, questions, related)
 
 
-async def expand_queries(s: Settings, queries: list[str], per: int = 2, max_q: int = 10) -> str:
+async def expand_queries(s: Settings, queries: list[str], per: int = 1, max_q: int = 5) -> str:
     """顺着搜索页上的子问题 / 相关搜索各搜一层，抓每个的前 per 篇全文。
 
     信息增益 = 本文有、竞品语料没有。竞品语料（主/次关键词的搜索页）里抽出来的事实
@@ -540,7 +540,7 @@ async def expand_queries(s: Settings, queries: list[str], per: int = 2, max_q: i
 
 
 _MIN_PROSE = 3        # 至少要有这么多篇文章型竞品，密度基线才有资格算（与 density_audit 一致）
-_MAX_RESULTS = 20     # 最多往后看到第几名
+_MAX_RESULTS = 14     # 最多往后看到第几名（2026-09-05 控成本：抓全文 2 点/页，一篇控制在 50–60 点）
 
 
 def _is_prose(text: str) -> bool:
