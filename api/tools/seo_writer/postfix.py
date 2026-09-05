@@ -19,7 +19,7 @@ from . import density_audit, prose_audit
 logger = logging.getLogger(__name__)
 
 # 带信息量的数字（金额 / 百分比 / 三位以上）。序数和小整数不算。
-_NUM = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d+(?:\.\d+)?\s?%|\b\d{3,}\b")
+_NUM = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|(?<![\d.])\d+(?:\.\d+)?\s?%|(?<![\d.])\d{3,}\b")
 _norm = lambda s: re.sub(r"[\s$%,]", "", s)
 
 # 行首是结构（标题/表格/列表/图片占位）就不当散文处理
@@ -29,8 +29,8 @@ _SENT = re.compile(r"[^.!?]*[.!?]+[\"”’)]*\s*|[^.!?]+$")
 
 # 已经是限定语开头的句子，不用再加 hedge
 _ALREADY_HEDGED = re.compile(
-    r"(?i)^(?:many|most|some|several|sellers|users|merchants|store owners|"
-    r"usually|often|typically|generally|in most cases)\b")
+    r"(?i)^(?:many|most|some|several|sellers|users|merchants|store owners|buyers|"
+    r"usually|often|typically|generally|in most cases|in practice)\b")
 
 
 def _split_sentences(line: str) -> list[str]:
@@ -117,7 +117,7 @@ def strip_fake_experience(text: str, facts: str) -> tuple[str, list[str]]:
                 if _ALREADY_HEDGED.match(rest):
                     fixed = _cap(rest)
                 else:                                     # ③ 无数字 → 降成限定语
-                    fixed = "Many sellers report that " + rest[:1].lower() + rest[1:]
+                    fixed = "In practice, " + rest[:1].lower() + rest[1:]
                 changes.append(f"降限定语：「{fixed[:50]}…」")
             new_sents.append(fixed + trail)
         out_lines.append("".join(new_sents))
@@ -282,7 +282,8 @@ Output ONLY a compact markdown block to be appended to the end of the section:
 {shape} — between {need_new} and {max_new} items,
 and no more than {max_words} words in total. Short cells, no explanations inside.
 Each item must be something a reader can act on or verify: an exact value with units,
-a model / product / tool name, a menu path or file name, a threshold, a specific failure symptom.
+a model / product / tool name, a standard number, a threshold, a specific failure symptom.
+Do NOT invent file names, spreadsheet names or templates. Do NOT cite sources (no "according to", no domains).
 
 Hard rules:
 - Do NOT repeat anything already in the section (listed below). New items only.
@@ -377,6 +378,9 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
             # 四块（每块 +15~19 条），整篇证据密度只从 3.81 挪到 4.16 —— 加的东西别的节早写过，
             # 对整篇指标是零，对读者也是重复。
             gained -= density_audit._evidence_units(text, material)
+        if introduced_files(add, block, material):
+            logger.info("补写「%s」已丢弃：编了文件名（%s）", head[:40], "、".join(introduced_files(add, block, material)[:2]))
+            continue
         invented = invented_assertions(add, allowed | {_norm(y) for y in _NUM.findall(block)})
         n_new = density_audit.word_count(new)
         # 篇幅上限：与告诉模型的 max_words 对齐再留一成余量。
@@ -411,8 +415,8 @@ Rules:
   of answer underneath. No preamble, no closing paragraph, no extra questions.
 - Each answer must stand alone: someone who reads only that answer should get a complete reply.
   Do not open with "This", "That", "As mentioned" or refer to earlier parts of the article.
-- Every answer must contain at least one concrete, checkable specific: a setting name, a menu
-  path, a file name, a threshold with units, or a named tool.
+- Every answer must contain at least one concrete, checkable specific: a setting name,
+  a threshold with units, a standard number, or a named tool. No invented file names. No source citations.
 - Statistics are locked: no percentage, price, bounce rate or "studies show" claim unless it
   appears in the reference material below. Concrete operating values from your own expertise
   are fine, stated as recommendations.
@@ -529,6 +533,60 @@ def fix_title_cliche(text: str) -> tuple[str, list[str]]:
     if len(new.split()) < 3:
         return text, []
     return text[:m.start(1)] + new + text[m.end(1):], [f"标题去俗套词：「{m.group(1)[:40]}」→「{new[:40]}」"]
+
+
+# --------------------------------------------------------------------------- #
+# 来源引用：正文里一律不许出现（用户 2026-09-05）。prompt 说了，代码再收一次口。
+# --------------------------------------------------------------------------- #
+_DOMAIN = r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|gov|edu|io|co\.uk)"
+#: 引用里的来源名：最多 6 个词，词可以带域名后缀（trade.gov / the American Iron and Steel Institute / a 2023 AWeber survey）
+_SRC_NAME = r"(?:[A-Za-z0-9&'’-]+(?:\.[a-z]{2,4})?)(?:\s+[A-Za-z0-9&'’-]+(?:\.[a-z]{2,4})?){0,5}"
+_CITE_VERBS = r"(?:notes|confirms|emphasizes|states|reports|says|explains|shows|recommends|points out|lists|puts it|puts|suggests|indicates|estimates|found|finds|reported)"
+_CITE_PATTERNS = [
+    # (Source: xxx) / (via xxx) / (see xxx.com)
+    re.compile(r"\s*\((?:source|sources|via|per|see|according to)\b[^()]{0,80}\)", re.I),
+    # 括号里只有一个域名 / Reddit
+    re.compile(r"\s*\((?:[^()]{0,40}?)(?:" + _DOMAIN + r"|\breddit\b|\br/\w+)[^()]{0,40}\)", re.I),
+    # "…, as stated on trade.gov" / ", according to X" 尾随从句（到句末标点为止）
+    re.compile(r",?\s*(?:as\s+(?:stated|noted|reported|confirmed|explained|described|outlined)\s+(?:on|by|in|at)|according\s+to|citing)\s+" + _SRC_NAME + r"(?=[,.;:)]|\s+(?:and|but|which|while|the|a|an|this|it)\b|$)", re.I),
+    # "freightquote.com notes that " 句首 / 句中主语式引用
+    re.compile(r"\b" + _DOMAIN + r"\s+(?:also\s+)?" + _CITE_VERBS + r"\b(?:\s+that\b)?\s*", re.I),
+    # 剩下的裸域名
+    re.compile(r"\s*(?:\bon|\bfrom|\bat|\bvia)?\s*\b" + _DOMAIN + r"\b", re.I),
+    # "studies show that" / "research suggests that"
+    re.compile(r"\b(?:studies|research|surveys|data|experts|analysts)\s+(?:show|shows|suggest|suggests|indicate|indicates|say|says|found|find)\s+(?:that\s+)?", re.I),
+]
+
+
+def strip_citations(text: str) -> tuple[str, list[str]]:
+    """把正文里的来源引用机械去掉。只动散文行，不动标题 / 表格 / 图片占位 / 链接行。"""
+    if not text:
+        return text, []
+    out, n = [], 0
+    for line in text.split("\n"):
+        if re.match(r"^\s*(?:#{1,6}\s|\||\[IMAGE:)", line) or "](" in line or not line.strip():
+            out.append(line)
+            continue
+        new = line
+        for pat in _CITE_PATTERNS:
+            new = pat.sub("", new)
+        if new != line:
+            n += 1
+            new = re.sub(r"\s{2,}", " ", new)
+            new = re.sub(r"\s+([,.;:])", r"\1", new)
+            new = re.sub(r"([,;:])\s*([,.;:])", r"\2", new)
+            new = re.sub(r"\(\s*\)", "", new)
+            new = re.sub(r",\s*(?:as|though|although|while)\s*(?=$|[,.;:)])", "", new, flags=re.I)
+            new = re.sub(r"([.!?])\s*,\s*", r"\1 ", new)
+            new = re.sub(r"^(\s*(?:[-*•]|\d+[.)]))\s*,\s*", r"\1 ", new)
+            new = re.sub(r"^\s*,\s*", "", new)
+            new = re.sub(r"^(\s*(?:[-*•]|\d+[.)])\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), new)
+            new = re.sub(r",\s*$", "", new)
+            new = re.sub(r"\s+$", "", new)
+            # 句首被削掉主语后补大写
+            new = re.sub(r"(^|[.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), new)
+        out.append(new)
+    return "\n".join(out), ([f"去掉 {n} 处来源引用"] if n else [])
 
 
 #: 整篇最多几张表（用户 2026-09-05）。超出的按信息量小到大转成列表，一条信息不丢。
@@ -659,6 +717,17 @@ Paragraph:
 _FILE_TOKEN = re.compile(r"\b[\w-]+\.(?:xlsx|xls|csv|pdf|docx?|json|txt|ya?ml|liquid|js|py|xml|md)\b", re.I)
 _NEW_WE = re.compile(r"(?i)\b(?:we|our team)\s+(?:control|audit|inspect|verify|enforce|manage|run|operate|"
                      r"own|dictate|handle|monitor|supervise|source|build|test|check|require)\b")
+
+
+def introduced_files(new: str, *sources: str) -> list[str]:
+    """追加块里冒出来、素材里没有的反引号片段 / 文件名（补写和 FAQ 用；专名放行，那是它们该加的）。"""
+    pool = density_audit.squash(" ".join(s or "" for s in sources))
+    out: list[str] = []
+    for m in density_audit._CODE.findall(new or "") + _FILE_TOKEN.findall(new or ""):
+        k = density_audit.squash(m.strip("` "))
+        if k and k not in pool and m not in out:
+            out.append(m)
+    return out
 
 
 def introduced_names(new: str, *sources: str) -> list[str]:
@@ -851,4 +920,5 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t9, c9 = fix_stale_year(t8)
     t10, c10 = fix_title_cliche(t9)
     t11, c11 = cap_tables(t10)
-    return t11, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11
+    t12, c12 = strip_citations(t11)
+    return t12, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12

@@ -55,14 +55,23 @@ def clean_outline(text: str) -> str:
 _CONTENT_BLOCK = re.compile(r"(^Content:\s*)(.*?)(?=^---\s*$|^Title:|^Q:|^Rel:|\Z)", re.M | re.S)
 
 
+_SRC_TAIL = re.compile(r"\s*[—\-–]+\s*来源[:：].*$", re.M)
+
+
+def strip_sources(facts: str) -> str:
+    """事实清单每行的「— 来源：xxx [类型]」尾巴去掉。"""
+    return _SRC_TAIL.sub("", facts or "")
+
+
 def trim_search(text: str, per_page: int = 4000) -> str:
     """搜索文本的 prompt 版：每页正文截到 per_page 字符。
 
     全文版（每页最多 16000）留给增益 / 密度基线 / 意图覆盖去算 —— 那些必须对着完整竞品；
     模型只需要看个大概，20 篇全文进 prompt 一次要几万 token。
     """
-    return _CONTENT_BLOCK.sub(lambda m: m.group(1) + m.group(2)[:per_page] + ("\n" if len(m.group(2)) > per_page else ""),
-                              text or "")
+    out = _CONTENT_BLOCK.sub(lambda m: m.group(1) + m.group(2)[:per_page] + ("\n" if len(m.group(2)) > per_page else ""),
+                             text or "")
+    return re.sub(r"^URL:.*\n?", "", out, flags=re.M)   # 域名不给模型看
 
 
 def _date_line() -> str:
@@ -360,8 +369,9 @@ class SEOWriter:
 
     @staticmethod
     def facts_block(ctx: dict[str, Any]) -> str:
-        """事实清单的 prompt 片段；没有清单就返回空串（那一段直接消失）。"""
-        facts = (ctx.get("facts") or "").strip()
+        """事实清单的 prompt 片段；没有清单就返回空串（那一段直接消失）。
+        来源字段不给模型看（用户 2026-09-05：与其说"别引用"，不如不给）；完整版留在 ctx 里做核验。"""
+        facts = strip_sources((ctx.get("facts") or "").strip())
         return P.FACTS_BLOCK.format(facts=facts) if facts else ""
 
     @staticmethod
@@ -381,7 +391,7 @@ class SEOWriter:
                                      ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
         novel = density_audit.novel_facts(ctx.get("facts") or "", full)
         if novel:
-            brief += P.NOVEL_FACTS_BLOCK.format(items="\n".join(f"- {x}" for x in novel))
+            brief += P.NOVEL_FACTS_BLOCK.format(items="\n".join(f"- {x}" for x in strip_sources("\n".join(novel)).splitlines()))
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
 
     # ------------------------------------------------------------ 主题分类
@@ -660,8 +670,7 @@ class SEOWriter:
         if mode == "full":
             # 目标区间按文章类型走。写死"12 年级"时实测：教程类目标 7–10，
             # 全量润色只把 FK 从 12.2 挪到 11.9 —— 它在照着 12 干活，当然不往下走。
-            fmt["readability_note"] = density_audit.readability_note(
-                ctx.get("topic_type", ""))
+            fmt["readability_note"] = density_audit.readability_note(ctx.get("topic_type", ""))
         prompt = template.format(
             **fmt,
             language=language, article=article,

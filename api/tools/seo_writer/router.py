@@ -175,6 +175,12 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
 
                 job.emit({"type": "step", "key": "search", "message": "全网搜索主/次关键词的现有内容…"})
                 _m, _s = await wf.search_context(ctx["main_keyword"], ctx["secondary_keyword"])
+                # 搜索整个挂了（2026-09-05 实测 Serper 额度用尽返回 400 "Not enough credits"）：
+                # 没有竞品语料就没有事实清单、没有 PAA、增益算出 99% 全是假的。
+                # 与其交付一篇瞎写的，不如停下不扣点。charge() 的 except 分支会退点。
+                if all(x.startswith("（") and "搜索失败" in x for x in (_m, _s)):
+                    logger.error("搜索服务不可用：%s", _m[:200])
+                    raise RuntimeError("搜索服务暂时不可用（额度或故障），本次没有扣点，请稍后再试。")
                 # 全文版给审计（增益 / 基线 / 意图），截短版给 prompt
                 ctx["main_search_full"], ctx["sec_search_full"] = _m, _s
                 ctx["main_search"], ctx["sec_search"] = trim_search(_m), trim_search(_s)
@@ -599,6 +605,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                                               f"已保留润色前的版本，本次不扣点。")})
                         raise PolishStructureError(f"润色丢失 {len(lost2)} 条硬信息")
 
+                text, _cites = postfix.strip_citations(text)
                 actual = count_words(text)
                 level, wc_msg = wordcount_status(actual, ctx.get("wordcounts", 0))
                 g1 = reading_grade(text, language)

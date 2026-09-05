@@ -604,7 +604,7 @@ def competitor_density(search_text: str) -> dict[str, Any]:
 #: 低于 7 说明话说得太碎、专业感没了；高于 13 说明句子真的绕，该拆。
 #: 中间不给意见 —— 拿一个没依据的推断值去逼模型改稿，比不管更糟。
 FK_BAND: dict[str, tuple[float, float]] = {}
-_DEFAULT_BAND = (7.0, 13.0)
+_DEFAULT_BAND = (7.0, 10.0)   # 用户 2026-09-05：目标 10 年级能读懂
 
 
 def structural_readability(text: str, topic_type: str = "",
@@ -815,11 +815,16 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14,
         return cap >= 3 and cap / max(cap + low, 1) >= 0.6
     named = [u for u in named
              if u not in {"google", "amazon", "shopify", "reddit", "youtube"} and _mostly_capitalized(u)][:10]
+    # 用竞品正文里的原样写法（ShipBob 不是 shipbob）。实测小写形态被原样搬进正文：
+    # "the International Chamber of Commerce, known as commerce icc"。
+    def _orig(u: str) -> str:
+        m = re.search(r"\b" + re.escape(u) + r"\b", corpus_raw, re.I)
+        return m.group(0) if m else u
     if len(named) >= 3:
-        parts.append("**多家竞品都点名的产品 / 服务商 / 工具：** " + "、".join(named)
-                     + "\n读者搜这个词就是预期看到这些名字。本文要覆盖它们，"
-                       "**每个给 2–3 条具体参数**（价格档位、规格、起订量、适用范围）"
-                       "—— 写成事实对照（表格最好），不背书、不排名。")
+        parts.append("**多家竞品都提到的产品 / 服务商 / 工具（素材，看有没有值得写的）：** "
+                     + "、".join(_orig(u) for u in named)
+                     + "\n写到它们时给具体参数（价格档位、规格、起订量、适用范围），不背书、不排名。"
+                       "用不上的不用硬塞。")
     if baseline:
         parts.append("**竞品已经写透的（≥2 家都写了，属于行业基线）：**\n"
                      + "、".join(baseline[:max_items])
@@ -829,14 +834,10 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14,
     return "\n\n".join(parts)
 
 
-def readability_note(topic_type: str) -> str:
-    """写作阶段的可读性目标。绝对分只是护栏，结构才是主判据。"""
+def readability_note(topic_type: str, current: float | None = None) -> str:
+    """可读性目标。用户 2026-09-05：prompt 只写这一句，别的别加。"""
     lo, hi = FK_BAND.get(topic_type, _DEFAULT_BAND)
-    return (f"目标阅读年级 FK {lo:.0f}–{hi:.0f}。这是一条**宽护栏不是靶心** —— "
-            f"落在区间内就别为了挪动这个数字去改稿，更不许为了压低它删掉术语和具体参数。"
-            f"比分数更重要的是两条结构要求："
-            f"①每个 H2 的首句不许用 This/因此 接上文 —— 它要能被单独摘出来读；"
-            f"②能列表就别写成段落。")
+    return f"目标：{hi:.0f} 年级能读懂。"
 
 
 def format_report(r: dict[str, Any]) -> str:
