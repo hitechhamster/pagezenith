@@ -205,9 +205,11 @@
   .ab-cost{font-size:12.5px;color:var(--muted);padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--card);white-space:nowrap}
   .ab-cost b{color:var(--text);font-family:var(--font-mono);font-size:13px} .ab-cost .dim{color:var(--faint);font-size:11.5px}
 
-  .two{display:grid;grid-template-columns:400px minmax(0,1fr);height:calc(100vh - 56px)}
-  /* 左窗格：时间线 */
-  .tl{overflow:auto;border-right:1px solid var(--line);background:rgba(255,255,255,.55);padding:16px 18px 40px}
+  .two{display:grid;grid-template-columns:400px minmax(0,1fr);height:calc(100vh - 56px);min-height:0}
+  /* 左窗格：时间线。min-height:0 必须有 —— grid/flex 子项默认 min-height:auto，
+     不写它就不会收缩到容器高，内容一长把整页撑高，overflow:auto 永远不生效
+     （实测：大纲一出来右边卡死滚不动，左边被整页滚动带着跑）。 */
+  .tl{overflow:auto;min-height:0;border-right:1px solid var(--line);background:rgba(255,255,255,.55);padding:16px 18px 40px}
   .tl .sec{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:none;padding:14px 16px;margin:0 0 14px}
   .tl .sec h2{font-size:13px;margin:0 0 10px;font-family:var(--font-ui);font-weight:600;color:var(--muted)}
   .tl .row{margin-bottom:9px} .tl .f{min-width:0}
@@ -258,7 +260,7 @@
   .feed>li.qa details.qd summary:after{content:" ▸";color:var(--faint)} .feed>li.qa details.qd[open] summary:after{content:" ▾"}
 
   /* 右窗格：文档 */
-  .docpane{display:flex;flex-direction:column;min-width:0;height:100%}
+  .docpane{display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;overflow:hidden}
   /* 工具栏两行定死：第一行 标题 ← → 按钮；第二行 成绩胶囊。一行硬挤会换行换得乱。 */
   .doc-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:14px;row-gap:8px;
     padding:10px 26px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.7);min-height:52px}
@@ -274,7 +276,7 @@
   .doc-title{grid-column:1;grid-row:1}
   .doc-toolbar .btns{grid-column:2;grid-row:1;margin:0;gap:6px;flex-wrap:nowrap;justify-self:end} .doc-toolbar .btns button{padding:8px 14px;font-size:12.5px;white-space:nowrap}
   .qmini{grid-row:2}
-  .doc-body{flex:1;overflow:auto;padding:28px 40px 120px}
+  .doc-body{flex:1;min-height:0;overflow:auto;padding:28px 40px 120px}
   .doc-body .sec{background:transparent;border:0;box-shadow:none;padding:0;margin:0}
   .doc-body .sec.folded{padding:8px 12px;border:1px dashed var(--line);border-radius:10px;margin-bottom:18px;background:rgba(255,255,255,.6)}
   .doc-body .sec.folded .foldbar{padding:0;font-size:12.5px}
@@ -730,6 +732,13 @@ window.addEventListener("beforeunload", saveDraft);
    页面变矮，用户正滚在中段的视口就会猛地跳上去。撑住到新内容长过它再放开。 */
 function holdHeight(box){ box.style.minHeight=box.offsetHeight+"px"; }
 function releaseHeight(box){ box.style.minHeight=""; }
+/* 只滚右窗格，不滚整页。以前用 scrollIntoView({smooth})：它滚的是所有可滚祖先（含整页），
+   而大纲/正文流式每 150ms 长一截、目标位置一直变，平滑滚动就一直追着跑 ——
+   用户看到的就是"左栏疯狂自己上滑"。 */
+function docScroll(id){
+  const body=$("docBody"), el=$(id); if(!body||!el) return;
+  body.scrollTop=Math.max(0, el.offsetTop - body.offsetTop - 8);
+}
 
 function throttleRender(box,getText){
   let last=0,timer=null,done=0,settled=null,tail=null;
@@ -769,7 +778,7 @@ $("btnOutline").onclick=async()=>{
   logReset("log1"); discReset(); $("outlineBox").innerHTML=""; S.outline="";
   setStatus("正在生成大纲…",false,true);
   // 向导式推进：一点按钮就把新卡片滚到标题栏下面，参数卡退到视野上方
-  $("sec2").scrollIntoView({behavior:"smooth",block:"start"});
+  docScroll("sec2");
   const paint=throttleRender($("outlineBox"),()=>S.outline);
 
   try{
@@ -830,7 +839,7 @@ $("btnArticle").onclick=async()=>{
   // 大纲已通过，收成一行；文章区成为页面上唯一展开的东西，用户是看着文章长出来，不是追着页面跑
   foldSec("sec2", `大纲已通过 · ${(S.outline.match(/^##\s/gm)||[]).length} 节`);
   setStatus("正在写文章，长文可能要 2–5 分钟，别关页面…",false,true);
-  $("sec3").scrollIntoView({behavior:"smooth",block:"start"});
+  docScroll("sec3");
   const paint=throttleRender($("articleBox"),()=>S.article);
 
   try{
@@ -1075,7 +1084,9 @@ $("btnRestart").onclick=()=>{
    所以直接覆盖，主脚本里的调用点会自动走到这里。 */
 (function(){
   const feed=()=>$("feed"), tl=()=>$("tl");
-  const stickTl=()=>{ const t=tl(); if(t) t.scrollTop=t.scrollHeight; };
+  /* 贴底只在用户本来就在底部附近时才做；用户往上翻了就别动它 */
+  const stickTl=()=>{ const t=tl(); if(!t) return;
+    const near=t.scrollHeight-t.scrollTop-t.clientHeight<160; if(near) t.scrollTop=t.scrollHeight; };
 
   /* 时间线条目：一步一条。当前那条脉动 + 秒表；完成后定格成灰。 */
   logTo=function(id,msg){
@@ -1165,7 +1176,7 @@ $("btnRestart").onclick=()=>{
   $("btnRestart").onclick=function(){ _restart&&_restart(); feedClear(); $("qmini").innerHTML=""; $("docWhich").textContent="文档";
     $("outlineMeta").textContent=""; $("artMeta").textContent=""; const b=$("docBody"); if(b) b.scrollTop=0; };
 
-  /* 主脚本里对 sec2/sec3 的 scrollIntoView 会滚右窗格；起步时把右窗格滚到顶就够了 */
+  /* 主脚本里对 sec2/sec3 的滚动只滚右窗格（docScroll）；起步时把右窗格滚到顶就够了 */
   const _outline=$("btnOutline").onclick;
   $("btnOutline").onclick=async function(){ showDoc("outline"); $("qmini").innerHTML=""; $("artMeta").textContent=""; return _outline.apply(this,arguments); };
 })();
