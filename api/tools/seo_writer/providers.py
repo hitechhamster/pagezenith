@@ -334,6 +334,46 @@ async def search(s: Settings, provider: str, query: str) -> str:
     return ""
 
 
+#: 问句探针。PAA 整块缺失时用自动补全兜底 —— 补全返回的是**真人真的敲进搜索框的串**，
+#: 和 PAA 同源，只是没被 Google 整理成问答块。实测 "how to " + 关键词能拿到
+#: "how to increase store speed on shopify"、"what is a good store speed on shopify" 这类。
+_Q_PREFIXES = ("how to ", "what is ", "why is ", "does ")
+_Q_HEAD = re.compile(r"(?i)^(how|what|why|when|where|which|who|does|do|is|are|can|should)\b")
+
+
+async def _autocomplete_questions(client, headers: dict, s: Settings, query: str) -> list[str]:
+    """PAA 兜底：从 Google 自动补全里捞问句式查询。
+
+    为什么需要兜底：意图覆盖是一票否决项，但 PAA 会整块缺失 —— 实测同一个词
+    连发四次两次为空，补发一次之后仍有 1/4 拿不到。这一维不能靠运气。
+    只在 PAA 空了才跑，每个前缀 1 credit。
+    """
+    out: list[str] = []
+    base = (query or "").strip().lower()
+    for p in _Q_PREFIXES:
+        try:
+            r = await client.post(f"{s.serper_base_url}/autocomplete",
+                                  headers=headers, json={"q": p + query})
+            if r.status_code != 200:
+                continue
+            for it in (r.json().get("suggestions") or []):
+                v = (it.get("value") or "").strip()
+                low = v.lower()
+                if not v or low == base or not _Q_HEAD.match(v):
+                    continue
+                # 只要「前缀 + 原关键词」原样出现在开头，就说明 Google 根本没改写，
+                # 只是把探针拼了回来 —— "how to klaviyo vs mailchimp 2018" 这种不是问题，
+                # 喂给写手会逼出一节答非所问的内容。实测三个关键词里两个全是这种，必须丢。
+                if low.startswith((p + base).strip()):
+                    continue
+                out.append(v[:1].upper() + v[1:] + ("" if v.endswith("?") else "?"))
+        except Exception:  # noqa: BLE001  兜底本身失败就认了，下游按"测不了"处理
+            continue
+    out = list(dict.fromkeys(out))[:5]
+    logger.info("PAA 缺失，自动补全兜底拿到 %d 条问句（%s）", len(out), query)
+    return out
+
+
 async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
     """Serper 搜索 + 抓正文。只对前 n_scrape 条抓全文（抓取比搜索贵，且前几名才是"红海"）。"""
     if not s.serper_key:
@@ -344,7 +384,28 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
         r = await client.post(f"{s.serper_base_url}/search",
                               headers=headers, json={"q": query, "num": 10})
         r.raise_for_status()
-        items = (r.json().get("organic") or [])[: max(n_scrape, 1)]
+        data = r.json()
+        organic = data.get("organic") or []
+        items = organic[: max(n_scrape, 1)]
+        # PAA / 相关搜索：同一次回包自带，不额外计费。
+        questions = [q.get("question", "") for q in (data.get("peopleAlsoAsk") or [])]
+        related = [x.get("query", "") for x in (data.get("relatedSearches") or [])]
+
+        # PAA 有时整块缺失 —— 实测同一个词连发四次，两次有 4 条、两次一条没有（16 次里 14 次有）。
+        # 意图覆盖是一票否决项，不能靠运气，空了就补发一次。这一次请求几乎不要钱，
+        # 而且不重复抓正文（贵的是 /scrape 不是 /search）。
+        if not questions:
+            try:
+                r2 = await client.post(f"{s.serper_base_url}/search",
+                                       headers=headers, json={"q": query, "num": 10})
+                if r2.status_code == 200:
+                    d2 = r2.json()
+                    questions = [q.get("question", "") for q in (d2.get("peopleAlsoAsk") or [])]
+                    related = related or [x.get("query", "") for x in (d2.get("relatedSearches") or [])]
+            except Exception:  # noqa: BLE001  补不到就算了，下游按"这一维测不了"处理
+                logger.warning("PAA 补发失败（%s）", query)
+            if not questions:
+                questions = await _autocomplete_questions(client, headers, s, query)
 
         async def one(it: dict) -> dict:
             text = it.get("snippet") or ""
@@ -358,7 +419,10 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
             return {"title": it.get("title", ""), "url": it.get("link", ""), "content": text}
 
         out = await asyncio.gather(*[one(it) for it in items])
-    return _fmt(list(out))
+    # 没抓全文的那几条也把标题留下 —— 判断 SERP 主流形态要看整页，不能只看前四名
+    rest = [{"title": it.get("title", ""), "url": it.get("link", ""),
+             "content": it.get("snippet", "")} for it in organic[len(items):]]
+    return _fmt(list(out) + rest, questions, related)
 
 
 #: 被讨论产品的官网 / 帮助中心 —— 这类页面的形容词是营销文案，不是事实。
@@ -380,13 +444,24 @@ def _source_kind(url: str) -> str:
     return "第三方内容"
 
 
-def _fmt(results: list[dict]) -> str:
-    return "\n".join(
+def _fmt(results: list[dict], questions: list[str] | None = None,
+         related: list[str] | None = None) -> str:
+    """竞品条目 + 搜索页自带的提问。
+
+    `Q:` = People Also Ask，`Rel:` = 相关搜索。这两样在 Serper 的 /search 回包里
+    本来就有，2026-09 之前一直被原样丢掉 —— 它们是"读者到底在问什么"的唯一硬来源，
+    比让模型猜子问题可靠得多，而且不额外花一分钱。
+    下游按行解析（density_audit.parse_serp），所以这两行必须顶格、单行、不换行。
+    """
+    blocks = [
         f"Title: {r.get('title', '')}\nURL: {r.get('url', '')}\n"
         f"SourceType: {_source_kind(r.get('url', ''))}\n"
         f"Content: {r.get('content', '')}\n---"
         for r in results
-    )
+    ]
+    blocks += [f"Q: {q}" for q in (questions or []) if q and "\n" not in q]
+    blocks += [f"Rel: {r}" for r in (related or []) if r and "\n" not in r]
+    return "\n".join(blocks)
 
 
 async def _search_tavily(s: Settings, query: str) -> str:

@@ -10,10 +10,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Awaitable, Callable, Optional
 
-from . import prose_audit
+from . import density_audit, prose_audit
+
+logger = logging.getLogger(__name__)
 
 # 带信息量的数字（金额 / 百分比 / 三位以上）。序数和小整数不算。
 _NUM = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d+(?:\.\d+)?\s?%|\b\d{3,}\b")
@@ -242,9 +245,209 @@ async def fix_keyword_stuffing(text: str, keywords: list[str], complete: Optiona
 # --------------------------------------------------------------------------- #
 # 编排
 # --------------------------------------------------------------------------- #
+#: 断言型数字：声称"世界上发生了什么"。这些编不得。
+#: 建议型数字（1600 像素、24 条、2.5 秒）不在此列 —— 那是模型该用自己知识给的操作值，
+#: 2026-09-05 放开：一刀切禁掉所有清单外数字，实测把信息增益压到 0.22（四篇最低），
+#: 因为正文只敢复述竞品都有的官方文档。
+_ASSERTION_NUM = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d+(?:\.\d+)?\s?%|\b\d+(?:\.\d+)?\s?percent\b", re.I)
+_CLAIM_SENT = re.compile(
+    r"(?i)\b(accord\w+ to|study|studies|research|survey|report(?:s|ed)?|data shows?|"
+    r"found that|statistics|on average|median|benchmark|analy[sz]\w+)\b")
+
+
+def invented_assertions(text: str, allowed: set[str]) -> list[str]:
+    """新文本里**编出来的断言型数字**。返回空表示这段可以接受。
+
+    两类算断言：① 百分比 / 金额，本身就是在讲"世界上发生了什么"；
+    ② 出现在带引用信号的句子里的任何数字（"a study found 4 seconds…"）。
+    其余（尺寸、条数、阈值）是操作建议，放行。
+    """
+    out: list[str] = []
+    for m in _ASSERTION_NUM.findall(text or ""):
+        if _norm(m) not in allowed:
+            out.append(m.strip())
+    for sent in _split_sentences(text or ""):
+        if not _CLAIM_SENT.search(sent):
+            continue
+        for m in _NUM.findall(sent):
+            if _norm(m) not in allowed:
+                out.append(m.strip())
+    return list(dict.fromkeys(out))
+
+
+_BOOST_SECTION = """Rewrite this one section of an article so that it carries real, checkable
+information instead of positioning statements.
+
+Hard rules:
+- Statistics are locked: do NOT introduce any percentage, price, bounce rate, sample size,
+  or "studies show / according to" claim that is not already in the reference material below.
+- Concrete operating values ARE wanted: exact upload dimensions, size thresholds, counts
+  per page, timeout seconds, target metric values, menu paths, file and setting names.
+  Use your own expertise for these and state them as recommendations, not as findings
+  ("upload the hero image at no more than 1600 px wide", not "studies show 1600 px is optimal").
+- Keep the same heading, the same language, and roughly the same length ({words} words ±20%).
+- Prefer concrete specifics: exact setting names, file names, menu paths, parameter values,
+  units, thresholds, failure symptoms. Those are what the reader came for.
+- Do NOT invent first-hand experience ("we recently audited a store that…"). You have none.
+- Output the rewritten section only — no preamble, no explanation.
+
+## Reference material (the only source of facts you may use)
+{material}
+
+## Section to rewrite
+{section}"""
+
+
+async def boost_thin_sections(text: str, report: dict, facts: str, material: str,
+                              complete: Optional[CompleteFn],
+                              max_sections: int = 3) -> tuple[str, list[str]]:
+    """把检测器判为「空转」的小节定向重写一遍，改完再测，没变好就原样退回。
+
+    和塞词修复同一个套路：**验证闭环代替信任**。密度这件事没法纯代码修
+    （硬信息不能凭空造），所以只能调模型；但调完必须验证：
+      ① 证据密度真的涨了；② 没有引入事实清单和资料之外的新数字；③ 篇幅没崩。
+    三条有一条不过就丢弃这次重写 —— 宁可保持原样，也不能为了指标好看而编数字。
+
+    最多修三节，成本压在 ¥0.015 量级以内。
+    """
+    thin = (report.get("density") or {}).get("thin") or []
+    if not thin or complete is None or not text:
+        return text, []
+
+    allowed = _facts_numbers(facts) | _facts_numbers(material)
+    changes: list[str] = []
+    for head, body in density_audit.sections(text):
+        if head not in thin or len(changes) >= max_sections:
+            continue
+        # sections() 返回的 body 自带前导换行，别再补一个 —— 补了就跟原文对不上，
+        # replace 静默失败，却照样往 changes 里记一笔「已补写」。
+        # (intro) 是虚构的节名（H1 到第一个 H2 之间那段），它在原文里没有对应的标题行，
+        # 拼上 "## (intro)" 必然定位失败 —— 实测日志里就是这么报的。
+        is_intro = head == "(intro)"
+        if is_intro:
+            # (intro) 那一块是从文首到第一个 H2 之间的全部内容，**H1 标题也在里面**。
+            # 连 H1 一起交给模型重写，它不会原样还回来，结构守卫就会把整次补写毙掉
+            # （实测日志：「补写「(intro)」改变了标题结构，已丢弃」）。把 H1 摘出去。
+            m = re.match(r"\A\s*#\s+.*(?:\n|$)\s*", body)
+            block = body[m.end():] if m else body
+        else:
+            block = f"## {head}{body}"
+        if density_audit.word_count(block) < 60:
+            continue
+        words = density_audit.word_count(block)
+        try:
+            raw = await complete(
+                _BOOST_SECTION.format(words=words, material=material[:12000], section=block),
+                task="polish", temperature=0.3)
+        except Exception:  # noqa: BLE001  补写失败不该拖垮整篇交付
+            continue
+        new = (raw or "").strip()
+        if is_intro:
+            new = re.sub(r"^#{1,6}\s+.*$", "", new, count=1, flags=re.M).lstrip()
+        elif not new.startswith("#"):
+            new = f"## {head}\n{new}"
+        # 把原块尾部的空行原样接回去。不接的话下一个 "## " 会紧贴在句号后面
+        # （实测产出过 "...reducing asset sizes.## How to make a Shopify store..."），
+        # markdown 里那就不是标题了，整篇结构从这里开始塌。
+        new += block[len(block.rstrip()):] or "\n\n"
+
+        before = density_audit.density(block)["evidence_per100"]
+        after = density_audit.density(new)["evidence_per100"]
+        n_new = density_audit.word_count(new)
+        invented = invented_assertions(new, allowed | {_norm(y) for y in _NUM.findall(block)})
+        if after <= before or invented or not (0.75 * words <= n_new <= 1.25 * words):
+            reason = ("编了新数字 " + "、".join(invented[:3]) if invented
+                      else "密度没提升" if after <= before else "篇幅跑偏")
+            logger.info("补写「%s」已丢弃：%s", head, reason)
+            continue
+        # 只有真的替换成功才记账 —— 报告"改了什么"必须是实际发生的事
+        replaced = text.replace(block, new, 1)
+        if replaced == text:
+            logger.warning("补写「%s」未能定位原文，已跳过", head)
+            continue
+        # 结构守卫：标题数一个都不许变。实测踩过 —— 补写块尾部少了个换行，
+        # 下一个 "## " 紧贴到句号后面（"...asset sizes.## How to..."），
+        # 那一行就不再是标题，整篇的 H2 结构从这里塌一半。
+        if [len(re.findall(p, replaced, re.M)) for p in (r"^#{1,6} ",)] != \
+           [len(re.findall(p, text, re.M)) for p in (r"^#{1,6} ",)]:
+            logger.warning("补写「%s」改变了标题结构，已丢弃", head)
+            continue
+        text = replaced
+        changes.append(f"补写空转小节「{head[:32]}」：证据密度 {before}→{after}/100词")
+    return text, changes
+
+
+_FAQ_SECTION = """Write a short FAQ section for an article, answering these questions that real
+searchers ask on Google for this topic.
+
+Questions:
+{questions}
+
+Rules:
+- Output markdown: one `### <question exactly as given>` heading per question, then 45-90 words
+  of answer underneath. No preamble, no closing paragraph, no extra questions.
+- Each answer must stand alone: someone who reads only that answer should get a complete reply.
+  Do not open with "This", "That", "As mentioned" or refer to earlier parts of the article.
+- Every answer must contain at least one concrete, checkable specific: a setting name, a menu
+  path, a file name, a threshold with units, or a named tool.
+- Statistics are locked: no percentage, price, bounce rate or "studies show" claim unless it
+  appears in the reference material below. Concrete operating values from your own expertise
+  are fine, stated as recommendations.
+- Write in {language}.
+
+## Reference material
+{material}"""
+
+
+async def ensure_paa_coverage(text: str, report: dict, material: str, language: str,
+                              complete: Optional[CompleteFn]) -> tuple[str, list[str]]:
+    """搜索页的子问题一个都不能漏 —— 正文没答到的，补一个 FAQ 小节答掉。
+
+    为什么用 FAQ 而不是改写正文：改写会动已经写好的结构，风险高；FAQ 是纯追加，
+    结构零风险，而且本来就是 PAA / AI 摘要最容易直接引用的形态。
+
+    照例是验证闭环：每个问题必须真的变成"答到了"（用检测器同一个 _answers 判据），
+    答案不许编统计、不许靠上文接续。有一条不过就整块丢弃 —— 宁可覆盖率低，
+    也不能往交付物里塞一段答非所问的 FAQ。
+    """
+    missing = ((report.get("intent") or {}).get("missing") or [])[:5]
+    if not missing or complete is None or not text:
+        return text, []
+    try:
+        raw = await complete(
+            _FAQ_SECTION.format(questions="\n".join(f"- {q}" for q in missing),
+                                material=material[:12000], language=language or "English"),
+            task="polish", temperature=0.3)
+    except Exception:  # noqa: BLE001  补不上不该拖垮交付
+        return text, []
+
+    block = re.sub(r"^```[a-z]*\s*|\s*```$", "", (raw or "").strip()).strip()
+    if not block:
+        return text, []
+    allowed = _facts_numbers(material)
+    bad = invented_assertions(block, allowed)
+    if bad:
+        logger.info("FAQ 补写已丢弃：编了统计 %s", bad[:3])
+        return text, []
+
+    candidate = text.rstrip() + "\n\n## Frequently asked questions\n\n" + block + "\n"
+    covered = [q for q in missing if density_audit._answers(candidate, q)]
+    if len(covered) < len(missing):
+        logger.info("FAQ 补写已丢弃：%d/%d 个问题仍未答到", len(covered), len(missing))
+        return text, []
+    return candidate, [f"补 FAQ 小节答掉搜索页 {len(missing)} 个未覆盖的问题："
+                       + "；".join(q[:36] for q in missing[:3])]
+
+
 async def postfix(text: str, keywords: list[str], facts: str,
-                  complete: Optional[CompleteFn]) -> tuple[str, list[str]]:
-    """交付前跑一遍：先假经验句（纯代码），再塞词（小调用 + 闭环）。"""
+                  complete: Optional[CompleteFn],
+                  report: Optional[dict] = None,
+                  material: str = "", language: str = "English") -> tuple[str, list[str]]:
+    """交付前跑一遍：假经验句（纯代码）→ 塞词（小调用 + 闭环）→ 空转小节补写（同上）。"""
     t1, c1 = strip_fake_experience(text, facts)
     t2, c2 = await fix_keyword_stuffing(t1, keywords, complete)
-    return t2, c1 + c2
+    if not report:
+        return t2, c1 + c2
+    t3, c3 = await boost_thin_sections(t2, report, facts, material, complete)
+    t4, c4 = await ensure_paa_coverage(t3, report, material, language, complete)
+    return t4, c1 + c2 + c3 + c4

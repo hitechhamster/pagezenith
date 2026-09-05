@@ -31,7 +31,7 @@ from billing.deps import Card, InsufficientCredits, charge, require_card
 from billing.pricing import REVISE_EXTRA, REVISE_FREE, TIERS, price, tier_of
 
 from ..seo_gap.config import get_settings
-from . import postfix, prose_audit
+from . import density_audit, postfix, prose_audit
 from .docx_export import build_docx, sanitize_filename
 from .models import ArticleRequest, LANGUAGES, OutlineRequest, PolishRequest, ReviseRequest
 from .providers import LLM, ProviderError, resolve_llm
@@ -52,6 +52,39 @@ class PolishStructureError(RuntimeError):
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/seo-writer", tags=["seo-writer"])
 _sema = asyncio.Semaphore(get_settings().writer_max_concurrent)
+
+
+def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
+    """把打分结果压成前端能直接渲染的扁平结构。
+
+    等级规则：意图否决 → bad（形态不对或子问题覆盖不到一半，后面四项再高也白搭）；
+    分数低于 60 → warn；其余 ok。分数本身是**同题横比**用的，
+    满分线来自 n=3 的实测区间，别当成绝对质量值。
+    """
+    intent = report.get("intent") or {}
+    gain = report.get("gain") or {}
+    den = report.get("density") or {}
+    read = report.get("readability") or {}
+    veto = bool(intent.get("veto"))
+    score = report.get("score", 0)
+    level = "bad" if veto else ("warn" if score < 60 else "ok")
+    return {
+        "score": score, "level": level,
+        "message": density_audit.format_report(report) if den else "文章太短，未打分",
+        "parts": report.get("parts") or {},
+        "gain": gain.get("ratio") if gain.get("measurable") else None,
+        "gain_note": None if gain.get("measurable") else gain.get("reason"),
+        "intent_covered": len(intent.get("covered") or []),
+        "intent_total": len(intent.get("questions") or []),
+        "intent_missing": (intent.get("missing") or [])[:6],
+        "veto": veto, "veto_reasons": intent.get("reasons") or [],
+        "density": den.get("per100"), "evidence": den.get("evidence_per100"),
+        "opening_gap": den.get("opening_gap"),
+        "thin": (den.get("thin") or [])[:6], "repetitive": (den.get("repetitive") or [])[:6],
+        "fk": read.get("fk"), "fk_band": read.get("fk_band"), "fk_state": read.get("fk_state"),
+        "orphan_h2": (read.get("orphan_h2") or [])[:6],
+        "todo": density_audit.to_prompt_block(report).splitlines() if den else [],
+    }
 
 
 def _build(tier: str, usage_sink=None) -> tuple[Any, SEOWriter]:
@@ -313,7 +346,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                           "target": ctx.get("wordcounts", 0), "level": level, "message": wc_msg})
 
                 grade = reading_grade(text, ctx["language"])
-                g_level, g_msg = grade_verdict(grade)
+                g_level, g_msg = grade_verdict(grade, ctx.get("topic_type", ""))
                 job.emit({"type": "grade", "grade": grade, "level": g_level, "message": g_msg})
 
                 # 清单外的数字：提示不拦截 —— 清单不可能穷尽所有合理数字，交给人判断
@@ -354,21 +387,36 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 if image_map and sum(len(v) for v in image_map.values()) <= MAX_SESSION_IMAGE_BYTES:
                     get_store().update(req.session_id, image_map=image_map)
 
-                # 交付前后处理：假经验句（纯代码三分支）+ 塞词（单句改写 + 检测闭环，两轮不过就删）。
-                # 这两件事 prompt 管了 5 轮没管住；检测器已 100% 命中，改为代码收口。
+                # 内容打分：意图覆盖 / 信息增益 / 证据密度 / 信息密度 / 结构可读性。
+                # 全确定性、零 LLM。增益是对着**真实 SERP 抓取正文**算的，不是凭感觉。
+                serp_corpus = "\n".join(
+                    x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
+                q_kwargs = dict(search_text=serp_corpus, topic_type=ctx.get("topic_type", ""),
+                                keyword=ctx.get("main_keyword", ""), language=ctx["language"])
+                report = density_audit.audit(text, **q_kwargs)
+
+                # 交付前后处理：假经验句（纯代码三分支）+ 塞词（单句改写 + 检测闭环，两轮不过就删）
+                # + 空转小节补写（同样是"检测→改→再检测，没变好就退回"）。
+                # 这几件事 prompt 管了 5 轮没管住；检测器已 100% 命中，改为代码收口。
                 # 实测三篇：塞词 5/3/3→0，假经验 1→0，字数 -1%，¥0.004/篇。改了什么原样告诉用户。
                 text, fixes = await postfix.postfix(
                     text, [ctx.get("main_keyword", ""), ctx.get("secondary_keyword", "")],
-                    ctx.get("facts", ""), wf.llm.complete)
+                    ctx.get("facts", ""), wf.llm.complete,
+                    report=report, material=(ctx.get("facts", "") + "\n" + serp_corpus),
+                    language=ctx["language"])
                 if fixes:
                     job.emit({"type": "step", "key": "postfix",
                               "message": (f"交付前修正 {len(fixes)} 处："
                                           + "；".join(f[:44] for f in fixes[:3])
                                           + ("…" if len(fixes) > 3 else ""))})
+                    # 补写过就重算 —— 推给用户的必须是成品的分数，不是补写前的
+                    report = density_audit.audit(text, **q_kwargs)
+                job.emit({"type": "quality", **_quality_payload(report)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "article",
+                    "quality": _quality_payload(report),
                     "article": text,
                     "filename": sanitize_filename(ctx["main_keyword"]) + ".docx",
                     "seo_title": seo.get("seo_title", ""),
@@ -412,6 +460,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
         async with _sema:
             async with charge(card, TOOL, "polish", tier, job_id=job.id) as tx:
                 _, wf = _build(tier, tx.report_tokens)
+                tt = ctx.get("topic_type", "")
                 g0 = reading_grade(before, language)
                 job.emit({"type": "step", "key": "polish",
                           "message": f"润色到 12 年级可读水平…（原文 {g0 if g0 is not None else '—'} 年级）"})
@@ -454,7 +503,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                 actual = count_words(text)
                 level, wc_msg = wordcount_status(actual, ctx.get("wordcounts", 0))
                 g1 = reading_grade(text, language)
-                g_level, g_msg = grade_verdict(g1)
+                g_level, g_msg = grade_verdict(g1, tt)
                 job.emit({"type": "grade", "grade": g1, "before": g0,
                           "level": g_level, "message": g_msg})
 
@@ -469,6 +518,8 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                 # 交付前后处理：假经验句（纯代码三分支）+ 塞词（单句改写 + 检测闭环，两轮不过就删）。
                 # 这两件事 prompt 管了 5 轮没管住；检测器已 100% 命中，改为代码收口。
                 # 实测三篇：塞词 5/3/3→0，假经验 1→0，字数 -1%，¥0.004/篇。改了什么原样告诉用户。
+                # 润色分支**不做补写** —— 润色是整篇重写，再插一次定向补写容易互相打架；
+                # 这里只重新打分，让用户看到润色把内容分改到了哪。
                 text, fixes = await postfix.postfix(
                     text, [ctx.get("main_keyword", ""), ctx.get("secondary_keyword", "")],
                     ctx.get("facts", ""), wf.llm.complete)
@@ -478,9 +529,18 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                                           + "；".join(f[:44] for f in fixes[:3])
                                           + ("…" if len(fixes) > 3 else ""))})
 
+                report = density_audit.audit(
+                    text,
+                    search_text="\n".join(x for x in (ctx.get("main_search"),
+                                                      ctx.get("sec_search")) if x),
+                    topic_type=ctx.get("topic_type", ""), keyword=main_keyword,
+                    language=language)
+                job.emit({"type": "quality", **_quality_payload(report)})
+
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "polish",
+                    "quality": _quality_payload(report),
                     "article": text,
                     "filename": sanitize_filename(main_keyword) + "-polished.docx",
                     "word_count": actual, "wordcount_level": level, "wordcount_message": wc_msg,

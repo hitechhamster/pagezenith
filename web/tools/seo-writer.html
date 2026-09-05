@@ -608,6 +608,7 @@ $("btnArticle").onclick=async()=>{
         else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
+        else if(ev.type==="quality") logTo("log2","内容分："+ev.message);
         else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article.docx";
@@ -650,6 +651,36 @@ function renderInfo(){
     const before=(ev.grade_before!=null&&ev.grade_before!==ev.grade)?`（润色前 FK ${ev.grade_before}）`:"";
     box.append(badge("阅读年级",ev.grade_level,ev.grade_message+before));
   }
+  renderQuality(ev.quality,box);
+}
+
+/* 内容分：意图覆盖 / 信息增益 / 密度 / 结构。全部确定性计算，零 AI 成本。
+   增益是拿本文的硬信息去比对**真实搜索页抓来的竞品正文**，不是模型自评。 */
+function renderQuality(q,box){
+  if(!q||q.score==null) return;
+  const badge=(k,level,msg)=>{const d=E("div","metaitem");d.append(E("div","k",k));
+    const wrap=E("div","v"); wrap.append(E("span","wc "+(level||"ok"),msg)); d.append(wrap); return d;};
+  box.append(badge("内容分",q.level,`${q.score}／100`));
+  if(q.gain!=null) box.append(badge("信息增益",q.gain>=0.45?"ok":(q.gain>=0.3?"warn":"bad"),
+      `${Math.round(q.gain*100)}% 的硬信息竞品没写`));
+  if(q.intent_total) box.append(badge("意图覆盖",
+      q.intent_covered/q.intent_total>=0.5?"ok":"bad",
+      `搜索页子问题 ${q.intent_covered}/${q.intent_total}`));
+  if(q.density!=null) box.append(badge("信息密度","ok",
+      `${q.density}/100词（可照做的 ${q.evidence}）`));
+  if(q.fk!=null&&q.fk_band) box.append(badge("阅读年级",
+      q.fk_state==="ok"?"ok":"warn",
+      `FK ${q.fk}（可接受区间 ${q.fk_band[0]}–${q.fk_band[1]}）`));
+
+  const notes=[].concat(q.veto?q.veto_reasons:[],q.todo||[]);
+  if(!notes.length) return;
+  const d=E("div","metaitem"); d.style.gridColumn="1/-1";
+  d.append(E("div","k",q.veto?"⛔ 意图不匹配（这一项不过，其余分数没意义）":"发布前值得改的"));
+  const ul=document.createElement("ul");
+  ul.style.cssText="margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.65";
+  notes.slice(0,6).forEach(t=>{const li=document.createElement("li");
+    li.textContent=String(t).replace(/^-\s*/,""); ul.append(li);});
+  d.append(ul); box.append(d);
 }
 
 /* ---------- 独立环节：润色 ---------- */
@@ -671,6 +702,7 @@ async function runPolish(){
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
         else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
+        else if(ev.type==="quality") logTo("log2","内容分："+ev.message);
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article-polished.docx";
           paint(true); applyImages();

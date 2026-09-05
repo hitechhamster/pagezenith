@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Optional
 from ..seo_gap.config import Settings
 from . import prompts as P
 from . import prose_audit
+from . import density_audit
 from .providers import LLM, generate_image, search
 from .voices import get_voice
 
@@ -95,17 +96,24 @@ def reading_grade(article: str, language: str) -> Optional[float]:
         return None
 
 
-def grade_verdict(grade: Optional[float]) -> tuple[str, str]:
-    """(等级, 说明)。目标是美国 12 年级学生能读懂 → FK 9-12。"""
+def grade_verdict(grade: Optional[float], topic_type: str = "") -> tuple[str, str]:
+    """(等级, 说明)。区间见 density_audit.FK_BAND —— 现在是一条 7–13 的宽护栏。
+
+    以前写死 9–12，后来按类型细分（推断值），2026-09-05 实测否掉：技术教程的术语
+    本身就把 FK 顶到 11–12，压进窄区间只能删术语，而那正好砍掉信息密度和增益。
+    区间只用来抓两头：太碎（<7）和真的绕（>13）。
+    """
     if grade is None:
         return "ok", "非英文，不计算阅读年级"
-    if grade <= 8:
-        return "warn", f"FK {grade} 年级 · 偏浅，专业感可能不足"
-    if grade <= 12:
-        return "ok", f"FK {grade} 年级 · 12 年级学生能读懂 ✓"
-    if grade <= 14:
-        return "warn", f"FK {grade} 年级 · 偏难，建议润色"
-    return "bad", f"FK {grade} 年级 · 太难，12 年级学生读不下来"
+    lo, hi = density_audit.FK_BAND.get(topic_type, density_audit._DEFAULT_BAND)
+    band = f"（可接受区间 {lo:.0f}–{hi:.0f}）"
+    if grade < lo:
+        return "warn", f"FK {grade} 年级 · 偏浅，专业感可能不足{band}"
+    if grade <= hi:
+        return "ok", f"FK {grade} 年级 · 在目标区间 ✓{band}"
+    if grade <= hi + 2:
+        return "warn", f"FK {grade} 年级 · 偏难，建议润色{band}"
+    return "bad", f"FK {grade} 年级 · 太难，目标读者读不下来{band}"
 
 
 #: 给大纲/正文的写作目标 = 用户目标 × 这个系数。
@@ -280,6 +288,18 @@ class SEOWriter:
         facts = (ctx.get("facts") or "").strip()
         return P.FACTS_BLOCK.format(facts=facts) if facts else ""
 
+    @staticmethod
+    def gap_brief_block(ctx: dict[str, Any]) -> str:
+        """搜索页实况：竞品的信息基线 + PAA 子问题。确定性算，零成本。
+
+        算一次两个关键词的搜索结果都算进去 —— 次关键词的 PAA 常常补出主关键词
+        没有的子意图。搜索失败时 gap_brief 返回空串，这一块就整个不出现，
+        不会给模型留一个空标题。
+        """
+        corpus = "\n".join(x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
+        brief = density_audit.gap_brief(corpus, ctx.get("main_keyword", ""))
+        return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
+
     # ------------------------------------------------------------ 主题分类
     async def classify_topic_type(self, main_keyword: str, topic: str) -> str:
         raw = await self.llm.complete(
@@ -319,6 +339,7 @@ class SEOWriter:
         return P.OUTLINE_PROMPT.format(
             language=ctx["language"],
             specific=specific,
+            gap_brief_block=self.gap_brief_block(ctx),
             product_context=product_block,
             reddit_context=P.REDDIT_CONTEXT.format(reddit=reddit) if reddit else "",
             facts_block=self.facts_block(ctx),
@@ -361,6 +382,9 @@ class SEOWriter:
             specific=specific or "（无）",
             product_instructions=_product_instructions(ctx),
             facts_block=self.facts_block(ctx),
+            gap_brief_block=self.gap_brief_block(ctx),
+            readability_block=P.READABILITY_BLOCK.format(
+                readability_note=density_audit.readability_note(topic_type)),
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
             wordcounts=wc,
             outline=ctx.get("outline", ""),
@@ -443,7 +467,7 @@ class SEOWriter:
 
 
     @staticmethod
-    def polish_mode(article: str, language: str) -> tuple[str, str]:
+    def polish_mode(article: str, language: str, topic_type: str = "") -> tuple[str, str]:
         """决定这篇要「全量重写」还是「轻润色」。返回 (mode, 人话理由)。
 
         全量润色是把文章往「12 年级能读懂」压，输入本来就达标时它只会帮倒忙 ——
@@ -460,8 +484,11 @@ class SEOWriter:
             g = reading_grade(article, language)
             if g is None:
                 return "full", "拿不到阅读年级"
-            # >12 = grade_verdict 的「偏难」起点，只有这时才值得整篇重写
-            return ("full", f"FK {g} 偏难") if g > 12 else ("light", f"FK {g} 已达标")
+            # 超出**这类文章**的目标区间上沿才值得整篇重写。
+            # 旧版一律用 12：教程类目标是 7–10，FK 11.5 的教程本该重写却被判"已达标"。
+            hi = density_audit.FK_BAND.get(topic_type, density_audit._DEFAULT_BAND)[1]
+            return (("full", f"FK {g} 超出目标上沿 {hi:.0f}") if g > hi
+                    else ("light", f"FK {g} 在目标区间内"))
         if prose_audit.is_cjk(article):
             sents = prose_audit.split_sentences(article, True)
             if not sents:
@@ -496,11 +523,19 @@ class SEOWriter:
             logger.warning("文风体检失败（已跳过）", exc_info=True)
 
         language = ctx.get("language", "English")
-        mode, why = ("full", "结构重试") if strict else self.polish_mode(article, language)
+        mode, why = (("full", "结构重试") if strict else
+                     self.polish_mode(article, language, ctx.get("topic_type", "")))
         logger.info("润色力度=%s（%s）", mode, why)
 
         template = P.POLISH_PROMPT if mode == "full" else P.POLISH_LIGHT_PROMPT
+        fmt: dict[str, Any] = {}
+        if mode == "full":
+            # 目标区间按文章类型走。写死"12 年级"时实测：教程类目标 7–10，
+            # 全量润色只把 FK 从 12.2 挪到 11.9 —— 它在照着 12 干活，当然不往下走。
+            fmt["readability_note"] = density_audit.readability_note(
+                ctx.get("topic_type", ""))
         prompt = template.format(
+            **fmt,
             language=language, article=article,
             main_keyword=ctx.get("main_keyword", ""),
             secondary_keyword=ctx.get("secondary_keyword", ""),
