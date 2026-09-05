@@ -704,6 +704,12 @@ function restoreDraft(){
   $("sec2").style.display="";
   const es=$("emptyState"); if(es) es.style.display="none";
   if(S.article){ $("articleBox").innerHTML=MD.render(S.article); $("sec3").style.display=""; }
+  else {
+    // 两窗格版里「✓ 通过，写正文」住在停车位里，不叫 showSeal 它就不会出现 ——
+    // 用户 2026-09-05 报：大纲出来后退出，回来大纲在、却没有按钮能接着写。
+    // 恢复后的状态要和刚生成完大纲一模一样：参数锁定、审批条目挂进时间线、右窗格显示大纲。
+    foldSec("sec1", paramSummary()); showSeal();
+  }
   const bar=E("div","restored");
   const when=new Date(d.ts).toLocaleString("zh-CN",{month:"numeric",day:"numeric",
     hour:"2-digit",minute:"2-digit"});
