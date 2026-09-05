@@ -19,7 +19,7 @@ from ..seo_gap.config import Settings
 from . import prompts as P
 from . import prose_audit
 from . import density_audit
-from .providers import LLM, generate_image, search
+from .providers import LLM, expand_queries, generate_image, search
 from .voices import get_voice
 
 logger = logging.getLogger(__name__)
@@ -255,6 +255,31 @@ class SEOWriter:
         )
         return main, sec
 
+    # ------------------------------------------------- 顺着子问题再搜一层
+    async def expand_context(self, ctx: dict[str, Any]) -> str:
+        """PAA + 相关搜索各搜一层，抓全文。竞品没看的页面才有增益。"""
+        if self.search_provider == "none":
+            return ""
+        full = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
+                                     ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
+        serp = density_audit.parse_serp(full)
+        # 去掉和竞品语料重复的 URL 在 expand_queries 里做不了（它不知道竞品 URL），这里事后过滤
+        try:
+            text = await expand_queries(self.s, (serp.get("questions") or []) + (serp.get("related") or []))
+        except Exception:  # noqa: BLE001  扩展层抓不到不影响主流程
+            logger.warning("子问题扩展搜索失败（已跳过）", exc_info=True)
+            return ""
+        known = set(re.findall(r"^URL:\s*(\S+)", full, re.M))
+        blocks = [b for b in text.split("\n---") if b.strip()
+                  and not (re.search(r"^URL:\s*(\S+)", b.strip(), re.M) or [None])
+                  and True]
+        kept = []
+        for b in text.split("\n---"):
+            m = re.search(r"^URL:\s*(\S+)", b, re.M)
+            if b.strip() and (not m or m.group(1) not in known):
+                kept.append(b.strip("\n"))
+        return "\n---\n".join(kept) + ("\n---" if kept else "")
+
     # ------------------------------------------------------- 社媒（Reddit）
     async def reddit_context(self, main_keyword: str, limit: int | None = None) -> str:
         """抓 Reddit 上关于这个关键词的真实讨论（帖子 + 高赞评论）。
@@ -324,7 +349,8 @@ class SEOWriter:
                     main_keyword=ctx.get("main_keyword", ""),
                     secondary_keyword=ctx.get("secondary_keyword", ""),
                     main_search_results=ctx.get("main_search", ""),
-                    secondary_search_results=ctx.get("sec_search", ""),
+                    secondary_search_results=(ctx.get("sec_search", "") + "\n"
+                                              + trim_search(ctx.get("expansion", "") or "")),
                     reddit_context=ctx.get("reddit_context", "") or ""),
                 task="facts", temperature=0.1)
         except Exception:  # noqa: BLE001  抽不出事实不该拖垮整篇文章
@@ -351,6 +377,11 @@ class SEOWriter:
         h2 = len(re.findall(r"^##\s", ctx.get("outline") or "", re.M)) or 5
         brief = density_audit.gap_brief(corpus, ctx.get("main_keyword", ""),
                                         wordcount=wc, h2_count=h2)
+        full = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
+                                     ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
+        novel = density_audit.novel_facts(ctx.get("facts") or "", full)
+        if novel:
+            brief += P.NOVEL_FACTS_BLOCK.format(items="\n".join(f"- {x}" for x in novel))
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
 
     # ------------------------------------------------------------ 主题分类

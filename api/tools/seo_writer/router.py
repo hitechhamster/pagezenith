@@ -67,10 +67,10 @@ def _quality_payload(report: dict[str, Any]) -> dict[str, Any]:
     read = report.get("readability") or {}
     bench = report.get("benchmark") or {}
     veto = bool(intent.get("veto"))
-    score = report.get("score", 0)
-    level = "bad" if veto else ("warn" if score < 60 else "ok")
+    # 总分不再对外（用户 2026-09-05：自己给自己打分太傻）。只给测量值：增益 / 问题覆盖 / 密度 / 可读性。
+    level = "bad" if veto else "ok"
     return {
-        "score": score, "level": level,
+        "level": level,
         "message": density_audit.format_report(report) if den else "文章太短，未打分",
         "parts": report.get("parts") or {},
         "gain": gain.get("ratio") if gain.get("measurable") else None,
@@ -178,6 +178,13 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 # 全文版给审计（增益 / 基线 / 意图），截短版给 prompt
                 ctx["main_search_full"], ctx["sec_search_full"] = _m, _s
                 ctx["main_search"], ctx["sec_search"] = trim_search(_m), trim_search(_s)
+
+                # 顺着搜索页的子问题 / 相关搜索再搜一层：竞品没看的页面才有信息增益
+                job.emit({"type": "step", "key": "search", "message": "顺着搜索者的子问题再搜一层，找竞品没写的素材…"})
+                ctx["expansion"] = await wf.expand_context(ctx)
+                _xp = len(re.findall(r"^URL:", ctx["expansion"] or "", re.M))
+                job.emit({"type": "step", "key": "search",
+                          "message": (f"扩展层：另抓了 {_xp} 篇竞品之外的页面" if _xp else "扩展层：没有额外页面")})
 
                 # 社媒真实讨论：与全网搜索互补 —— 那边是竞品成品文，这边是真人原话
                 job.emit({"type": "step", "key": "reddit", "message": "抓 Reddit 真实讨论（痛点/高频问题）…"})
@@ -408,7 +415,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 # 编出来的数不计分，补写也就不会靠编数过关（用户 2026-09-05：堵住刷分）。
                 q_kwargs = dict(search_text=serp_corpus, topic_type=ctx.get("topic_type", ""),
                                 keyword=ctx.get("main_keyword", ""), language=ctx["language"],
-                                material=ctx.get("facts", "") + "\n" + serp_corpus)
+                                material=ctx.get("facts", "") + "\n" + serp_corpus + "\n" + (ctx.get("expansion") or ""))
                 report = density_audit.audit(text, **q_kwargs)
                 words_at_draft = density_audit.word_count(text)   # 篇幅预算的基准：正文原稿
 
@@ -419,7 +426,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 text, fixes = await postfix.postfix(
                     text, [ctx.get("main_keyword", ""), ctx.get("secondary_keyword", "")],
                     ctx.get("facts", ""), wf.llm.complete,
-                    report=report, material=(ctx.get("facts", "") + "\n" + serp_corpus),
+                    report=report, material=(ctx.get("facts", "") + "\n" + serp_corpus + "\n" + (ctx.get("expansion") or "")),
                     language=ctx["language"])
                 if fixes:
                     job.emit({"type": "step", "key": "postfix",
@@ -449,7 +456,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                                           f"{len(weak)} 节（第 {_round + 2} 轮）…")})
                     text, more = await postfix.boost_thin_sections(
                         text, report, ctx.get("facts", ""),
-                        ctx.get("facts", "") + "\n" + serp_corpus, wf.llm.complete,
+                        ctx.get("facts", "") + "\n" + serp_corpus + "\n" + (ctx.get("expansion") or ""), wf.llm.complete,
                         sections=weak, budget=budget_left)
                     budget_left = max(0, int(1.2 * words_at_draft) - density_audit.word_count(text))
                     if not more:
@@ -621,7 +628,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                 report = density_audit.audit(
                     text, search_text=_serp,
                     topic_type=ctx.get("topic_type", ""), keyword=main_keyword,
-                    language=language, material=ctx.get("facts", "") + "\n" + _serp)
+                    language=language, material=ctx.get("facts", "") + "\n" + _serp + "\n" + (ctx.get("expansion") or ""))
                 job.emit({"type": "quality", **_quality_payload(report)})
 
                 docx_bytes = build_docx(text, image_map)

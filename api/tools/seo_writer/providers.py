@@ -455,6 +455,53 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
     return _fmt(out + rest, questions, related)
 
 
+async def expand_queries(s: Settings, queries: list[str], per: int = 2, max_q: int = 10) -> str:
+    """顺着搜索页上的子问题 / 相关搜索各搜一层，抓每个的前 per 篇全文。
+
+    信息增益 = 本文有、竞品语料没有。竞品语料（主/次关键词的搜索页）里抽出来的事实
+    按定义增益为零 —— 增益只能来自竞品没看的页面。这一层就是去找那些页面
+    （用户 2026-09-05 问「我怎么能让信息增益再多一些」）。返回的文本块不带 Q:/Rel: 行，
+    它是素材不是竞品：只进事实清单和审计的 material，不进增益的对照语料。
+    """
+    if not s.serper_key or s.use_mocks:
+        return ""
+    qs = [q.strip() for q in queries if q and q.strip()][:max_q]
+    if not qs:
+        return ""
+    headers = {"X-API-KEY": s.serper_key, "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=s.request_timeout, trust_env=False,
+                                 proxy=s.proxy_for("serper")) as client:
+        async def one_query(q: str) -> list[dict]:
+            try:
+                r = await client.post(f"{s.serper_base_url}/search", headers=headers,
+                                      json={"q": q, "num": 5})
+                if r.status_code != 200:
+                    return []
+                organic = (r.json().get("organic") or [])[:per]
+            except Exception:  # noqa: BLE001
+                return []
+            async def one(it: dict) -> dict:
+                text = it.get("snippet") or ""
+                try:
+                    sr = await client.post(f"{s.serper_base_url}/scrape", headers=headers,
+                                           json={"url": it.get("link", "")})
+                    if sr.status_code == 200:
+                        text = (sr.json().get("text") or text)[:_PAGE_CHARS]
+                except Exception:  # noqa: BLE001
+                    pass
+                return {"title": it.get("title", ""), "url": it.get("link", ""), "content": text}
+            return list(await asyncio.gather(*[one(it) for it in organic]))
+        groups = await asyncio.gather(*[one_query(q) for q in qs])
+    seen: set[str] = set()
+    results: list[dict] = []
+    for g in groups:
+        for r in g:
+            if r["url"] and r["url"] not in seen:
+                seen.add(r["url"])
+                results.append(r)
+    return _fmt(results)
+
+
 _MIN_PROSE = 3        # 至少要有这么多篇文章型竞品，密度基线才有资格算（与 density_audit 一致）
 _MAX_RESULTS = 20     # 最多往后看到第几名
 

@@ -880,7 +880,7 @@ $("btnArticle").onclick=async()=>{
         else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="wordcount") logTo("log2","字数："+ev.message);
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
-        else if(ev.type==="quality") logTo("log2","内容分："+ev.message);
+        else if(ev.type==="quality") logTo("log2","体检："+ev.message);
         else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article.docx";
@@ -918,18 +918,17 @@ function renderInfo(){
   const ev=S.info, box=$("artInfo"); box.innerHTML=""; box.style.display="";
   const q=ev.quality||{};
   const card=E("div","card");
-  const has=q.score!=null;
+  // 没有总分（用户 2026-09-05：自己给自己打分太傻）。只有对着真实竞品算出来的测量值。
+  const has=q.gain!=null || !!q.intent_total || q.evidence!=null;
 
-  // ① 结论行：大数字 + 一句人话
+  // ① 结论行：一句人话
   const hero=E("div","hero");
-  const big=E("div","big"+(q.level&&q.level!=="ok"?" "+q.level:""));
-  big.textContent = has ? q.score : "—"; big.append(Object.assign(E("small"),{textContent:"/100"}));
   const v=E("div","verdict");
-  v.append(E("div",null, has ? verdictLine(q) : "这篇没有打分（太短或没有竞品语料）。"));
+  v.append(E("div",null, has ? verdictLine(q) : "这篇没有体检数据（太短或没有竞品语料）。"));
   v.append(E("p","sub", has
-    ? `对照的是搜索页排你前面的 ${q.competitor_pages||"几"} 篇真实竞品，不是模型自评。分数只在同一主题内可比。`
+    ? `对照的是搜索页排你前面的 ${q.competitor_pages||"几"} 篇真实竞品的全文，不是模型自评。`
     : ""));
-  hero.append(big,v); card.append(hero);
+  hero.append(v); card.append(hero);
 
   if(has){
     const rows=E("div","rows");
@@ -1012,7 +1011,7 @@ function verdictLine(q){
   if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
   if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
   const said=parts.filter(Boolean);
-  return said.length ? said.join("，")+"。" : "已完成打分。";
+  return said.length ? said.join("，")+"。" : "已完成体检。";
 }
 
 /* ---------- 独立环节：润色 ---------- */
@@ -1035,7 +1034,7 @@ async function runPolish(){
         else if(ev.type==="chunk"){ S.article+=ev.text; paint(); }
         else if(ev.type==="reset"){ S.article=""; paint(); }
         else if(ev.type==="grade") logTo("log2","可读性："+ev.message);
-        else if(ev.type==="quality") logTo("log2","内容分："+ev.message);
+        else if(ev.type==="quality") logTo("log2","体检："+ev.message);
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article-polished.docx";
           paint(true); applyImages();
@@ -1184,12 +1183,11 @@ $("btnRestart").onclick=()=>{
     const box=$("artInfo"); const q=(S.info||{}).quality||{};
     let li=box.closest("li.qa");
     if(!li){ li=E("li","li block qa"); const d=document.createElement("details"); d.className="qd"; d.open=false;
-      const s=document.createElement("summary"); s.textContent="内容分明细"; d.append(s,box); li.append(d); feed().append(li); }
-    li.querySelector("summary").textContent = q.score!=null ? `内容分 ${q.score}／100 · 明细` : "文章信息";
+      const s=document.createElement("summary"); s.textContent="体检明细"; d.append(s,box); li.append(d); feed().append(li); }
+    li.querySelector("summary").textContent = "体检明细";
     const mini=$("qmini"); mini.innerHTML="";
-    if(q.score!=null){
+    if(q.gain!=null || q.intent_total || q.evidence!=null){
       const chip=(cls,html)=>{const s=E("span",cls); s.innerHTML=html; mini.append(s);};
-      chip(q.level||"ok",`<b>${q.score}</b> 分`);
       if(q.gain!=null) chip(q.gain>=0.35?"ok":(q.gain>=0.2?"warn":"bad"),`比竞品多给 <b>${Math.round(q.gain*100)}%</b>`);
       if(q.intent_total) chip(q.veto?"bad":(q.intent_covered/q.intent_total>=0.66?"ok":"warn"),`搜索者问题 <b>${q.intent_covered}/${q.intent_total}</b>`);
       if(q.evidence!=null) chip("ok",`密度 <b>${q.evidence}</b>`);

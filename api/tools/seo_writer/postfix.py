@@ -511,6 +511,23 @@ def fix_stale_year(text: str) -> tuple[str, list[str]]:
     return text[:m.start(1)] + new + text[m.end(1):], [f"标题里的 {stale[0]} 改成 {year}"]
 
 
+_CLICHE = re.compile(r"(?i)\s*[:：\-–—|]?\s*(?:the\s+)?(?:ultimate|definitive)\s+guide(?:\s+(?:to|for))?\b"
+                     r"|\b(?:ultimate|definitive)\s+")
+
+
+def fix_title_cliche(text: str) -> tuple[str, list[str]]:
+    """H1 里的 ultimate / definitive / complete guide 机械去掉（用户 2026-09-05：禁 ultimate）。
+    只动 H1；SEO title 那边 prompt 早就禁了。"""
+    m = re.search(r"^#\s+(.+)$", text or "", re.M)
+    if not m or not _CLICHE.search(m.group(1)):
+        return text, []
+    new = _CLICHE.sub("", m.group(1))
+    new = re.sub(r"\s{2,}", " ", new).strip(" :：-–—|")
+    if len(new.split()) < 3:
+        return text, []
+    return text[:m.start(1)] + new + text[m.end(1):], [f"标题去俗套词：「{m.group(1)[:40]}」→「{new[:40]}」"]
+
+
 def density_short(report: dict, tolerance: float = 0.8) -> bool:
     """整篇证据密度是否低于竞品中位数的 tolerance（默认 80%，即差 20% 以上就打标）。
     没有竞品基线就不打标 —— 拿不到锚点的时候不给结论。"""
@@ -779,4 +796,5 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t7, c7 = await fix_orphan_h2(t6, complete)
     t8, c8 = await fix_title_shape(t7, report, (keywords or [""])[0], complete)
     t9, c9 = fix_stale_year(t8)
-    return t9, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9
+    t10, c10 = fix_title_cliche(t9)
+    return t10, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10

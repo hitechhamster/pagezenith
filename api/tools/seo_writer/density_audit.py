@@ -331,6 +331,22 @@ def _evidence_units(text: str, material: str | None = None) -> set[str]:
 # --------------------------------------------------------------------------- #
 # 0. SERP 解析
 # --------------------------------------------------------------------------- #
+def novel_facts(facts: str, corpus: str, limit: int = 15) -> list[str]:
+    """事实清单里、竞品语料没出现过的条目。每行形如「`值` — 说明 — 来源」；看反引号里的值。"""
+    pool = squash(corpus or "")
+    out: list[str] = []
+    for line in (facts or "").splitlines():
+        m = re.search(r"`([^`]+)`", line)
+        if not m:
+            continue
+        key = squash(m.group(1))
+        if len(key) >= 2 and key not in pool:
+            out.append(line.strip().lstrip("-* "))
+            if len(out) >= limit:
+                break
+    return out
+
+
 def parse_serp(search_text: str) -> dict[str, Any]:
     """从 providers.search 返回的文本块里拆出竞品标题、正文语料、PAA 问题。
 
@@ -828,7 +844,7 @@ def format_report(r: dict[str, Any]) -> str:
     g, i, d = r["gain"], r["intent"], r["density"]
     gtxt = f"增益 {g['ratio']:.0%}" if g.get("measurable") else "增益 无语料"
     itxt = f"意图 {len(i['covered'])}/{len(i['questions'])}" if i["questions"] else "意图 无 PAA"
-    return (f"内容分 {r['score']}／100 · {gtxt} · {itxt} · "
+    return (f"{gtxt} · {itxt} · "
             f"密度 {d['per100']}/100词 · 证据 {d['evidence_per100']}/100词"
             + ("　⛔ " + "；".join(i["reasons"]) if i["veto"] else ""))
 
