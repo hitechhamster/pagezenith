@@ -844,10 +844,9 @@ def to_prompt_block(r: dict[str, Any], max_items: int = 8) -> str:
                      f"要么补具体的，要么删掉并入别节。")
     for h in (d.get("repetitive") or [])[:max_items]:
         lines.append(f"- 「{h}」这一节一半以上的信息前文已经给过——只留新增的部分。")
-    for rs in (d.get("repeated_stats") or [])[:max_items]:
-        where = "、".join(dict.fromkeys(rs["sections"]))
-        lines.append(f"- 同一个数据「{rs['value']}」被写进了 {len(set(rs['sections']))} 个小节"
-                     f"（{where}）——只在最该用它的那一节保留，其余删掉。")
+    # 跨节重复的统计**不进用户清单**（用户 2026-09-05 定）：炼钢文里 1,600°C / 400 / 1,800
+    # 这类工艺参数本来就该在多个小节出现，六条"只在一节保留"全是噪音。
+    # 真正该删的（带引用信号的重复统计句）由 postfix.dedupe_repeated_stats 用代码收口，不用提示。
     if d.get("opening_gap", 0) > 120:
         lines.append(f"- 开头 {d['opening_gap']} 词之内没有任何可操作信息（行业统计不算）——"
                      f"把第一个能照做的结论提到开头。")
