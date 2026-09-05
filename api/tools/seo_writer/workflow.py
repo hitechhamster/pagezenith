@@ -52,6 +52,19 @@ def clean_outline(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip() + "\n"
 
 
+_CONTENT_BLOCK = re.compile(r"(^Content:\s*)(.*?)(?=^---\s*$|^Title:|^Q:|^Rel:|\Z)", re.M | re.S)
+
+
+def trim_search(text: str, per_page: int = 4000) -> str:
+    """搜索文本的 prompt 版：每页正文截到 per_page 字符。
+
+    全文版（每页最多 16000）留给增益 / 密度基线 / 意图覆盖去算 —— 那些必须对着完整竞品；
+    模型只需要看个大概，20 篇全文进 prompt 一次要几万 token。
+    """
+    return _CONTENT_BLOCK.sub(lambda m: m.group(1) + m.group(2)[:per_page] + ("\n" if len(m.group(2)) > per_page else ""),
+                              text or "")
+
+
 def _date_line() -> str:
     """今天几号 —— 模型没有时间概念，不说就把 2024 当最新。"""
     import datetime as _dt

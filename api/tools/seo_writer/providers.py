@@ -374,8 +374,14 @@ async def _autocomplete_questions(client, headers: dict, s: Settings, query: str
     return out
 
 
-async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
-    """Serper 搜索 + 抓正文。只对前 n_scrape 条抓全文（抓取比搜索贵，且前几名才是"红海"）。"""
+#: 每页保留的正文上限。增益 / 密度基线对着它算，所以要装得下一篇完整文章（实测一页 1.4 万字符）。
+#: 进 prompt 的版本另行截短（workflow.trim_search），别把 20 篇全文都塞给模型。
+_PAGE_CHARS = 16000
+
+
+async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
+    """Serper 搜索 + 抓正文。前 n_scrape 条全部抓全文 —— 信息增益是"竞品没写的"，
+    只看前四名的前 4000 字符会把竞品后半篇写过的东西算成新增（用户 2026-09-05 问到这点）。"""
     if not s.serper_key:
         raise ProviderError("服务端未配置 SERPER_KEY")
     headers = {"X-API-KEY": s.serper_key, "Content-Type": "application/json"}
@@ -413,7 +419,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 4) -> str:
                 sr = await client.post(f"{s.serper_base_url}/scrape",
                                        headers=headers, json={"url": it.get("link", "")})
                 if sr.status_code == 200:
-                    text = (sr.json().get("text") or text)[:4000]
+                    text = (sr.json().get("text") or text)[:_PAGE_CHARS]
             except Exception:  # noqa: BLE001  单页抓不到不影响其他
                 pass
             return {"title": it.get("title", ""), "url": it.get("link", ""), "content": text}

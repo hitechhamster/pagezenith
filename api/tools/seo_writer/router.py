@@ -37,7 +37,7 @@ from .models import ArticleRequest, LANGUAGES, OutlineRequest, PolishRequest, Re
 from .providers import LLM, ProviderError, resolve_llm
 from .session import get_store
 from .voices import VOICES, image_style_list, recommend_voice, voice_list
-from .workflow import (SEOWriter, clean_outline, count_words, extract_h1, grade_verdict,
+from .workflow import (SEOWriter, clean_outline, count_words, extract_h1, grade_verdict, trim_search,
                        reading_grade, wordcount_status)
 
 # 配图字节存进会话是为了润色后能重新拼一份带图的 Word。
@@ -174,8 +174,10 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                               "value": ctx["wordcounts"]})
 
                 job.emit({"type": "step", "key": "search", "message": "全网搜索主/次关键词的现有内容…"})
-                ctx["main_search"], ctx["sec_search"] = await wf.search_context(
-                    ctx["main_keyword"], ctx["secondary_keyword"])
+                _m, _s = await wf.search_context(ctx["main_keyword"], ctx["secondary_keyword"])
+                # 全文版给审计（增益 / 基线 / 意图），截短版给 prompt
+                ctx["main_search_full"], ctx["sec_search_full"] = _m, _s
+                ctx["main_search"], ctx["sec_search"] = trim_search(_m), trim_search(_s)
 
                 # 社媒真实讨论：与全网搜索互补 —— 那边是竞品成品文，这边是真人原话
                 job.emit({"type": "step", "key": "reddit", "message": "抓 Reddit 真实讨论（痛点/高频问题）…"})
@@ -400,7 +402,8 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 # 内容打分：意图覆盖 / 信息增益 / 证据密度 / 信息密度 / 结构可读性。
                 # 全确定性、零 LLM。增益是对着**真实 SERP 抓取正文**算的，不是凭感觉。
                 serp_corpus = "\n".join(
-                    x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
+                    x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
+                                ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
                 # material：事实清单 + 搜索页语料。证据密度只认在这里出现过的数字 ——
                 # 编出来的数不计分，补写也就不会靠编数过关（用户 2026-09-05：堵住刷分）。
                 q_kwargs = dict(search_text=serp_corpus, topic_type=ctx.get("topic_type", ""),
@@ -613,7 +616,8 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                                           + "；".join(f[:44] for f in fixes[:3])
                                           + ("…" if len(fixes) > 3 else ""))})
 
-                _serp = "\n".join(x for x in (ctx.get("main_search"), ctx.get("sec_search")) if x)
+                _serp = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
+                                              ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
                 report = density_audit.audit(
                     text, search_text=_serp,
                     topic_type=ctx.get("topic_type", ""), keyword=main_keyword,

@@ -756,21 +756,9 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14,
                         "不列名字 = 既丢密度也丢意图。"
                         if set(dominant) & {"listicle", "comparison", "tool"} else ""))
 
-    # 密度目标：量化到这篇的条数。写手不知道"够"是多少，就永远写不够。
-    tgt = density_target(search_text, wordcount)
-    if tgt["competitor"] is not None:
-        line = (f"**信息密度目标：** 排在前面的 {tgt['pages']} 篇竞品平均每 100 词有 "
-                f"{tgt['competitor']} 条具体信息（参数值、型号、文件名、设置路径、带出处的数据）。"
-                f"本文要 **≥ {tgt['per100']} 条 / 100 词**")
-    else:
-        line = f"**信息密度目标：≥ {tgt['per100']} 条具体信息 / 100 词**（参数值、型号、文件名、设置路径、带出处的数据）"
-    if tgt["total"]:
-        per_h2 = max(6, int(tgt["total"] / max(h2_count, 1)))
-        line += f"，按 {wordcount} 词算就是 **全文 ≥ {tgt['total']} 条，每个 H2 ≥ {per_h2} 条**"
-    line += ("。\n密度住在结构里：**每个 H2 至少一个结构化块**（参数表 / 规格表 / 对照表 / "
-             "检查清单 / 带具体值的步骤表）—— 一张 60 词的规格表能装 15 条信息，60 词散文只装 2 条。"
-             "同一个值重复说不算新信息。")
-    parts.append(line)
+    # 密度：不再给"每 100 词 x 条 / 每节一表"的量化目标（用户 2026-09-05）——
+    # 那两条把模型压成了报关手册和编造的规格表。只留一句人设；补不补写由后台按竞品基线决定。
+    parts.append("你非常喜欢列出数据和事实，非常在乎文章的信息密度。")
 
     if questions:
         parts.append("**搜索页上读者正在问的（People Also Ask，真实数据不是推测）：**\n"
