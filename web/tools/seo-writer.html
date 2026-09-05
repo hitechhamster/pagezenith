@@ -225,7 +225,7 @@
   .tl .btns{margin-top:10px} .tl .btns button{width:100%;padding:12px 18px;font-size:14px}
   .tl .btns+.hint{margin-top:10px}   /* 老样式的 hint 是 -6px 负边距，在这里会顶到按钮上 */
   .tl .sec.folded{padding:10px 14px} .tl .sec.folded h2{margin-bottom:4px}
-  .tl .foldbar{padding:0;font-size:12.5px} .tl .foldbar .op{white-space:nowrap}
+  .tl .foldbar{padding:0;font-size:12.5px;cursor:default} .tl .foldbar .op{white-space:nowrap}
   .tl #status{margin:8px 4px 0;font-size:12.5px} .tl #status:empty{display:none}
 
   /* 时间线本体 */
@@ -320,7 +320,7 @@
   <aside class="tl" id="tl">
     <div class="sec" id="sec1">
       <h2>参数</h2>
-      <div class="foldbar" id="fold1"><span id="fold1Text"></span><span class="op">展开修改 ▾</span></div>
+      <div class="foldbar" id="fold1"><span id="fold1Text"></span></div>
       <div class="row">
         <div class="f"><label>主关键词 <b>*</b></label><input id="mainKw" placeholder="文章核心，标题和全文围绕它" /></div>
       </div>
@@ -610,7 +610,8 @@ function foldSec(id, text){
   const t=$("fold"+id.slice(-1)+"Text"); if(t) t.textContent=text||"";
 }
 function unfoldSec(id){ $(id).classList.remove("folded"); }
-["fold1","fold2"].forEach(fid=>{ const el=$(fid); if(el) el.onclick=()=>unfoldSec("sec"+fid.slice(-1)); });
+/* 参数一旦开跑就锁定（改了也不会重跑，只会误导）；只有「再写一篇」才重新展开。大纲卡仍可点开看。 */
+["fold2"].forEach(fid=>{ const el=$(fid); if(el) el.onclick=()=>unfoldSec("sec"+fid.slice(-1)); });
 function paramSummary(){
   const wc=parseInt($("wordcounts").value||"0",10);
   return `${$("mainKw").value.trim()} · ${$("language").value}${wc?` · ${wc} 词`:" · 字数由 AI 定"}${VOICE?" · 写手 "+VOICE:""}`;
