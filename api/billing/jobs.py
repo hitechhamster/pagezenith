@@ -102,6 +102,13 @@ def start(card_hash: str, tool: str,
     return job
 
 
+def running() -> int:
+    """还没跑完的任务数。部署脚本重启前先看它 —— 2026-09-05 一次部署正好砸在用户写正文中间，
+    uvicorn 优雅关停时立刻停止监听、却要等正在跑的文章跑完（81 秒），期间所有新请求 502，
+    润色请求也就这么丢了。"""
+    return sum(1 for j in _JOBS.values() if not j.done)
+
+
 def get(job_id: str, card_hash: str) -> Optional[Job]:
     """取任务，**必须同卡** —— 别人的 job_id 拿不到内容。"""
     j = _JOBS.get(job_id)

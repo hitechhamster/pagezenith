@@ -409,6 +409,7 @@
         <button id="btnDocx">下载 Word</button>
         <button id="btnCopy" class="ghost">复制 Markdown</button>
         <button id="btnRevert" class="ghost" style="display:none">还原润色前</button>
+        <button id="btnRepolish" class="ghost" style="display:none">重试润色</button>
         <button id="btnRestart" class="ghost">再写一篇</button>
       </div>
     </div>
@@ -868,7 +869,7 @@ $("btnArticle").onclick=async()=>{
         else if(ev.type==="image"){ S.images[ev.placeholder]="data:image/png;base64,"+ev.png_b64; }
         else if(ev.type==="done"){
           S.article=ev.article; S.docx=ev.docx_b64; S.filename=ev.filename||"article.docx";
-          S.pre=null; $("btnRevert").style.display="none";
+          S.pre=null; $("btnRevert").style.display="none"; $("btnRepolish").style.display="none";
           paint(true); applyImages();
           S.info={...ev}; renderInfo(); $("artBtns").style.display="flex";
           $("artMeta").textContent=`· ${ev.word_count} 词`+(ev.images?` · ${ev.images} 张配图`:"");
@@ -1006,7 +1007,7 @@ async function runPolish(){
   if(!S.article){ return; }
   // 先存一份润色前的，改坏了能退回来
   S.pre={article:S.article, docx:S.docx, filename:S.filename, info:{...S.info}};
-  $("btnDocx").disabled=true;
+  $("btnDocx").disabled=true; $("btnRepolish").style.display="none";
   setStatus("润色中，整篇重写一遍，时间和写文差不多…",false,true);
   logTo("log2","—— 开始润色：拆长句、去绕话，硬信息一条不少 ——");
   holdHeight($("articleBox"));
@@ -1036,11 +1037,14 @@ async function runPolish(){
       });
   }catch(err){
     S.article=S.pre.article; paint(true); applyImages(); S.pre=null;
-    setStatus("润色失败："+(err.message||err),true);
+    // 润色是独立计费的一步，失败了（服务重启、网络抖）不该让人重写整篇 —— 给个重试
+    $("btnRepolish").style.display="";
+    setStatus("润色失败："+(err.message||err)+"。文章本身已写好可下载；右上「重试润色」可再试。",true);
   }
   finally{ $("btnDocx").disabled=false; logStop("log2"); releaseHeight($("articleBox")); }
 }
 
+$("btnRepolish").onclick=()=>{ if(S.article) runPolish(); };
 $("btnRevert").onclick=()=>{
   if(!S.pre) return;
   S.article=S.pre.article; S.docx=S.pre.docx; S.filename=S.pre.filename; S.info=S.pre.info;
@@ -1067,7 +1071,7 @@ $("btnCopy").onclick=async()=>{
 $("btnRestart").onclick=()=>{
   clearDraft();
   S.sessionId=""; S.outline=""; S.article=""; S.docx=""; S.images={}; S.info={}; S.pre=null;
-  $("btnRevert").style.display="none";
+  $("btnRevert").style.display="none"; $("btnRepolish").style.display="none";
   $("sec2").style.display="none"; $("sec3").style.display="none"; setStatus("");
   // 把上一篇的痕迹全清掉：正文框、大纲框、成绩单、按钮、发现面板、两条日志、步骤轨、折叠态。
   // 以前只藏不清，下一篇写之前旧文章还在 DOM 里；恢复条也要拿掉。

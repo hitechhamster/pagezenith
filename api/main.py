@@ -35,7 +35,7 @@ if sys.platform == "win32":
 
 import hashlib
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -129,6 +129,15 @@ app.include_router(site_recon_router)
 app.include_router(reddit_research_router)
 app.include_router(outreach_router)
 # app.include_router(other_tool_router)   # 以后加工具在这里
+
+
+# ---- 运维：正在跑的任务数（只答本机，给 ops/deploy.sh 用，重启前等它归零）----
+@app.get("/api/ops/inflight")
+async def ops_inflight(request: Request):
+    if (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
+        raise HTTPException(status_code=404)
+    from billing import jobs as _jobs
+    return {"inflight": _jobs.running()}
 
 
 # ---- 前端（无 SEO 需求，纯静态由后端顺手返回）----
