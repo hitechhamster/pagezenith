@@ -374,6 +374,49 @@ async def _autocomplete_questions(client, headers: dict, s: Settings, query: str
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Serper 统一出口：多 key 轮转 + 每篇计数
+# 2026-09-05 事故：一天测试十几篇把额度烧光，线上和本地两把 key 同时 400 "Not enough credits"，
+# 而且没人知道一篇到底花多少。现在：SERPER_KEYS 逗号分隔多把，额度尽了自动切下一把；
+# 每次调用计数，router 在日志里报"本篇 Serper N 次"。
+# --------------------------------------------------------------------------- #
+import contextvars as _cv
+
+SERPER_CALLS: _cv.ContextVar[list] = _cv.ContextVar("serper_calls", default=None)   # [n] 可变计数
+_KEY_IDX = {"i": 0}
+
+
+def serper_keys(s: Settings) -> list[str]:
+    ks = [k.strip() for k in (getattr(s, "serper_keys", "") or "").split(",") if k.strip()]
+    return ks or ([s.serper_key] if s.serper_key else [])
+
+
+def serper_calls_begin() -> list:
+    """router 在一篇开始时调用；返回的列表就是计数器（in-place 加）。"""
+    c = [0]
+    SERPER_CALLS.set(c)
+    return c
+
+
+async def _serper_post(client: httpx.AsyncClient, s: Settings, path: str, payload: dict) -> httpx.Response:
+    keys = serper_keys(s)
+    if not keys:
+        raise ProviderError("服务端未配置 SERPER_KEY")
+    c = SERPER_CALLS.get()
+    if c is not None:
+        c[0] += 1
+    for attempt in range(len(keys)):
+        key = keys[_KEY_IDX["i"] % len(keys)]
+        r = await client.post(f"{s.serper_base_url}/{path}",
+                              headers={"X-API-KEY": key, "Content-Type": "application/json"}, json=payload)
+        exhausted = (r.status_code == 400 and "credit" in r.text.lower()) or r.status_code in (401, 403)
+        if not exhausted or len(keys) == 1:
+            return r
+        _KEY_IDX["i"] = (_KEY_IDX["i"] + 1) % len(keys)
+        logger.warning("Serper key #%d 额度用尽/无效（%s），切换到 #%d", attempt, r.text[:60], _KEY_IDX["i"])
+    return r
+
+
 #: 每页保留的正文上限。增益 / 密度基线对着它算，所以要装得下一篇完整文章（实测一页 1.4 万字符）。
 #: 进 prompt 的版本另行截短（workflow.trim_search），别把 20 篇全文都塞给模型。
 _PAGE_CHARS = 16000
@@ -387,8 +430,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
     headers = {"X-API-KEY": s.serper_key, "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=s.request_timeout, trust_env=False,
                                  proxy=s.proxy_for("serper")) as client:
-        r = await client.post(f"{s.serper_base_url}/search",
-                              headers=headers, json={"q": query, "num": 10})
+        r = await _serper_post(client, s, "search", {"q": query, "num": 10})
         r.raise_for_status()
         data = r.json()
         organic = data.get("organic") or []
@@ -402,8 +444,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
         # 而且不重复抓正文（贵的是 /scrape 不是 /search）。
         if not questions:
             try:
-                r2 = await client.post(f"{s.serper_base_url}/search",
-                                       headers=headers, json={"q": query, "num": 10})
+                r2 = await _serper_post(client, s, "search", {"q": query, "num": 10})
                 if r2.status_code == 200:
                     d2 = r2.json()
                     questions = [q.get("question", "") for q in (d2.get("peopleAlsoAsk") or [])]
@@ -416,8 +457,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
         async def one(it: dict) -> dict:
             text = it.get("snippet") or ""
             try:
-                sr = await client.post(f"{s.serper_base_url}/scrape",
-                                       headers=headers, json={"url": it.get("link", "")})
+                sr = await _serper_post(client, s, "scrape", {"url": it.get("link", "")})
                 if sr.status_code == 200:
                     text = (sr.json().get("text") or text)[:_PAGE_CHARS]
             except Exception:  # noqa: BLE001  单页抓不到不影响其他
@@ -436,8 +476,7 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
             if scraped >= len(pool) and page < 2:
                 page += 1
                 try:
-                    r3 = await client.post(f"{s.serper_base_url}/search", headers=headers,
-                                           json={"q": query, "num": 10, "page": page})
+                    r3 = await _serper_post(client, s, "search", {"q": query, "num": 10, "page": page})
                     if r3.status_code == 200:
                         pool += r3.json().get("organic") or []
                 except Exception:  # noqa: BLE001
@@ -473,8 +512,7 @@ async def expand_queries(s: Settings, queries: list[str], per: int = 2, max_q: i
                                  proxy=s.proxy_for("serper")) as client:
         async def one_query(q: str) -> list[dict]:
             try:
-                r = await client.post(f"{s.serper_base_url}/search", headers=headers,
-                                      json={"q": q, "num": 5})
+                r = await _serper_post(client, s, "search", {"q": q, "num": 5})
                 if r.status_code != 200:
                     return []
                 organic = (r.json().get("organic") or [])[:per]
@@ -483,8 +521,7 @@ async def expand_queries(s: Settings, queries: list[str], per: int = 2, max_q: i
             async def one(it: dict) -> dict:
                 text = it.get("snippet") or ""
                 try:
-                    sr = await client.post(f"{s.serper_base_url}/scrape", headers=headers,
-                                           json={"url": it.get("link", "")})
+                    sr = await _serper_post(client, s, "scrape", {"url": it.get("link", "")})
                     if sr.status_code == 200:
                         text = (sr.json().get("text") or text)[:_PAGE_CHARS]
                 except Exception:  # noqa: BLE001

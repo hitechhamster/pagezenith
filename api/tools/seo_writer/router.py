@@ -174,6 +174,8 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                               "value": ctx["wordcounts"]})
 
                 job.emit({"type": "step", "key": "search", "message": "全网搜索主/次关键词的现有内容…"})
+                from .providers import serper_calls_begin
+                _sc = serper_calls_begin()
                 _m, _s = await wf.search_context(ctx["main_keyword"], ctx["secondary_keyword"])
                 # 搜索整个挂了（2026-09-05 实测 Serper 额度用尽返回 400 "Not enough credits"）：
                 # 没有竞品语料就没有事实清单、没有 PAA、增益算出 99% 全是假的。
@@ -190,7 +192,9 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 ctx["expansion"] = await wf.expand_context(ctx)
                 _xp = len(re.findall(r"^URL:", ctx["expansion"] or "", re.M))
                 job.emit({"type": "step", "key": "search",
-                          "message": (f"扩展层：另抓了 {_xp} 篇竞品之外的页面" if _xp else "扩展层：没有额外页面")})
+                          "message": (f"扩展层：另抓了 {_xp} 篇竞品之外的页面" if _xp else "扩展层：没有额外页面")
+                                     + f"（本篇 Serper 调用 {_sc[0]} 次）"})
+                logger.info("Serper 调用 %d 次（%s）", _sc[0], ctx["main_keyword"])
 
                 # 社媒真实讨论：与全网搜索互补 —— 那边是竞品成品文，这边是真人原话
                 job.emit({"type": "step", "key": "reddit", "message": "抓 Reddit 真实讨论（痛点/高频问题）…"})

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     serper_key: str = Field(
         default="", validation_alias=AliasChoices("SERPER_KEY", "SERPER_API_KEY"))
     serper_base_url: str = "https://google.serper.dev"
+    # 多把 key 轮转：逗号分隔。一把 400 "Not enough credits" / 401 / 403 就切下一把（2026-09-05 额度用尽事故）
+    serper_keys: str = Field(default="", validation_alias=AliasChoices("SERPER_KEYS"))
 
     # SerpApi（旧源，保留兼容，不再配置）
     serpapi_key: str = ""
