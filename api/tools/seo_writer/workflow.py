@@ -387,7 +387,7 @@ class SEOWriter:
     def facts_block(ctx: dict[str, Any]) -> str:
         """事实清单的 prompt 片段；没有清单就返回空串（那一段直接消失）。
         来源字段不给模型看（用户 2026-09-05：与其说"别引用"，不如不给）；完整版留在 ctx 里做核验。"""
-        facts = strip_sources((ctx.get("facts") or "").strip())
+        facts = re.sub(r"`([^`\n]+)`", r"\1", strip_sources((ctx.get("facts") or "").strip()))
         return P.FACTS_BLOCK.format(facts=facts) if facts else ""
 
     @staticmethod
@@ -407,7 +407,7 @@ class SEOWriter:
                                      ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
         novel = density_audit.novel_facts(ctx.get("facts") or "", full)
         if novel:
-            brief += P.NOVEL_FACTS_BLOCK.format(items="\n".join(f"- {x}" for x in strip_sources("\n".join(novel)).splitlines()))
+            brief += P.NOVEL_FACTS_BLOCK.format(items=re.sub(r"`([^`\n]+)`", r"\1", "\n".join(f"- {x}" for x in strip_sources("\n".join(novel)).splitlines())))
         if ctx.get("gap_angles"):
             brief += P.GAP_ANGLES_BLOCK.format(items="\n".join(f"- {a}" for a in ctx["gap_angles"]))
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""

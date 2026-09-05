@@ -475,8 +475,10 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                     job.emit({"type": "step", "key": "postfix",
                               "message": "局部补写 " + "；".join(f[:44] for f in more[:3])})
                     report = density_audit.audit(text, **q_kwargs)
-                # 补写可能又加了表 —— 整篇最多 3 张，超出的转列表
+                # 补写可能又加了表 / 反引号 —— 整篇最多 3 张，超出的转列表；非代码反引号去掉
                 text, _ct = postfix.cap_tables(text)
+                text, _bt = postfix.debacktick_prose(text)
+                fixes += _bt
                 if _ct:
                     fixes += _ct
                     report = density_audit.audit(text, **q_kwargs)
@@ -610,6 +612,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                         raise PolishStructureError(f"润色丢失 {len(lost2)} 条硬信息")
 
                 text, _cites = postfix.strip_citations(text)
+                text, _ = postfix.debacktick_prose(text)
                 actual = count_words(text)
                 level, wc_msg = wordcount_status(actual, ctx.get("wordcounts", 0))
                 g1 = reading_grade(text, language)

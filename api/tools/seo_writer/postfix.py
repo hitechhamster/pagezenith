@@ -360,7 +360,7 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
                                               if count_tables(text) < MAX_TABLES
                                               else "a bullet list of concrete items (NO table — the article already has enough tables)"),
                                        have_list="\n".join(f"- {u}" for u in have[:80]) or "- (none)",
-                                       material=material[:12000], section=block),
+                                       material=re.sub(r"`([^`\n]+)`", r"\1", material[:12000]), section=block),
                 task="polish", temperature=0.3)
         except Exception:  # noqa: BLE001  补写失败不该拖垮整篇交付
             continue
@@ -536,6 +536,68 @@ def fix_title_cliche(text: str) -> tuple[str, list[str]]:
 
 
 # --------------------------------------------------------------------------- #
+# 编造的文件名：正文里出现素材没有的文件 / 模板名，整句删（prompt 禁了三次照编，实测
+# `Bill_of_Materials.xlsx` → `packing_list.xlsx` → `Manufacturing_Agreement_V3.pdf`）。
+# 反引号：只有代码 / 文件形态的才保留，`70,000`、`50%` 这种是照抄事实清单格式，去掉。
+# --------------------------------------------------------------------------- #
+_CODELIKE = re.compile(r"[=(){}\[\]<>\\]|^--|\.(?:xlsx|xls|csv|pdf|docx?|json|txt|ya?ml|liquid|js|py|xml|md|html?)$|_", re.I)
+
+
+def strip_fabricated_files(text: str, material: str) -> tuple[str, list[str]]:
+    if not text:
+        return text, []
+    pool = density_audit.squash(material or "")
+
+    def fakes(s: str) -> list[str]:
+        toks = [m.strip("` ") for m in density_audit._CODE.findall(s)] + _FILE_TOKEN.findall(s)
+        return [t for t in toks if _FILE_TOKEN.search(t) and density_audit.squash(t) not in pool]
+
+    out, dropped = [], []
+    for line in text.split("\n"):
+        if not line.strip() or re.match(r"^\s*(?:#{1,6}\s|\||\[IMAGE:)", line):
+            out.append(line)
+            continue
+        if re.match(r"^\s*(?:[-*+]\s|\d+[.)]\s)", line):          # 列表项：整条删
+            f = fakes(line)
+            if f:
+                dropped.append(f[0])
+                continue
+            out.append(line)
+            continue
+        # 文件名里的 "." 会被分句器当句号切开（"…_V3." / "pdf …"），先遮住再分句
+        masked = _FILE_TOKEN.sub(lambda m: m.group(0).replace(".", "\x00"), line)
+        keep = []
+        for sent in _split_sentences(masked):
+            s = sent.replace("\x00", ".")
+            f = fakes(s)
+            if f:
+                dropped.append(f[0])
+                continue
+            keep.append(s)
+        out.append("".join(keep))
+    return "\n".join(out), ([f"删掉编造文件名的句子 {len(dropped)} 句（{dropped[0]}…）"] if dropped else [])
+
+
+def debacktick_prose(text: str) -> tuple[str, list[str]]:
+    if not text:
+        return text, []
+    n = 0
+    def fix(line: str) -> str:
+        nonlocal n
+        def rep(m):
+            nonlocal n
+            inner = m.group(0).strip("` ").strip()
+            if _CODELIKE.search(inner):
+                return m.group(0)
+            n += 1
+            return inner
+        return density_audit._CODE.sub(rep, line)
+    out = [line if _STRUCT_LINE.match(line) and not line.lstrip().startswith(("-", "*", "|")) else fix(line)
+           for line in text.split("\n")]
+    return "\n".join(out), ([f"去掉 {n} 处非代码反引号"] if n else [])
+
+
+# --------------------------------------------------------------------------- #
 # 来源引用：正文里一律不许出现（用户 2026-09-05）。prompt 说了，代码再收一次口。
 # --------------------------------------------------------------------------- #
 _DOMAIN = r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|gov|edu|io|co\.uk)"
@@ -666,7 +728,7 @@ async def ensure_paa_coverage(text: str, report: dict, material: str, language: 
     try:
         raw = await complete(
             _FAQ_SECTION.format(questions="\n".join(f"- {q}" for q in missing),
-                                material=material[:12000], language=language or "English"),
+                                material=re.sub(r"`([^`\n]+)`", r"\1", material[:12000]), language=language or "English"),
             task="polish", temperature=0.3)
     except Exception:  # noqa: BLE001  补不上不该拖垮交付
         return text, []
@@ -678,6 +740,9 @@ async def ensure_paa_coverage(text: str, report: dict, material: str, language: 
     bad = invented_assertions(block, allowed)
     if bad:
         logger.info("FAQ 补写已丢弃：编了统计 %s", bad[:3])
+        return text, []
+    if introduced_files(block, text, material):
+        logger.info("FAQ 补写已丢弃：编了文件名 %s", introduced_files(block, text, material)[:2])
         return text, []
 
     candidate = text.rstrip() + f"\n\n## {_faq_heading(language)}\n\n" + block + "\n"
@@ -907,9 +972,11 @@ async def postfix(text: str, keywords: list[str], facts: str,
     """交付前跑一遍：假经验句（纯代码）→ 塞词（小调用 + 闭环）→ 空转小节补写（同上）。"""
     t1, c1 = strip_fake_experience(text, facts)
     t2, c2 = await fix_keyword_stuffing(t1, keywords, complete)
+    t2, c2b = strip_fabricated_files(t2, material or facts)
     if not report:
-        return t2, c1 + c2
-    changes = c1 + c2
+        t2, c2c = debacktick_prose(t2)
+        return t2, c1 + c2 + c2b + c2c
+    changes = c1 + c2 + c2b
     t3, c3 = await boost_thin_sections(t2, report, facts, material, complete)
     t4, c4 = await ensure_paa_coverage(t3, report, material, language, complete)
     t5, c5 = dedupe_repeated_stats(t4)
@@ -921,4 +988,5 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t10, c10 = fix_title_cliche(t9)
     t11, c11 = cap_tables(t10)
     t12, c12 = strip_citations(t11)
-    return t12, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12
+    t13, c13 = debacktick_prose(t12)
+    return t13, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12 + c13
