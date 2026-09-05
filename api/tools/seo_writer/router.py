@@ -431,11 +431,15 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 words_now = density_audit.word_count(text)
                 budget_left = max(0, int(1.2 * words_at_draft) - words_now)
                 for _round in range(postfix.MAX_FIX_ROUNDS - 1):
-                    if not postfix.density_short(report) or budget_left < 120:
+                    # 继续条件：还没追平竞品（不是"差 20% 以上"）—— 用户 2026-09-05：不许不如竞品。
+                    # 轮数和篇幅预算不变，追不上就按原规矩算了。
+                    if not postfix.density_below(report) or budget_left < 120:
                         break
                     weak = postfix.weakest_sections(report)
+                    _me = (report.get("density") or {}).get("evidence_per100")
+                    _cp = (report.get("benchmark") or {}).get("median")
                     job.emit({"type": "step", "key": "postfix",
-                              "message": (f"信息密度低于竞品 20% 以上，局部补写最稀的 "
+                              "message": (f"证据密度 {_me} 还没超过竞品 {_cp}，局部补写最稀的 "
                                           f"{len(weak)} 节（第 {_round + 2} 轮）…")})
                     text, more = await postfix.boost_thin_sections(
                         text, report, ctx.get("facts", ""),

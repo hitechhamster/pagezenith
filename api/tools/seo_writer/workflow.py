@@ -24,6 +24,13 @@ from .voices import get_voice
 
 logger = logging.getLogger(__name__)
 
+
+def _date_line() -> str:
+    """今天几号 —— 模型没有时间概念，不说就把 2024 当最新。"""
+    import datetime as _dt
+    d = _dt.date.today()
+    return P.DATE_LINE.format(today=d.isoformat(), year=d.year)
+
 IMAGE_TAG = re.compile(r"\[IMAGE:\s*([^\]]+?)\s*\]")
 
 
@@ -319,7 +326,7 @@ class SEOWriter:
         return "conceptual"
 
     # -------------------------------------------------------------- 大纲
-    def outline_prompt(self, ctx: dict[str, Any]) -> str:
+    def outline_prompt(self, ctx: dict[str, Any]) -> str:  # noqa: D102
         """组装大纲 prompt（2026-08 换成用户实际在用的 EEAT 版）。
 
         与旧版的差异：{specific} 直接注入（空则 prompt 内部自行忽略）、
@@ -342,7 +349,7 @@ class SEOWriter:
             image_context = P.IMAGE_CONTEXT.format(
                 images_per_article=ctx.get("images_per_article", 2),
                 image_style_hint=P.get_type_profile(ctx["topic_type"])["image_style_hint"])
-        return P.OUTLINE_PROMPT.format(
+        return _date_line() + P.OUTLINE_PROMPT.format(
             language=ctx["language"],
             specific=specific,
             gap_brief_block=self.gap_brief_block(ctx),
@@ -383,7 +390,7 @@ class SEOWriter:
                 image_style_hint=P.get_type_profile(topic_type)["image_style_hint"],
                 realism_note=P.REALISM_NOTE if topic_type == "realistic_product" else "")
 
-        return P.ARTICLE_PROMPT.format(
+        return _date_line() + P.ARTICLE_PROMPT.format(
             language=ctx["language"],
             specific=specific or "（无）",
             product_instructions=_product_instructions(ctx),

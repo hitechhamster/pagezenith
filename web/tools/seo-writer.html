@@ -279,7 +279,17 @@
   .doc-body{flex:1;min-height:0;overflow:auto;padding:28px 40px 120px}
   .doc-body .sec{background:transparent;border:0;box-shadow:none;padding:0;margin:0}
   .doc-body .sec.folded{padding:8px 12px;border:1px dashed var(--line);border-radius:10px;margin-bottom:18px;background:rgba(255,255,255,.6)}
-  .doc-body .sec.folded .foldbar{padding:0;font-size:12.5px}
+  .doc-body .sec.folded .foldbar{padding:0;font-size:12.5px;cursor:default}
+  /* SEO 元素：正文上方一块，标题 / 描述各带字符数和复制 */
+  .seobox{max-width:78ch;margin:0 0 22px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.75)}
+  .seobox .sh{font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:8px}
+  .seobox .sr{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:10px;align-items:start;font-size:13px;padding:5px 0}
+  .seobox .sr+.sr{border-top:1px dashed var(--line)}
+  .seobox .sk{color:var(--muted);font-size:12px;padding-top:2px}
+  .seobox .sv{color:var(--text);line-height:1.5;word-break:break-word}
+  .seobox .sn{display:block;font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-top:2px}
+  .seobox .sn.over{color:var(--red)}
+  .seobox button{padding:4px 10px;font-size:11.5px;white-space:nowrap}
   .doc-body .doc{max-height:none;overflow:visible;padding-right:0;max-width:78ch}
   .doc-body .doc h1{font-size:30px;margin:4px 0 14px}
   .doc-body .hint{max-width:78ch;margin-top:14px}
@@ -424,10 +434,15 @@
         </ol>
       </div>
       <div class="sec" id="sec2" style="display:none">
-        <div class="foldbar" id="fold2"><span id="fold2Text"></span><span class="op">展开 ▾</span></div>
+        <div class="foldbar" id="fold2"><span id="fold2Text"></span></div>
         <div class="doc" id="outlineBox"></div>
       </div>
       <div class="sec" id="sec3" style="display:none">
+        <div class="seobox" id="seoBox" style="display:none">
+          <div class="sh">SEO 元素</div>
+          <div class="sr"><span class="sk">标题</span><span class="sv" id="seoTitle"></span><button class="ghost" data-copy="seoTitle">复制</button></div>
+          <div class="sr"><span class="sk">描述</span><span class="sv" id="seoDesc"></span><button class="ghost" data-copy="seoDesc">复制</button></div>
+        </div>
         <div class="doc" id="articleBox"></div>
         <div class="hint">正文写完会<b>自动润色一遍</b>（拆长句、去绕话，硬信息一条不少；另计 <span id="polishPts">3</span> 点）。
           只改表达不动结构：标题、图片占位符、链接、表格都原样保留。不满意可以「还原润色前」。</div>
@@ -612,7 +627,7 @@ function foldSec(id, text){
 }
 function unfoldSec(id){ $(id).classList.remove("folded"); }
 /* 参数一旦开跑就锁定（改了也不会重跑，只会误导）；只有「再写一篇」才重新展开。大纲卡仍可点开看。 */
-["fold2"].forEach(fid=>{ const el=$(fid); if(el) el.onclick=()=>unfoldSec("sec"+fid.slice(-1)); });
+/* 折叠条一律不可点：参数开跑即锁定，大纲通过即定稿（用户 2026-09-05）。只有「再写一篇」重来。 */
 function paramSummary(){
   const wc=parseInt($("wordcounts").value||"0",10);
   return `${$("mainKw").value.trim()} · ${$("language").value}${wc?` · ${wc} 词`:" · 字数由 AI 定"}${VOICE?" · 写手 "+VOICE:""}`;
@@ -951,7 +966,7 @@ function renderInfo(){
       const cd=q.competitor_density, flag=!!q.density_flag;
       const r=row("信息密度", flag?"bad":"ok",
         `每 100 词 ${q.evidence} 条能照做的信息`
-          + (cd!=null ? `<span class="cmp">竞品中位数 ${cd}</span>` : "")
+          + (cd!=null && q.evidence>=cd ? `<span class="cmp">竞品中位数 ${cd}</span>` : "")
           + (flag ? `<span class="cmp" style="background:var(--redbg);color:var(--red)">低于竞品 20% 以上</span>` : ""),
         flag ? "已对最稀的几节做过局部补写；仍低说明这个题材竞品是规格表 / 目录页，正文形态追不上。要么接受，要么在「特殊要求」里让它加参数表。"
              : "数字、参数、文件名、功能名的密度。读者一段话里能拿走几样东西，而不是读了三百词全是立场铺垫。", true);
@@ -968,6 +983,8 @@ function renderInfo(){
     card.append(rows);
   }
 
+  // SEO 元素：正文上方独立一块（用户 2026-09-05："我 SEO 元素在哪里显示？"）
+  renderSeo(ev.seo_title||"", ev.seo_description||"");
   // ⑥ 次要信息：一行带过
   const minor=E("div","minor");
   minor.innerHTML = `<span><b>${ev.word_count||"—"}</b> 词${ev.wordcount_level&&ev.wordcount_level!=="ok"?"（"+MD.escape(ev.wordcount_message||"")+"）":""}</span>`
@@ -998,8 +1015,9 @@ function verdictLine(q){
   if(q.veto) return "文章形态和搜索页不匹配，先看下面的说明。";
   if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
   if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
-  if(q.competitor_density!=null&&q.evidence!=null) parts.push(q.density_flag ? "信息密度低于竞品" : (q.evidence>=q.competitor_density ? "信息密度高于竞品" : "信息密度和竞品持平"));
-  return parts.length ? parts.join("，")+"。" : "已完成打分。";
+  if(q.competitor_density!=null&&q.evidence!=null) parts.push(q.density_flag ? "信息密度低于竞品" : (q.evidence>=q.competitor_density ? "信息密度高于竞品" : ""));
+  const said=parts.filter(Boolean);
+  return said.length ? said.join("，")+"。" : "已完成打分。";
 }
 
 /* ---------- 独立环节：润色 ---------- */
@@ -1063,6 +1081,19 @@ $("btnDocx").onclick=()=>{
   const a=document.createElement("a"); a.href=url; a.download=S.filename; a.click();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
 };
+function renderSeo(title, desc){
+  const box=$("seoBox"); if(!box) return;
+  if(!title && !desc){ box.style.display="none"; return; }
+  const put=(id,val,max)=>{ const el=$(id); el.textContent=val||"—";
+    const n=E("span","sn"+((val||"").length>max?" over":""), `${(val||"").length} 字符${(val||"").length>max?"，超过 "+max:""}`); el.append(n); };
+  put("seoTitle", title, 70); put("seoDesc", desc, 170);
+  box.style.display="";
+}
+document.querySelectorAll("#seoBox [data-copy]").forEach(b=>{ b.onclick=async()=>{
+  const el=$(b.dataset.copy); const txt=(el.firstChild&&el.firstChild.nodeValue)||"";
+  try{ await navigator.clipboard.writeText(txt); b.textContent="已复制 ✓"; setTimeout(()=>b.textContent="复制",1600); }
+  catch(e){ setStatus("复制失败，请手动选中复制。",true); }
+}; });
 $("btnCopy").onclick=async()=>{
   try{ await navigator.clipboard.writeText(S.article); $("btnCopy").textContent="已复制 ✓";
        setTimeout(()=>$("btnCopy").textContent="复制 Markdown",1600); }
@@ -1076,7 +1107,7 @@ $("btnRestart").onclick=()=>{
   // 把上一篇的痕迹全清掉：正文框、大纲框、成绩单、按钮、发现面板、两条日志、步骤轨、折叠态。
   // 以前只藏不清，下一篇写之前旧文章还在 DOM 里；恢复条也要拿掉。
   $("articleBox").innerHTML=""; $("outlineBox").innerHTML="";
-  $("artInfo").innerHTML=""; $("artInfo").style.display="none"; $("artBtns").style.display="none";
+  $("artInfo").innerHTML=""; $("artInfo").style.display="none"; $("artBtns").style.display="none"; renderSeo("","");
   $("artMeta").textContent=""; $("outlineMeta").textContent=""; $("sealRow").style.display="none";
   discReset(); logReset("log1"); logReset("log2");
   [...$("track").children].forEach(li=>li.classList.remove("on","done"));
@@ -1166,7 +1197,10 @@ $("btnRestart").onclick=()=>{
       chip(q.level||"ok",`<b>${q.score}</b> 分`);
       if(q.gain!=null) chip(q.gain>=0.35?"ok":(q.gain>=0.2?"warn":"bad"),`比竞品多给 <b>${Math.round(q.gain*100)}%</b>`);
       if(q.intent_total) chip(q.veto?"bad":(q.intent_covered/q.intent_total>=0.66?"ok":"warn"),`搜索者问题 <b>${q.intent_covered}/${q.intent_total}</b>`);
-      if(q.evidence!=null) chip(q.density_flag?"bad":"ok",`密度 <b>${q.evidence}</b>`+(q.competitor_density!=null?`<i class="vs">/ 竞品 ${q.competitor_density}</i>`:""));
+      if(q.evidence!=null){
+        const beat = q.competitor_density!=null && q.evidence>=q.competitor_density;
+        chip(q.density_flag?"bad":"ok",`密度 <b>${q.evidence}</b>`+(beat?`<i class="vs">/ 竞品 ${q.competitor_density}</i>`:""));
+      }
     }
     stickTl();
   };

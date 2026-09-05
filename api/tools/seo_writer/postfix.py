@@ -486,6 +486,31 @@ def weakest_sections(report: dict, limit: int = 3) -> list[str]:
     return [r["head"] for r in rows[:limit]]
 
 
+def density_below(report: dict) -> bool:
+    """整篇证据密度是否**还没到**竞品中位数。补写循环的继续条件（用户 2026-09-05：不许不如竞品）。
+    打标（density_short，差 20% 以上才标红）和它是两回事：补写往 100% 追，标红只在差得远时亮。"""
+    return density_short(report, tolerance=1.0)
+
+
+_STALE_YEAR = re.compile(r"\b(20[12]\d)\b")
+
+
+def fix_stale_year(text: str) -> tuple[str, list[str]]:
+    """H1 里的往年年份 → 今年。只动 H1：正文里的 2024 可能是真实数据年份，不能碰。
+    2026-09-05 实测 ebike 那篇 H1 带 "(2024)"。"""
+    import datetime as _dt
+    year = _dt.date.today().year
+    m = re.search(r"^#\s+(.+)$", text or "", re.M)
+    if not m:
+        return text, []
+    h1 = m.group(1)
+    stale = [y for y in _STALE_YEAR.findall(h1) if int(y) < year]
+    if not stale:
+        return text, []
+    new = _STALE_YEAR.sub(lambda mm: str(year) if int(mm.group(1)) < year else mm.group(1), h1)
+    return text[:m.start(1)] + new + text[m.end(1):], [f"标题里的 {stale[0]} 改成 {year}"]
+
+
 def density_short(report: dict, tolerance: float = 0.8) -> bool:
     """整篇证据密度是否低于竞品中位数的 tolerance（默认 80%，即差 20% 以上就打标）。
     没有竞品基线就不打标 —— 拿不到锚点的时候不给结论。"""
@@ -601,7 +626,7 @@ mentioned", keep every fact and number, same language, similar length. Output th
 Sentence: {sent}"""
 
 _TITLE_SHAPE = """Rewrite this article title so it reads as {hint}, while keeping the phrase
-"{kw}" in it. 6-12 words, sentence case, no quotes. Output the title only.
+"{kw}" in it. 6-12 words, sentence case, no quotes. Do not add a year. Output the title only.
 
 Title: {h1}"""
 _SHAPE_HINT = {
@@ -753,4 +778,5 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t6, c6 = await fix_opening_gap(t5, material, complete)
     t7, c7 = await fix_orphan_h2(t6, complete)
     t8, c8 = await fix_title_shape(t7, report, (keywords or [""])[0], complete)
-    return t8, changes + c3 + c4 + c5 + c6 + c7 + c8
+    t9, c9 = fix_stale_year(t8)
+    return t9, changes + c3 + c4 + c5 + c6 + c7 + c8 + c9
