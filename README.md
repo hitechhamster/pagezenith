@@ -72,7 +72,7 @@ render.yaml               # Render Blueprint
 
 **中日韩文**：增益 / 密度的证据单元全靠拉丁正则，在 CJK 上算出来的是假数字，所以 `density_audit.audit`
 对 CJK 明说"未测量"、只保留意图覆盖（按字二元组匹配，假名/韩文都认）；Serper 抓取减半
-（全文 10→5 篇、扩展层 5→2 问）；字数目标 ×1.6（按字算）；标题由 `postfix.fix_cjk_headings` 收口。
+（全文 10→5 篇、扩展层 5→2 问）；字数目标 ×2（按字算）；标题由 `postfix.fix_cjk_headings` 收口。
 
 ## 内部 BYOK（不对外展示）
 

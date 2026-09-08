@@ -184,13 +184,13 @@ def is_cjk_lang(language: str) -> bool:
 
 
 def cjk_wordcount_target(n: int, language: str) -> int:
-    """中日韩按字算篇幅：英文 1 词 ≈ 1.6 个汉字 / 假名。
+    """中日韩按字算篇幅：英文 1 词 ≈ 2 个汉字 / 假名（2026-09-08 三篇实测：×1.6 仍写到 128% / 142% / 169%，×2 更贴）。
 
     2026-09-08 实测：判字数给中文 2000「词」，count_words 按字数，模型写了 3902 字
     才把话说完 —— 被判成"偏多 195%"。目标本身就定错了，不是模型写多了。
     """
     if is_cjk_lang(language):
-        return min(4800, int(n * 1.6))
+        return min(6000, int(n * 2.0))
     return n
 
 

@@ -450,6 +450,8 @@ Rules:
 #: FAQ 小节标题按文章语言走。写死英文的话，一篇西班牙语文章末尾会冒出
 #: "Frequently asked questions" —— 交付物里最显眼的位置出一个外语标题。
 _FAQ_HEADS = {
+    # 要排在 "chinese" 前面：按 startswith 顺序匹配，谁先谁赢。2026-09-08 繁中文章出现简体「常见问题」。
+    "chinese (traditional)": "常見問題",
     "english": "Frequently asked questions", "chinese": "常见问题",
     "spanish": "Preguntas frecuentes", "french": "Questions fréquentes",
     "german": "Häufige Fragen", "japanese": "よくある質問", "portuguese": "Perguntas frequentes",

@@ -88,11 +88,20 @@ def test_is_prose():
     ok("英文短文不算", not _is_prose(en[:200]))
 
 
+def test_faq_heading():
+    """繁体文章的 FAQ 标题曾是简体「常见问题」（2026-09-08 繁中实测）。"""
+    print("\n[⑥ FAQ 标题按繁简/语言]")
+    ok("繁体 → 常見問題", postfix._faq_heading("Chinese (Traditional)") == "常見問題", postfix._faq_heading("Chinese (Traditional)"))
+    ok("简体 → 常见问题", postfix._faq_heading("Chinese (Simplified)") == "常见问题")
+    ok("日文 → よくある質問", postfix._faq_heading("Japanese") == "よくある質問")
+    ok("英文兜底", postfix._faq_heading("English") == postfix._FAQ_HEADS["english"])
+
+
 def test_wordcount():
     print("\n[③ 中日韩字数目标]")
     ok("英文不变", cjk_wordcount_target(2000, "English") == 2000)
-    ok("中文 ×1.6", cjk_wordcount_target(2000, "Chinese (Traditional)") == 3200)
-    ok("日文 ×1.6 且封顶 4800", cjk_wordcount_target(3000, "Japanese") == 4800)
+    ok("中文 ×2", cjk_wordcount_target(2000, "Chinese (Traditional)") == 4000)
+    ok("日文 ×2 且封顶 6000", cjk_wordcount_target(3000, "Japanese") == 6000)
     ok("is_cjk_lang 认三种", all(is_cjk_lang(x) for x in ("Chinese (Simplified)", "Japanese", "Korean")) and not is_cjk_lang("Spanish"))
 
 
@@ -121,7 +130,7 @@ def test_audit_cjk_and_veto():
 
 
 def main_() -> int:
-    test_answers(); test_headings(); test_is_prose(); test_wordcount(); test_audit_cjk_and_veto()
+    test_answers(); test_headings(); test_is_prose(); test_faq_heading(); test_wordcount(); test_audit_cjk_and_veto()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     if FAIL:
         print("失败：" + "、".join(FAIL))
