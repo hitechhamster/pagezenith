@@ -269,7 +269,7 @@ class SEOWriter:
 
     # ------------------------------------------------------------ 搜索红海
     async def search_context(self, main_keyword: str, secondary_keyword: str,
-                             n_scrape: int = 10) -> tuple[str, str]:
+                             n_scrape: int = 10, top_up: bool = True) -> tuple[str, str]:
         """两个关键词并发搜索。失败的那个会返回提示串，不阻断流程。
 
         n_scrape = 每个关键词抓多少篇竞品全文。中日韩传 5：测量层在 CJK 上还测不准，
@@ -278,8 +278,8 @@ class SEOWriter:
         if self.search_provider == "none":
             return "", ""
         main, sec = await asyncio.gather(
-            search(self.s, self.search_provider, main_keyword, n_scrape=n_scrape),
-            search(self.s, self.search_provider, secondary_keyword, n_scrape=n_scrape),
+            search(self.s, self.search_provider, main_keyword, n_scrape=n_scrape, top_up=top_up),
+            search(self.s, self.search_provider, secondary_keyword, n_scrape=n_scrape, top_up=top_up),
         )
         return main, sec
 

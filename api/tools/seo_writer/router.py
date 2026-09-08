@@ -214,8 +214,9 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 job.emit({"type": "step", "key": "search", "message": "全网搜索主/次关键词的现有内容…"})
                 from .providers import serper_calls_begin
                 _sc = serper_calls_begin()
+                _cjk = is_cjk_lang(ctx["language"])
                 _m, _s = await wf.search_context(ctx["main_keyword"], ctx["secondary_keyword"],
-                                                 n_scrape=(5 if is_cjk_lang(ctx["language"]) else 10))
+                                                 n_scrape=(5 if _cjk else 10), top_up=not _cjk)
                 # 搜索整个挂了（2026-09-05 实测 Serper 额度用尽返回 400 "Not enough credits"）：
                 # 没有竞品语料就没有事实清单、没有 PAA、增益算出 99% 全是假的。
                 # 与其交付一篇瞎写的，不如停下不扣点。charge() 的 except 分支会退点。

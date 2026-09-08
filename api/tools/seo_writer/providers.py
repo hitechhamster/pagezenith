@@ -333,7 +333,8 @@ def _status_error(status: int, body: str) -> str:
 # --------------------------------------------------------------------------- #
 # 搜索（"红海参考"：给大纲和正文提供竞品语境）
 # --------------------------------------------------------------------------- #
-async def search(s: Settings, provider: str, query: str, n_scrape: int = 10) -> str:
+async def search(s: Settings, provider: str, query: str, n_scrape: int = 10,
+                 top_up: bool = True) -> str:
     """返回归一化后的搜索文本块；失败不抛异常，返回提示串让流程继续走。
 
     2026-08：默认 serper —— 它的 /search 找竞品页、/scrape 抓全文（实测一页 1.4 万字符），
@@ -343,7 +344,7 @@ async def search(s: Settings, provider: str, query: str, n_scrape: int = 10) -> 
         return _mock_search(query)
     try:
         if provider in ("serper", "auto"):
-            return await _search_serper(s, query, n_scrape=n_scrape)
+            return await _search_serper(s, query, n_scrape=n_scrape, top_up=top_up)
         if provider == "exa":
             return await _search_exa(s, query)
         if provider == "tavily":
@@ -432,7 +433,7 @@ async def _serper_post(client: httpx.AsyncClient, s: Settings, path: str, payloa
 _PAGE_CHARS = 16000
 
 
-async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
+async def _search_serper(s: Settings, query: str, n_scrape: int = 10, top_up: bool = True) -> str:
     """Serper 搜索 + 抓正文。前 n_scrape 条全部抓全文 —— 信息增益是"竞品没写的"，
     只看前四名的前 4000 字符会把竞品后半篇写过的东西算成新增（用户 2026-09-05 问到这点）。"""
     if not _pool.has_key(s):
@@ -481,7 +482,9 @@ async def _search_serper(s: Settings, query: str, n_scrape: int = 10) -> str:
         scraped = len(items)
         pool = list(organic)
         page = 1
-        while _prose_pages(out) < _MIN_PROSE and scraped < _MAX_RESULTS:
+        # top_up=False（中日韩）：这个循环是为了凑够 3 篇散文页给密度基线用，
+        # 而 CJK 的密度基线目前根本不测（density_audit.audit），多抓的全是白烧。
+        while top_up and _prose_pages(out) < _MIN_PROSE and scraped < _MAX_RESULTS:
             if scraped >= len(pool) and page < 2:
                 page += 1
                 try:
@@ -551,11 +554,26 @@ _MIN_PROSE = 3        # 至少要有这么多篇文章型竞品，密度基线�
 _MAX_RESULTS = 14     # 最多往后看到第几名（2026-09-05 控成本：抓全文 2 点/页，一篇控制在 50–60 点）
 
 
+_CJK_CHARS = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
+
+
 def _is_prose(text: str) -> bool:
-    """和 density_audit.competitor_density 同一条判据：>150 词，且短行（<6 词）不超过 40%。"""
-    if len(re.findall(r"\S+", text or "")) < 150:
+    """和 density_audit.competitor_density 同一条判据：>150 词，且短行（<6 词）不超过 40%。
+
+    中日韩按**字**算（≥300 字、短行 <12 字）。2026-09-08 繁中实测：原来用 `\\S+` 数词，
+    中文一段话没有空格就是一个 token，永远凑不到 150 → 没有任何中文页算"散文" →
+    补抓循环无视 n_scrape 一路抓到 14 篇，"CJK 减半"形同虚设（53 → 47）。
+    """
+    t = text or ""
+    cjk = len(_CJK_CHARS.findall(t))
+    if cjk > len(re.findall(r"[A-Za-z]", t)):
+        if cjk < 300:
+            return False
+        lines = [l for l in t.splitlines() if l.strip()]
+        return bool(lines) and sum(1 for l in lines if len(l.strip()) < 12) / len(lines) <= 0.4
+    if len(re.findall(r"\S+", t)) < 150:
         return False
-    lines = [l for l in (text or "").splitlines() if l.strip()]
+    lines = [l for l in t.splitlines() if l.strip()]
     return bool(lines) and sum(1 for l in lines if len(l.split()) < 6) / len(lines) <= 0.4
 
 

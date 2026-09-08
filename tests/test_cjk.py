@@ -72,6 +72,22 @@ def test_headings():
     ok("没有大纲时只做去空格", out3.strip() == "## 命盤怎麼看")
 
 
+def test_is_prose():
+    """补抓循环靠它判"散文页"。原来用 \\S+ 数词，中文一段没空格就是一个 token，永远不算散文，
+    循环无视 n_scrape 抓到 14 篇（繁中实测 53→47 只降了 6 次）。"""
+    print("\n[⑤ 中文页也能被判成散文页]")
+    from tools.seo_writer.providers import _is_prose
+    zh = ("紫微斗數是一套以出生時間推算命盤的術數，命盤分十二宮，主星有十四顆。"
+          "看盤先看命宮主星，再看三方四正的會照，最後才看大限與流年的走勢。" * 6)
+    ok("300 字以上的中文长段判成散文", _is_prose(zh))
+    ok("不足 300 字的中文不算", not _is_prose(zh[:120]))
+    short_lines = "\n".join(["紫微斗數", "免費排盤", "命宮主星", "大限流年"] * 40)
+    ok("全是短行（导航/列表页）不算", not _is_prose(short_lines))
+    en = ("Choosing a headphone factory in China takes time and a clear audit checklist. " * 25)
+    ok("英文判据没被改坏", _is_prose(en))
+    ok("英文短文不算", not _is_prose(en[:200]))
+
+
 def test_wordcount():
     print("\n[③ 中日韩字数目标]")
     ok("英文不变", cjk_wordcount_target(2000, "English") == 2000)
@@ -105,7 +121,7 @@ def test_audit_cjk_and_veto():
 
 
 def main_() -> int:
-    test_answers(); test_headings(); test_wordcount(); test_audit_cjk_and_veto()
+    test_answers(); test_headings(); test_is_prose(); test_wordcount(); test_audit_cjk_and_veto()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     if FAIL:
         print("失败：" + "、".join(FAIL))
