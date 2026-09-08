@@ -38,7 +38,7 @@ from .models import ArticleRequest, LANGUAGES, OutlineRequest, PolishRequest, Re
 from .providers import LLM, ProviderError, resolve_llm
 from .session import get_store
 from .voices import VOICES, image_style_list, recommend_voice, voice_list
-from .workflow import (SEOWriter, clean_outline, count_words, extract_h1, grade_verdict, trim_search,
+from .workflow import (SEOWriter, clean_outline, count_words, extract_h1, grade_verdict, is_cjk_lang, trim_search,
                        reading_grade, wordcount_status)
 
 # 配图字节存进会话是为了润色后能重新拼一份带图的 Word。
@@ -68,13 +68,15 @@ def _quality_payload(report: dict[str, Any], angles: list[str] | None = None, ke
     den = report.get("density") or {}
     read = report.get("readability") or {}
     bench = report.get("benchmark") or {}
-    veto = bool(intent.get("veto"))
+    veto = bool(intent.get("veto"))                 # 2026-09-08 起恒为 False：否决降为提示
+    warnings = intent.get("warnings") or intent.get("reasons") or []
     # 总分不再对外（用户 2026-09-05：自己给自己打分太傻）。只给测量值：增益 / 问题覆盖 / 密度 / 可读性。
-    level = "bad" if veto else "ok"
+    level = "bad" if veto else ("warn" if warnings else "ok")
     _ang = density_audit.angle_sections(text, angles or [], keyword=keyword)
     return {
         "level": level,
-        "message": density_audit.format_report(report) if den else "文章太短，未打分",
+        "message": report.get("message_override") or (density_audit.format_report(report) if den else "文章太短，未打分"),
+        "warnings": warnings,
         "parts": report.get("parts") or {},
         "gain": gain.get("ratio") if gain.get("measurable") else None,
         "gain_note": None if gain.get("measurable") else gain.get("reason"),
@@ -212,7 +214,8 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 job.emit({"type": "step", "key": "search", "message": "全网搜索主/次关键词的现有内容…"})
                 from .providers import serper_calls_begin
                 _sc = serper_calls_begin()
-                _m, _s = await wf.search_context(ctx["main_keyword"], ctx["secondary_keyword"])
+                _m, _s = await wf.search_context(ctx["main_keyword"], ctx["secondary_keyword"],
+                                                 n_scrape=(5 if is_cjk_lang(ctx["language"]) else 10))
                 # 搜索整个挂了（2026-09-05 实测 Serper 额度用尽返回 400 "Not enough credits"）：
                 # 没有竞品语料就没有事实清单、没有 PAA、增益算出 99% 全是假的。
                 # 与其交付一篇瞎写的，不如停下不扣点。charge() 的 except 分支会退点。
@@ -420,6 +423,10 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                     buf.append(piece)
                     job.emit({"type": "chunk", "text": piece})
                 text = "".join(buf)
+                # 中日韩标题收口：汉字间空格、整行英文的 H2（2026-09-08 繁中实测「What is 紫 微 斗 數?」）
+                text, _hf = postfix.fix_cjk_headings(text, ctx.get("outline", ""), ctx["language"])
+                if _hf:
+                    job.emit({"type": "step", "key": "postfix", "message": "；".join(_hf[:3])})
 
                 actual = count_words(text)
                 level, wc_msg = wordcount_status(actual, ctx.get("wordcounts", 0))

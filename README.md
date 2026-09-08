@@ -62,6 +62,18 @@ render.yaml               # Render Blueprint
 **加新工具** = `api/tools/<新工具>/router.py` 写个 `APIRouter` → `main.py` `include_router` →
 `web/tools/<新工具>.html` + 首页加张卡片。互不影响。
 
+## PAA 的角色（2026-09-08 起）
+
+正文按主题自身的逻辑组织，搜索页的 People Also Ask **只是参考，不再要求每个问题变 H2**——
+那样文章会变成 PAA 导向（日文实测 8 个 H2 里 5 个是 PAA 原句）。流程：搜索后先过一次意图过滤
+（`workflow.filter_questions`，词面像但意图不同的剔掉），剩下的问题正文顺带答到就算覆盖，
+没答到的在交付前收进文末一个最多 5 条的 FAQ（`postfix.ensure_paa_coverage`）。
+「意图否决」降为提示：覆盖率照显示，不再一票否决。
+
+**中日韩文**：增益 / 密度的证据单元全靠拉丁正则，在 CJK 上算出来的是假数字，所以 `density_audit.audit`
+对 CJK 明说"未测量"、只保留意图覆盖（按字二元组匹配，假名/韩文都认）；Serper 抓取减半
+（全文 10→5 篇、扩展层 5→2 问）；字数目标 ×1.6（按字算）；标题由 `postfix.fix_cjk_headings` 收口。
+
 ## 内部 BYOK（不对外展示）
 
 给我们自己写文章用的通道：**填自己的 OpenRouter + Serper key 跑同一条文章流水线，

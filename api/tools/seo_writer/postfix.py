@@ -987,6 +987,52 @@ async def fix_title_shape(text: str, report: dict, keyword: str,
 
 
 
+# --------------------------------------------------------------------------- #
+# 中日韩标题收口（纯代码）
+# --------------------------------------------------------------------------- #
+_CJK_CHAR = r"[぀-ヿ㐀-䶿一-鿿가-힯]"
+_CJK_SPACED = re.compile("(" + _CJK_CHAR + r")[ \t]+(?=" + _CJK_CHAR + ")")
+_OUTLINE_MARK = re.compile(r"【[^】]*】")
+
+
+def _is_cjk_lang(language: str) -> bool:
+    return any((language or "").lower().startswith(x) for x in ("chinese", "japanese", "korean"))
+
+
+def fix_cjk_headings(text: str, outline: str = "", language: str = "") -> tuple[str, list[str]]:
+    """中日韩文章的标题：汉字之间的空格去掉；整行英文的 H2 用大纲同位置的标题换回来。
+
+    2026-09-08 繁中实测：大纲写的是「什麼是紫微斗數？」，正文模型却写成
+    「What is 紫 微 斗 數?」—— 正文 prompt 的标题规则举的例子全是英文、还要求
+    "4-9 个英文单词"，模型就把汉字拆成"单词"凑数。prompt 已改，这里是代码兜底：
+    prompt 管不住的事不指望它第二次能管住。
+    """
+    if not text or not _is_cjk_lang(language):
+        return text, []
+    ol_h2 = [_OUTLINE_MARK.sub("", l.lstrip("# ")).strip()
+             for l in (outline or "").split("\n") if re.match(r"^##\s", l)]
+    lines = text.split("\n")
+    changes: list[str] = []
+    h2_idx = -1
+    for i, line in enumerate(lines):
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if not m:
+            continue
+        level, title = m.group(1), m.group(2).strip()
+        if level == "##":
+            h2_idx += 1
+        new = _CJK_SPACED.sub(r"\1", title)
+        latin = len(re.findall(r"[A-Za-z]", new))
+        cjk = len(re.findall(_CJK_CHAR, new))
+        # 整行以英文为主的 H2，在一篇 CJK 文章里就是写错了语言 → 用大纲同位置的标题换回来
+        if level == "##" and latin > cjk and 0 <= h2_idx < len(ol_h2) and re.search(_CJK_CHAR, ol_h2[h2_idx]):
+            new = ol_h2[h2_idx]
+        if new != title:
+            changes.append(f"标题修正：「{title[:28]}」→「{new[:28]}」")
+            lines[i] = f"{level} {new}"
+    return "\n".join(lines), changes
+
+
 async def postfix(text: str, keywords: list[str], facts: str,
                   complete: Optional[CompleteFn],
                   report: Optional[dict] = None,

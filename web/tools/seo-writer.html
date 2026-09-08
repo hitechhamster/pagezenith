@@ -1174,7 +1174,7 @@ function renderInfo(){
   card.append(minor);
 
   // ⑦ 只有一票否决才出现；「发布前值得顺手改的」清单不再显示（用户 2026-09-05：这个地方不要）
-  const notes=q.veto?q.veto_reasons:[];
+  const notes=(q.warnings||q.veto_reasons||[]);   // 2026-09-08：否决降为提示，理由照显示
   if(notes.length){
     const d=E("div","todo bad");
     d.append(E("div","k", "⛔ 文章形态和搜索页不匹配 —— 这一项不过，其余分数没意义"));

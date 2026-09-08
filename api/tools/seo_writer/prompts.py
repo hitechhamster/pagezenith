@@ -738,7 +738,8 @@ H2 及以下的子标题写成**人话短句**，不要名词堆。
 「Impactful Video」「Mockup Blindness」——真人不会这么起标题。
 正面：「How Etsy actually reads your tags」「Why 10 listings isn't enough」
 「What to fix before you touch SEO」。
-长度 4-9 个英文单词，能带动词或疑问词就带上。
+长度 4-9 个词（中日韩文 8-18 个字），能带动词或疑问词就带上。
+**标题和正文用同一种语言（{language}）** —— 上面的例子只示意风格，不是让你写英文标题；中日韩文的字与字之间不加空格。
 H1文章标题可以更完整，充分体现文章核心内容和关键词。**标题里不许出现 ultimate / definitive / complete guide 这类俗套词**，也不许加年份。
 
 不要在正文中使用加粗的markdown标记。

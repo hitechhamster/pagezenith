@@ -179,6 +179,21 @@ def grade_verdict(grade: Optional[float], topic_type: str = "") -> tuple[str, st
 #: 润色（尤其全量档）必然会压缩篇幅 —— 实测三篇分别掉到 78%/87%/100%，
 #: 按用户目标写就一定偏少。多写两成，润色完刚好落在目标附近。
 #: **只放大给写作用**，`wordcount_status` 的验收仍按用户原始目标算。
+def is_cjk_lang(language: str) -> bool:
+    return any((language or "").lower().startswith(x) for x in ("chinese", "japanese", "korean"))
+
+
+def cjk_wordcount_target(n: int, language: str) -> int:
+    """中日韩按字算篇幅：英文 1 词 ≈ 1.6 个汉字 / 假名。
+
+    2026-09-08 实测：判字数给中文 2000「词」，count_words 按字数，模型写了 3902 字
+    才把话说完 —— 被判成"偏多 195%"。目标本身就定错了，不是模型写多了。
+    """
+    if is_cjk_lang(language):
+        return min(4800, int(n * 1.6))
+    return n
+
+
 WRITING_TARGET_RATIO = 1.2
 
 
@@ -249,18 +264,22 @@ class SEOWriter:
                 topic=topic, specific=specific or "无", language=language),
             task="wordcount", temperature=0.3)
         m = re.search(r"\b(\d{3,4})\b", raw.strip())
-        if m:
-            return max(800, min(3000, int(m.group(1))))
-        return 1800
+        n = max(800, min(3000, int(m.group(1)))) if m else 1800
+        return cjk_wordcount_target(n, language)
 
     # ------------------------------------------------------------ 搜索红海
-    async def search_context(self, main_keyword: str, secondary_keyword: str) -> tuple[str, str]:
-        """两个关键词并发搜索。失败的那个会返回提示串，不阻断流程。"""
+    async def search_context(self, main_keyword: str, secondary_keyword: str,
+                             n_scrape: int = 10) -> tuple[str, str]:
+        """两个关键词并发搜索。失败的那个会返回提示串，不阻断流程。
+
+        n_scrape = 每个关键词抓多少篇竞品全文。中日韩传 5：测量层在 CJK 上还测不准，
+        多抓的全文多半白烧（用户 2026-09-08 定：CJK 减半）。
+        """
         if self.search_provider == "none":
             return "", ""
         main, sec = await asyncio.gather(
-            search(self.s, self.search_provider, main_keyword),
-            search(self.s, self.search_provider, secondary_keyword),
+            search(self.s, self.search_provider, main_keyword, n_scrape=n_scrape),
+            search(self.s, self.search_provider, secondary_keyword, n_scrape=n_scrape),
         )
         return main, sec
 
@@ -289,9 +308,12 @@ class SEOWriter:
         ctx["gap_angles"] = angles
         # 去掉和竞品语料重复的 URL 在 expand_queries 里做不了（它不知道竞品 URL），这里事后过滤
         try:
-            text = await expand_queries(self.s, (serp.get("questions") or []) + (serp.get("related") or []))
+            # 中日韩：测量层还测不准，扩展层抓回来的语料多半白烧 —— 减半（5→2、3→2）。用户 2026-09-08 定。
+            cjk = is_cjk_lang(ctx.get("language"))
+            text = await expand_queries(self.s, (serp.get("questions") or []) + (serp.get("related") or []),
+                                        max_q=(2 if cjk else 5))
             if angles:
-                text += "\n" + await expand_queries(self.s, angles, per=1, max_q=3)
+                text += "\n" + await expand_queries(self.s, angles, per=1, max_q=(2 if cjk else 3))
         except Exception:  # noqa: BLE001  扩展层抓不到不影响主流程
             logger.warning("子问题扩展搜索失败（已跳过）", exc_info=True)
             return ""

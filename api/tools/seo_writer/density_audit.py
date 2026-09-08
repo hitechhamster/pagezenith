@@ -446,14 +446,41 @@ def _on_topic(question: str, serp: dict[str, Any], keyword: str = "") -> bool:
     return any(t in heads or low.count(t) >= 8 for t in terms)
 
 
+_CJK_RUN = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]+")
+_HIRAGANA_ONLY = re.compile(r"^[぀-ゟ]+$")
+
+
+def is_cjk_text(text: str) -> bool:
+    """中日韩字符多于拉丁字母就按 CJK 处理。"""
+    cjk = sum(len(r) for r in _CJK_RUN.findall(text or ""))
+    latin = len(re.findall(r"[A-Za-z]", text or ""))
+    return cjk > latin
+
+
+def _question_terms(question: str) -> list[str]:
+    """问题的实词。拉丁文按词；中日韩按**字二元组** —— 没有分词器时的标准做法。
+
+    2026-09-08 日文事故：原来只认汉字 {2,}，日文问题主要是假名，整段被忽略，
+    剩下 ≤1 个词永远够不到 need=2，覆盖率结构性为 0 → 把一篇 6 个问题全答到的文章一票否决。
+    韩文同理。纯平假名的二元组（です / ます / には）是语法不是内容，丢掉，否则满篇都"命中"。
+    """
+    q = question.lower()
+    terms = [w for w in re.findall(r"[a-z]{3,}", q) if w not in _STOP]
+    for run in _CJK_RUN.findall(q):
+        for i in range(len(run) - 1):
+            bg = run[i:i + 2]
+            if not _HIRAGANA_ONLY.match(bg):
+                terms.append(bg)
+    return list(dict.fromkeys(terms))
+
+
 def _answers(article: str, question: str) -> bool:
     """这篇文章有没有回答这个问题。
 
     判据：问题的实词有多少落在**同一个小节内**。整篇都出现不算 ——
     词散在六个小节里，说明这问题被顺带提过一句，没有被回答。
     """
-    terms = [w for w in re.findall(r"[a-z]{3,}|[\u4e00-\u9fff]{2,}", question.lower())
-             if w not in _STOP]
+    terms = _question_terms(question)
     if not terms:
         return False
     need = max(2, int(len(terms) * 0.6))
@@ -497,7 +524,9 @@ def intent_coverage(article: str, serp: dict[str, Any], keyword: str = "") -> di
             "shape_match": shape_match, "questions": questions, "off_topic": dropped,
             "covered": hit, "missing": miss,
             "coverage": None if ratio is None else round(ratio, 2),
-            "veto": bool(reasons), "reasons": reasons,
+            # 2026-09-08 用户定：意图覆盖 / 形态不再一票否决，只提示。文章按主题逻辑组织，
+            # PAA 收进文末 FAQ；否决会逼着写手把每个问题都开成 H2，文章就成了 PAA 导向。
+            "veto": False, "reasons": reasons, "warnings": reasons,
             "measurable": bool(titles or questions)}
 
 
@@ -724,6 +753,18 @@ def audit(article: str, *, search_text: str = "", topic_type: str = "",
 
     serp = parse_serp(search_text)
     intent = intent_coverage(article, serp, keyword)
+    if is_cjk_text(article):
+        # 中日韩：增益 / 密度 / 竞品基线的证据单元全靠拉丁正则（大写专名、"3 in 10 sellers"、
+        # 带单位的数字），在 CJK 上算出来的是 0.0 / 0.1 这种假数字（2026-09-08 繁中实测）。
+        # 假数字比没数字糟：它会驱动「密度没追平竞品 → 局部补写」循环去追一个错的目标。
+        # 分词器就位前，明说"未测量"，只保留意图覆盖（已按字二元组适配）和标题数。
+        heads = re.findall(r"^##\s", article, re.M)
+        return {"score": 0, "parts": {}, "intent": intent,
+                "gain": {"measurable": False, "reason": "中日韩文暂不测量增益（缺分词器）"},
+                "density": {}, "benchmark": {"measurable": False, "pages": 0}, "target": {},
+                "readability": {"h2": len(heads), "orphan_h2": [], "lead_to_answer": None},
+                "message_override": "中日韩文：暂只测意图覆盖与结构，增益 / 密度待分词器就位后再测",
+                "unmeasured": ["gain", "density", "readability"]}
     gain = information_gain(article, serp.get("corpus", ""))
     bench = competitor_density(search_text)
     tgt = density_target(search_text)
@@ -819,13 +860,13 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14,
     if questions:
         parts.append("**搜索页上读者正在问的（People Also Ask，真实数据不是推测）：**\n"
                      + "\n".join(f"- {q}" for q in questions)
-                     + "\n**和本文是同一件事的，一个都不能漏**：要么直接拿去当 H2 标题，"
-                       "要么在正文里有一处专门回答它的段落。判据是：把那一段单独摘出来，"
-                       "它本身就是这个问题的完整答案 —— 不能靠上文才读得懂，"
-                       "也不能只是顺带提了一句相关的词。\n"
-                       "**但凡有一个问题和本文的搜索意图不是一回事，跳过它，不要为它开一节。**"
-                       "上游已经过滤过一轮（见 workflow.filter_questions），漏网的由你兜底："
-                       "词面像不算相关，要解决的是不是同一件事才算。")
+                     + "\n这些问题是**参考**，不是大纲。正文按主题自身的逻辑组织；"
+                       "只有正好落在主题脉络上的问题才值得升成 H2，**不要为了覆盖问题而开一节**"
+                       "（2026-09-08 起：文章不是 PAA 导向的，交付前会把没答到的收进文末一个"
+                       "最多 5 条的简短 FAQ，那部分你不用管）。正文顺带答到的，判据是：把那一段"
+                       "单独摘出来，它本身就是这个问题的完整答案。\n"
+                       "和本文搜索意图不是一回事的问题直接忽略（上游过滤过一轮，漏网的由你兜底："
+                       "词面像不算相关，要解决的是不是同一件事才算）。")
     if serp["related"]:
         parts.append("**相关搜索（次级意图，能覆盖就覆盖）：** "
                      + "、".join(serp["related"][:8]))

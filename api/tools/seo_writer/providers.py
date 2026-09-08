@@ -333,7 +333,7 @@ def _status_error(status: int, body: str) -> str:
 # --------------------------------------------------------------------------- #
 # 搜索（"红海参考"：给大纲和正文提供竞品语境）
 # --------------------------------------------------------------------------- #
-async def search(s: Settings, provider: str, query: str) -> str:
+async def search(s: Settings, provider: str, query: str, n_scrape: int = 10) -> str:
     """返回归一化后的搜索文本块；失败不抛异常，返回提示串让流程继续走。
 
     2026-08：默认 serper —— 它的 /search 找竞品页、/scrape 抓全文（实测一页 1.4 万字符），
@@ -343,7 +343,7 @@ async def search(s: Settings, provider: str, query: str) -> str:
         return _mock_search(query)
     try:
         if provider in ("serper", "auto"):
-            return await _search_serper(s, query)
+            return await _search_serper(s, query, n_scrape=n_scrape)
         if provider == "exa":
             return await _search_exa(s, query)
         if provider == "tavily":

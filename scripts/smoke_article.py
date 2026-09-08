@@ -45,15 +45,23 @@ def good(msg: str) -> None:
     print(f"  ok    {msg}")
 
 
-def sse(client: httpx.Client, url: str, payload: dict, headers: dict, label: str) -> list[dict]:
-    """读 SSE 到结束，顺手把 step / error 打出来当进度。"""
+_STREAM_ERRORS = (httpx.ReadTimeout, httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError)
+
+
+def sse(client: httpx.Client, url: str, payload: dict, headers: dict, label: str,
+        reconnects: int = 4) -> list[dict]:
+    """读 SSE 到结束，顺手把 step / error 打出来当进度。
+
+    链路断了（2026-09-08 实测：大陆到香港的长连接会无声挂死，服务端早就 200 返完了）
+    就按 job_id 走产品自带的断线续订 `GET /api/billing/job/{id}?from_index=N`。
+    干活的是后台 Job，SSE 只是订阅者，所以续订拿到的是同一份事件，一条不丢。
+    """
     evts: list[dict] = []
     t0 = time.time()
-    with client.stream("POST", url, json=payload, headers=headers) as r:
-        if r.status_code != 200:
-            body = r.read().decode("utf-8", "replace")[:300]
-            fail(f"{label}: HTTP {r.status_code} {body}")
-            return evts
+    state = {"job_id": None}
+    base = url.split("/api/")[0]
+
+    def consume(r: httpx.Response) -> None:
         buf = ""
         for chunk in r.iter_text():
             buf += chunk
@@ -66,12 +74,45 @@ def sse(client: httpx.Client, url: str, payload: dict, headers: dict, label: str
                         ev = json.loads(line[5:].strip())
                     except ValueError:
                         continue
-                    evts.append(ev)
                     t = ev.get("type")
+                    if t == "job":                       # 订阅头，不是任务事件，不计入 from_index
+                        state["job_id"] = ev.get("job_id") or state["job_id"]
+                        continue
+                    evts.append(ev)
                     if t == "step":
                         print(f"    [{time.time() - t0:5.0f}s] {(ev.get('message') or '')[:110]}")
                     elif t == "error":
                         print(f"    [{time.time() - t0:5.0f}s] ERROR {(ev.get('message') or '')[:200]}")
+
+    def finished() -> bool:
+        return any(e.get("type") in ("done", "error") for e in evts)
+
+    try:
+        with client.stream("POST", url, json=payload, headers=headers) as r:
+            if r.status_code != 200:
+                body = r.read().decode("utf-8", "replace")[:300]
+                fail(f"{label}: HTTP {r.status_code} {body}")
+                return evts
+            consume(r)
+    except _STREAM_ERRORS as exc:
+        print(f"    [{time.time() - t0:5.0f}s] 链路断了（{type(exc).__name__}），已收 {len(evts)} 条事件")
+
+    for attempt in range(1, reconnects + 1):
+        if finished() or not state["job_id"]:
+            break
+        print(f"    [{time.time() - t0:5.0f}s] 重连 #{attempt}：/api/billing/job/{state['job_id']}?from_index={len(evts)}")
+        try:
+            with client.stream("GET", f"{base}/api/billing/job/{state['job_id']}",
+                               params={"from_index": len(evts)}, headers=headers) as r:
+                if r.status_code != 200:
+                    fail(f"{label}: 重连 HTTP {r.status_code} {r.read().decode('utf-8', 'replace')[:200]}")
+                    break
+                consume(r)
+        except _STREAM_ERRORS as exc:
+            print(f"    [{time.time() - t0:5.0f}s] 重连又断（{type(exc).__name__}），已收 {len(evts)} 条")
+            time.sleep(5)
+    if not finished():
+        fail(f"{label}: 重连 {reconnects} 次仍没等到 done（job_id={state['job_id']}）")
     return evts
 
 
@@ -218,7 +259,9 @@ def main() -> int:
     base = args.base.rstrip("/")
     print(f"\n=== {args.keyword} · {args.language} · 配图 {args.images} ===")
 
-    with httpx.Client(timeout=httpx.Timeout(900, connect=30), trust_env=False) as c:
+    # 读超时 120s：服务端每 30s 发一次 SSE 心跳，两分钟没字节就是链路真死了，
+    # 早点断开走重连，别像 900s 那样傻等一刻钟。
+    with httpx.Client(timeout=httpx.Timeout(120, connect=30), trust_env=False) as c:
         print("[1/2] 大纲")
         ev1 = sse(c, f"{base}/api/seo-writer/outline",
                   {"main_keyword": args.keyword, "secondary_keyword": args.secondary,
