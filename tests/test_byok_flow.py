@@ -117,6 +117,31 @@ async def test_gate(client):
 # --------------------------------------------------------------------------- #
 # 2. 配置装配
 # --------------------------------------------------------------------------- #
+def test_reads_from_settings():
+    """凭证必须从 Settings 读，不能是模块加载时从 os.environ 抓的常量。
+
+    2026-09-08 上线事故：byok 原来写的是 `os.environ.get("INTERNAL_PATH")`，
+    而 systemd **不加载** /srv/pagezenith/.env —— 那个文件只有 pydantic-settings 会读。
+    结果 .env 里配好了、进程 environ 里却是空的，页面线上一路 404，
+    本地测试却全绿（测试是用 os.environ 设的，pydantic 也认，所以两边都过）。
+
+    这里改成动 Settings 上的值：只有真的每次从 Settings 取，下面才会跟着变。
+    """
+    print("\n[凭证来源]")
+    from tools.seo_gap.config import get_settings
+    s = get_settings()
+    old = s.internal_path
+    try:
+        s.internal_path = "totally-different-slug"
+        ok("凭证跟着 Settings 走（不是启动时抓的常量）",
+           byok.internal_path() == "totally-different-slug", byok.internal_path())
+        s.internal_path = ""
+        ok("Settings 清空后整个模式关闭", byok.enabled() is False)
+    finally:
+        s.internal_path = old
+    ok("还原后仍启用", byok.enabled() is True)
+
+
 def test_settings():
     print("\n[配置装配]")
     cfg = byok.ByokConfig(openrouter_key="sk-or-user", serper_key="serper-user")
@@ -209,6 +234,7 @@ async def main_() -> int:
     transport = ASGITransport(app=main.app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         await test_gate(client)
+    test_reads_from_settings()
     test_settings()
     test_model_routing()
     await test_no_billing()

@@ -210,7 +210,7 @@ async def payadmin_page():
 import byok as _byok  # noqa: E402
 
 if _byok.enabled():
-    @app.get(f"/{_byok.INTERNAL_PATH}", include_in_schema=False)
+    @app.get(f"/{_byok.internal_path()}", include_in_schema=False)
     async def internal_writer_page():
         return page(WEB / "tools" / "seo-writer.html")
 

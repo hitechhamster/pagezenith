@@ -38,7 +38,6 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -49,8 +48,14 @@ from tools.seo_gap.config import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 # 页面地址 + 请求凭证（同一串）。留空 = BYOK 整个不存在（所有请求走正常的账户/点数路径）。
-# 两头的斜杠都剥掉，这样 env 里写成 `abc` 还是 `/abc/` 都能用。
-INTERNAL_PATH = os.environ.get("INTERNAL_PATH", "").strip().strip("/")
+#
+# ⚠️ 从 Settings 读，**不要**改回 os.environ。2026-09-08 上线时踩过：
+# systemd 不加载 /srv/pagezenith/.env，那个文件只有 pydantic-settings 会读 ——
+# .env 里明明配了 INTERNAL_PATH，进程 environ 里却是空的，页面一路 404。
+# 走 Settings 之后 env 变量和 .env 两条路都认（pydantic 先看 environ 再看 .env）。
+def internal_path() -> str:
+    """当前生效的那串乱码。两头斜杠都剥掉，env 里写 `abc` 或 `/abc/` 都行。"""
+    return (get_settings().internal_path or "").strip().strip("/")
 
 HEADER_TOKEN = "X-Internal-Token"
 HEADER_OPENROUTER = "X-Openrouter-Key"
@@ -94,7 +99,7 @@ class ByokConfig:
 
 
 def enabled() -> bool:
-    return bool(INTERNAL_PATH)
+    return bool(internal_path())
 
 
 def _parse_models(raw: str) -> dict[str, str]:
@@ -118,8 +123,9 @@ def _parse_models(raw: str) -> dict[str, str]:
 
 def _credential_ok(request: Request) -> bool:
     """请求头里那串乱码对不对。用 compare_digest 比，别给计时攻击留缝。"""
+    want = internal_path()
     got = (request.headers.get(HEADER_TOKEN) or "").strip().strip("/")
-    return bool(INTERNAL_PATH and got and hmac.compare_digest(got, INTERNAL_PATH))
+    return bool(want and got and hmac.compare_digest(got, want))
 
 
 def require_token(request: Request) -> None:

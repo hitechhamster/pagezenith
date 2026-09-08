@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     def has_llm_key(self, model: str | None = None) -> bool:
         return bool(self.llm_endpoint(model)[1])
 
+    # 内部 BYOK 通道：一串乱码，同时是页面地址和请求凭证（见 byok.py）。留空 = 整个模式不存在。
+    # ⚠️ 必须走 Settings 读，**不能**用 os.environ —— systemd 不加载 /srv/pagezenith/.env，
+    # 那个文件只有 pydantic-settings 会读。2026-09-08 上线时就是这么栽的：.env 里明明配了，
+    # 服务进程的 environ 里却是空的，页面一直 404。放这里之后 env 变量和 .env 两条路都认。
+    internal_path: str = ""
+
     # 行为开关
     use_mocks: bool = True
     competitor_cache_ttl: int = 604800  # 7 天
