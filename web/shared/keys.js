@@ -22,15 +22,19 @@
   window.fetch = async function (input, init) {
     const url = typeof input === "string" ? input : (input && input.url) || "";
     const isApi = url.startsWith("/api/") || url.includes("//") === false && url.startsWith("api/");
+    let internal = false;
     if (isApi) {
       init = init || {};
       const h = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined) || {});
-      const key = read();
-      if (key) h.set("X-Card-Key", key);
+      // 内部 BYOK 请求自带身份（X-Internal-Token + 用户自己的 key，见 /internal/writer）。
+      // 它不该带卡密，401/402 也不该把人踢去登录页/充值页 —— 那两页对内部人毫无意义，
+      // 而且会把"口令填错了"这条真正的错误提示冲掉。
+      internal = h.has("X-Internal-Token");
+      if (!internal) { const key = read(); if (key) h.set("X-Card-Key", key); }
       init.headers = h;
     }
     const resp = await rawFetch(input, init);
-    if (isApi && (resp.status === 401 || resp.status === 402)) {
+    if (isApi && !internal && (resp.status === 401 || resp.status === 402)) {
       // 身份失效 / 点数不足：统一提示 + 送去登录，免得每个工具页各写一遍。
       // ⚠️ 两类接口必须排除，它们的 401 有别的含义、也各自处理：
       //   /api/auth/* —— 登录密码错也是 401，在登录页跳登录页会死循环

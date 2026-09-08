@@ -23,9 +23,10 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+import byok
 from billing import jobs
 from billing.deps import Card, InsufficientCredits, charge, require_card
 from billing.pricing import REVISE_EXTRA, REVISE_FREE, TIERS, price, tier_of
@@ -101,16 +102,30 @@ def _quality_payload(report: dict[str, Any], angles: list[str] | None = None, ke
     }
 
 
-def _build(tier: str, usage_sink=None) -> tuple[Any, SEOWriter]:
-    """按档位组装 Settings + 工作流实例。搜索源固定 Serper（搜索+抓正文一家全包）。"""
-    s = get_settings()
+def _settings_for(card: Card | None):
+    """这次请求用哪份配置：内部 BYOK 用用户自己的 key，其余一律服务端配置。"""
+    cfg = getattr(card, "byok", None)
+    return byok.settings_for(cfg) if cfg is not None else get_settings()
+
+
+def _build(tier: str, usage_sink=None, card: Card | None = None) -> tuple[Any, SEOWriter]:
+    """按档位组装 Settings + 工作流实例。搜索源固定 Serper（搜索+抓正文一家全包）。
+
+    内部 BYOK 走同一条流水线，只是 Settings 里的 key 换成用户自己的、
+    模型表由用户在页面上指定（见 byok.py）。工作流本身完全不知道有这回事。
+    """
+    cfg = getattr(card, "byok", None)
+    s = _settings_for(card)
     try:
-        target = resolve_llm(s, tier)
+        target = resolve_llm(s, tier, models=(cfg.models if cfg is not None else None))
     except ProviderError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     from ..seo_gap.clients import serper_pool
     if not serper_pool.has_key(s) and not s.use_mocks:
-        raise HTTPException(status_code=500, detail="服务端未配置 SERPER_KEY，请联系站长。")
+        raise HTTPException(
+            status_code=400 if cfg is not None else 500,
+            detail=("你填的 Serper Key 是空的。" if cfg is not None
+                    else "服务端未配置 SERPER_KEY，请联系站长。"))
     return s, SEOWriter(s, LLM(target, s, usage_sink=usage_sink), "serper")
 
 
@@ -141,6 +156,17 @@ async def health() -> dict:
             "revise_free": REVISE_FREE}
 
 
+@router.get("/byok/defaults")
+async def byok_defaults(request: Request) -> dict:
+    """内部 BYOK 页的默认模型表。口令不对就是 404，对外等于不存在。
+
+    单独开一个接口而不是让页面自己抄一份，是因为价目表已经吃过写死的亏：
+    后端改了、前端没跟着动，页面上显示的数就是错的。模型名同理。
+    """
+    byok.require_token(request)
+    return {"slots": list(byok.SLOTS), "models": byok.DEFAULT_MODELS}
+
+
 # --------------------------------------------------------------------------- #
 # 第一步：大纲
 # --------------------------------------------------------------------------- #
@@ -154,7 +180,7 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
     async def work(job) -> None:
         async with _sema:
             async with charge(card, TOOL, "outline", tier, job_id=job.id) as tx:
-                _, wf = _build(tier, tx.report_tokens)
+                _, wf = _build(tier, tx.report_tokens, card)
                 ctx: dict[str, Any] = {
                     "main_keyword": req.main_keyword.strip(),
                     "secondary_keyword": req.secondary_keyword.strip(),
@@ -301,7 +327,7 @@ async def outline_revise(req: ReviseRequest, card: Card = Depends(require_card))
     async def work(job) -> None:
         async with _sema:
             async with charge(card, TOOL, "revise", tier, credits=cost, job_id=job.id) as tx:
-                _, wf = _build(tier, tx.report_tokens)
+                _, wf = _build(tier, tx.report_tokens, card)
                 buf: list[str] = []
                 async for piece in wf.stream_revise(ctx, req.feedback.strip()):
                     buf.append(piece)
@@ -353,10 +379,16 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
         raise HTTPException(status_code=400, detail="还没有大纲，请先完成第一步。")
 
     tier = tier_of(ctx.get("tier") or req.tier)
-    s = get_settings()
+    s = _settings_for(card)
     want_images = bool(ctx.get("enable_images"))
-    if want_images and not s.gemini_api_key and not s.use_mocks:
-        want_images = False
+    # 出图 key 没配就别收钱也别承诺。线上是 Gemini 原生，内部 BYOK 走 OpenRouter ——
+    # 光看 gemini_api_key 会把 BYOK 的配图误判成"不可用"。
+    if want_images and not s.use_mocks:
+        from .providers import provider_for
+        img_key = (s.openrouter_api_key
+                   if provider_for(s, s.writer_image_model) == "openrouter"
+                   else s.gemini_api_key)
+        want_images = bool(img_key)
     n_images = int(ctx.get("images_per_article", 2)) if want_images else 0
 
     # 正文 + 配图一次性算清楚：图是按张收费的，别让用户点完才发现点数不够
@@ -366,7 +398,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
     async def work(job) -> None:
         async with _sema:
             async with charge(card, TOOL, "article", tier, credits=total, job_id=job.id) as tx:
-                _, wf = _build(tier, tx.report_tokens)
+                _, wf = _build(tier, tx.report_tokens, card)
                 job.emit({"type": "step", "key": "article", "message": "撰写文章…"})
                 buf: list[str] = []
                 async for piece in wf.stream_article(ctx):
@@ -540,7 +572,7 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
     async def work(job) -> None:
         async with _sema:
             async with charge(card, TOOL, "polish", tier, job_id=job.id) as tx:
-                _, wf = _build(tier, tx.report_tokens)
+                _, wf = _build(tier, tx.report_tokens, card)
                 tt = ctx.get("topic_type", "")
                 g0 = reading_grade(before, language)
                 job.emit({"type": "step", "key": "polish",

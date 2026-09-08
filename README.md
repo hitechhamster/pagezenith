@@ -62,6 +62,35 @@ render.yaml               # Render Blueprint
 **加新工具** = `api/tools/<新工具>/router.py` 写个 `APIRouter` → `main.py` `include_router` →
 `web/tools/<新工具>.html` + 首页加张卡片。互不影响。
 
+## 内部 BYOK（不对外展示）
+
+给我们自己写文章用的通道：**填自己的 OpenRouter + Serper key 跑同一条文章流水线，
+不扣站内点数**。线上那套点数、熔断、单卡日限保护的是我们的账单，对自带 key 的请求没有意义，
+所以这条路把它们整个绕开了 —— 也正因为绕开了，它必须自带门禁。
+
+- **开关**：`.env` 里的 `INTERNAL_PATH` = 一串随便生成的乱码。**留空 = 这条通道不存在**
+  （路由压根不注册，API 也一律 404）。
+- **入口**：`https://站点/<那串乱码>`。首页和导航都不挂，猜不到就进不去。
+- **凭证 = 地址本身**：页面把 URL 里那串乱码原样放进请求头，后端拿它比对。
+  所以只藏页面是不够的这件事已经处理了 —— 能白嫖的是 `/api/seo-writer/*`，凭证该带还得带，
+  只是不用人手输。收藏一条 URL 就行。
+- **用法**：进页面 → 左上角面板填「OpenRouter Key + Serper Key」→ 保存到本机。
+  两把 key 只存这台浏览器的 localStorage，按请求走 header 传，服务端用完即弃、不落库不打日志。
+- **换地址**：改 `.env` 重启，旧 URL 当场失效（旧书签点进去会看到「这条地址已失效」）。
+  ⚠️ URL 里带秘密的代价：会落进浏览器历史、书签和沿途访问日志。这一页不引任何外部资源
+  （字体都在本地），所以不会顺着 Referer 漏给第三方。
+- **模型可改**：面板里「模型设置」有五个槽位（outline / article / polish / utility / image），
+  默认值从 `/api/seo-writer/byok/defaults` 取（即 `api/byok.py` 的 `DEFAULT_MODELS`），
+  是线上那套 Gemini 阵容在 OpenRouter 上的写法（2026-09-08 对着 OpenRouter 的公开模型表核对过，
+  五个当时都在）。OpenRouter 会下架 / 改名模型，哪天某个失效就在页面上改，不用改代码重启。
+- **不落库**：不扣点、不进 usage 流水、不进「我的记录」。产物直接在页面上下载 Word。
+
+实现全部收在 `api/byok.py` 一个文件里（门禁 + 配置装配），工具流水线一行没动：
+`require_card` 认出 BYOK 身份 → `charge()` 短路不扣点 → `_build()` 换成用户的 key 和模型表。
+两个容易踩的坑已经堵上：Serper 要覆盖 `serper_keys`（key 池读的是它，只覆盖 `serper_key` 会被
+服务端那几把盖掉）；服务端的 Gemini / DeepSeek / SerpApi key 必须**清空**，否则某个分支没命中
+就会静默花公司的钱。`tests/test_byok_flow.py` 盯着这两条。
+
 ## 本地运行
 
 ```bash
@@ -76,7 +105,16 @@ python -m uvicorn main:app --app-dir api --port 8000
 # 打开 http://localhost:8000 → 右上角填 API Key → 用工具
 ```
 
-测试：`PYTHONPATH=api python tests/test_semantic_dedup.py`
+测试（都在 mock 下跑，不花钱）：
+
+```bash
+PYTHONPATH=api python tests/test_semantic_dedup.py
+cd api && python ../tests/test_billing_flow.py   # 卡密/扣点/退点/断线不丢
+cd api && python ../tests/test_byok_flow.py      # 内部 BYOK：门禁 + 配置装配 + 不计费
+```
+
+`test_account_flow.py` / `test_pay_flow.py` 要**先起服务器**再跑
+（`python tests/test_account_flow.py http://127.0.0.1:8012`）。
 
 ## 部署到 Render
 

@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     llm_model: str = "gemini-3.1-flash-lite"
     writer_model: str = ""  # 增补段落写作模型；留空=同 llm_model
 
+    # 钉死 LLM 供应商，覆盖"按模型名前缀推断"的默认规则（见 providers.provider_for）。
+    # 只有内部 BYOK 模式会设它（见 byok.py）：那边只有一把 OpenRouter key，而线上模型名
+    # 是 Gemini 直连命名、`google/` 前缀又同样被推断成 Gemini 直连 —— 不钉死就会
+    # 拿着 OpenRouter 的 key 去打 Gemini 的地址。留空 = 维持原来的自动推断。
+    force_llm_provider: str = ""
+
     # DeepSeek（润色专用；**国内直连，绝不能走代理** —— 走了反而不通）
     # 别名：DEEPSEEK_API_KEY 是各项目里通行的叫法，两种都认，省得部署时对不上。
     deepseek_key: str = Field(

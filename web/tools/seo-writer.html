@@ -309,6 +309,20 @@
     .appbar{height:auto;flex-wrap:wrap;padding:10px 14px;gap:8px} .ab-cost{display:none}
     .empty{margin-top:24px}
   }
+
+  /* 内部 BYOK 面板（只在 /internal/writer 显示，见页脚 BYOK 段的 JS） */
+  .tl .sec.byok{border-color:var(--amberline);background:var(--amberbg)}
+  .byok .note{font-size:11.5px;color:var(--amber);line-height:1.7;margin:0 0 10px}
+  .byok .models{display:none;margin-top:4px}
+  .byok .models.on{display:block}
+  .byok .models .f label{font-family:var(--font-mono,monospace);font-size:11px}
+  .byok .more{font-size:12px;color:var(--accent);cursor:pointer;user-select:none;margin:2px 0 8px;display:inline-block}
+  .byok .state{font-size:12px;color:var(--muted);margin-left:10px}
+  .byok .state.ok{color:var(--green)} .byok .state.bad{color:var(--red)}
+  /* 计费界面在 BYOK 页没有意义。用 CSS 藏而不是 JS 藏：keys.js 的 paintAuthNav()
+     在 DOMContentLoaded 时会把 [data-when] 重新显示出来，JS 藏会被它覆盖回去。 */
+  body.byok .ab-cost, body.byok #keybtn,
+  body.byok [data-when], body.byok [data-cost]{display:none !important}
 </style>
 </head>
 <body class="app">
@@ -328,6 +342,22 @@
 <main class="two">
   <!-- 左：过程。参数 → 时间线（每一步一条，审批和成绩单也是时间线上的条目） -->
   <aside class="tl" id="tl">
+    <!-- 内部 BYOK：默认不存在，只有 /internal/writer 会把它显示出来。
+         口令和两把 key 只写 localStorage，不会随页面发到别处。 -->
+    <div class="sec byok" id="byokSec" style="display:none">
+      <h2>BYOK · 用自己的 key</h2>
+      <p class="note">这一页不扣站内点数，所有调用都记在你自己的 key 上。<br />
+        key 只存在这台浏览器，服务端用完即弃。<b>别把地址栏这条 URL 发出去</b>。</p>
+      <div class="row"><div class="f"><label>OpenRouter Key <b>*</b></label>
+        <input id="bkOpenrouter" type="password" autocomplete="off" placeholder="sk-or-..." /></div></div>
+      <div class="row"><div class="f"><label>Serper Key <b>*</b></label>
+        <input id="bkSerper" type="password" autocomplete="off" placeholder="serper.dev 的 key" /></div></div>
+      <span class="more" id="bkMore">模型设置 ▾</span>
+      <div class="models" id="bkModels"></div>
+      <div class="btns"><button id="bkSave" class="ghost">保存到本机</button>
+        <span class="state" id="bkState"></span></div>
+    </div>
+
     <div class="sec" id="sec1">
       <h2>参数</h2>
       <div class="foldbar" id="fold1"><span id="fold1Text"></span></div>
@@ -539,9 +569,121 @@ $("specHint").addEventListener("click",e=>{
   box.focus(); box.setSelectionRange(box.value.length, box.value.length);
 });
 
+/* ---------- 内部 BYOK ----------
+   用自己的 OpenRouter + Serper key 跑流水线，不扣站内点数
+   （后端 require_card 认下面这几个头，见 api/byok.py）。
+
+   凭证 = **地址栏里那串乱码本身**（服务端的 INTERNAL_PATH）。页面把它原样放进
+   请求头，所以内部人只要收藏一条 URL，不用记也不用输口令。
+   只藏页面是不够的 —— 能白嫖的是 /api/seo-writer/* 那几个端点，凭证该带还得带。
+
+   怎么知道自己在 BYOK 模式：这张 HTML 只有两个出口 —— 公开的 /tools/seo-writer，
+   和那条乱码地址。所以"路径不是 /tools/ 开头"就是 BYOK，不用服务端往页面里注东西。
+
+   为什么是"同一个页面 + 一个面板"而不是复制一份页面：这个写手页两周内被改了
+   二十多次，复制出去的那份必然很快就和主线长歪。BYOK 多出来的只有请求头，
+   正文流程一行都没动。 */
+const BYOK = (() => {
+  const ON = !location.pathname.startsWith("/tools/");
+  // 地址里的乱码就是凭证。存 localStorage 的只有两把 key，凭证不落盘 ——
+  // 它已经在 URL 里了，再存一份只是多一处泄漏点。
+  const SECRET = location.pathname.replace(/^\/+|\/+$/g, "");
+  const LS = "pz_byok";
+  let cfg = { openrouter:"", serper:"", models:{} };
+  let slots = [], defaults = {};
+
+  try { Object.assign(cfg, JSON.parse(localStorage.getItem(LS) || "{}")); } catch(e) {}
+  cfg.models = cfg.models || {};
+  delete cfg.token;                       // 口令时代的残留，清掉
+
+  const $$ = id => document.getElementById(id);
+  const ready = () => ON && !!(SECRET && cfg.openrouter && cfg.serper);
+
+  /* 四个头。body 完全不动，四个端点共用。 */
+  function headers(){
+    if(!ready()) return {};
+    return { "X-Internal-Token": SECRET,
+             "X-Openrouter-Key": cfg.openrouter,
+             "X-Serper-Key": cfg.serper,
+             "X-Byok-Models": JSON.stringify(cfg.models || {}) };
+  }
+
+  function state(msg, cls){
+    const el=$$("bkState"); if(!el) return;
+    el.textContent=msg||""; el.className="state"+(cls?" "+cls:"");
+  }
+
+  function persist(){ try{ localStorage.setItem(LS, JSON.stringify(cfg)); }catch(e){} }
+
+  function renderModels(){
+    const box=$$("bkModels"); if(!box) return;
+    box.innerHTML="";
+    slots.forEach(k=>{
+      const row=document.createElement("div"); row.className="row";
+      const f=document.createElement("div"); f.className="f";
+      const lab=document.createElement("label"); lab.textContent=k;
+      const inp=document.createElement("input");
+      inp.value=cfg.models[k] || defaults[k] || "";
+      // ⚠️ 显示什么就必须发什么。只在 oninput 里写 cfg.models 的话，用户没手动
+      // 改过的槽位就是空的，请求里发的是 {}，实际用的是后端默认值 —— 眼下两边
+      // 恰好一样所以看不出来，等后端默认值一改，页面上显示的模型就是骗人的。
+      cfg.models[k]=inp.value;
+      inp.autocomplete="off"; inp.spellcheck=false;
+      inp.oninput=()=>{ cfg.models[k]=inp.value.trim(); persist(); };
+      f.append(lab,inp); row.append(f); box.append(row);
+    });
+    persist();
+  }
+
+  /* 默认模型表从服务端取，不在前端另抄一份 —— 价目表已经吃过写死的亏。
+     地址不对时这个接口返回 404，正好拿来当"这条 URL 还有效吗"的检验
+     （改过 INTERNAL_PATH 之后，旧书签点进来就会看到这句提示）。 */
+  async function loadDefaults(){
+    try{
+      const r=await fetch("/api/seo-writer/byok/defaults",
+                          {headers:{"X-Internal-Token":SECRET}});
+      if(!r.ok){
+        state(r.status===404 ? "这条地址已失效（服务端 INTERNAL_PATH 变了或没配）"
+                             : "取模型表失败", "bad");
+        return false;
+      }
+      const j=await r.json();
+      slots=j.slots||[]; defaults=j.models||{};
+      renderModels();
+      state(ready() ? "已就绪 · 不扣站内点数" : "填两把 key 就能开跑",
+            ready() ? "ok" : "");
+      return true;
+    }catch(e){ state("取模型表失败","bad"); return false; }
+  }
+
+  function init(){
+    if(!ON) return;
+    $$("byokSec").style.display="";
+    document.body.classList.add("byok");   // 计费界面靠 CSS 藏，见上面的说明
+    const tool=document.querySelector(".ab-tool");
+    if(tool) tool.textContent="SEO 文章生成 · BYOK（内部）";
+
+    $$("bkOpenrouter").value=cfg.openrouter;
+    $$("bkSerper").value=cfg.serper;
+    $$("bkMore").onclick=()=>{ $$("bkModels").classList.toggle("on"); };
+    $$("bkSave").onclick=async()=>{
+      cfg.openrouter=$$("bkOpenrouter").value.trim();
+      cfg.serper=$$("bkSerper").value.trim();
+      persist();
+      await loadDefaults();
+    };
+    loadDefaults();
+  }
+
+  return { on:ON, ready, headers, init, state };
+})();
+BYOK.init();
+
 /* ---------- SSE ---------- */
 async function sse(url,body,onEvent){
-  const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const resp=await fetch(url,{method:"POST",
+    headers:{"Content-Type":"application/json", ...BYOK.headers()},
+    body:JSON.stringify(body)});
   if(!resp.ok){ const t=await resp.json().catch(()=>({detail:resp.status})); throw new Error(t.detail||resp.status); }
   const reader=resp.body.getReader(), dec=new TextDecoder();
   let buf="";
@@ -792,7 +934,11 @@ function throttleRender(box,getText){
 $("btnOutline").onclick=async()=>{
   const mainKw=$("mainKw").value.trim(), secKw=$("secKw").value.trim(), topic=$("topic").value.trim();
   if(!mainKw||!secKw||!topic){ setStatus("主关键词 / 次关键词 / 主题 都要填。",true); return; }
-  if(!CARD.has()){ setStatus("请先登录。",true); CARD.onBadgeClick(); return; }
+  if(BYOK.on){
+    // BYOK 页没有账户概念，凭证在地址里，只需检查两把 key 填了没
+    if(!BYOK.ready()){ setStatus("请先填 OpenRouter Key 和 Serper Key，并点「保存到本机」。",true);
+                       BYOK.state("两把 key 都要填","bad"); return; }
+  }else if(!CARD.has()){ setStatus("请先登录。",true); CARD.onBadgeClick(); return; }
 
   $("btnOutline").disabled=true;
   $("sec2").style.display=""; $("sec3").style.display="none";

@@ -197,6 +197,24 @@ async def payadmin_page():
     return page(WEB / "payadmin.html")
 
 
+# ---- 内部 BYOK 版文章生成：用自己的 OpenRouter + Serper key 跑，不扣点 ----
+# 地址就是 .env 里 INTERNAL_PATH 那串乱码，**按 env 动态注册**，没配就压根不存在
+# 这条路由（不是注册了再判 404 —— 不存在的路由连"存在过"的痕迹都没有）。
+#
+# 用字面量路径而不是 /internal/{slug} 这种路径参数，是为了让 URL 真的是一串乱码，
+# 不带任何"这里有内部功能"的提示词。注册在 StaticFiles 挂载之前，所以能命中。
+#
+# 页面刻意**复用** tools/seo-writer.html 而不是另开一份：那个页面这两周被改了
+# 二十几次（两窗格工作台、时间线、成绩单…），复制一份出去必然很快就长歪。
+# 页面自己按 location.pathname 判断在不在 BYOK 模式，多出来的只是一个配置面板。
+import byok as _byok  # noqa: E402
+
+if _byok.enabled():
+    @app.get(f"/{_byok.INTERNAL_PATH}", include_in_schema=False)
+    async def internal_writer_page():
+        return page(WEB / "tools" / "seo-writer.html")
+
+
 @app.get("/tools/{name}")
 async def tool_page(name: str):
     f = WEB / "tools" / f"{name}.html"

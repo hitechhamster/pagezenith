@@ -26,6 +26,7 @@ from typing import Any, Optional
 
 from fastapi import Header, HTTPException, Request
 
+import byok
 from . import store, usage_sink
 from . import accounts
 from .pricing import est_cost_cny, est_image_cost_cny, price, tier_of
@@ -79,20 +80,37 @@ class Card:
     ip: str
     remaining: int
     label: str = ""
+    # 内部 BYOK：带上就表示这次用的是**用户自己的 key**，不扣点、不落库。
+    # 类型是 byok.ByokConfig，这里不标注是为了不让计费层反向依赖工具层。
+    byok: Any = None
+
+
+# BYOK 的"余额"。不参与任何真实扣点（charge 对 BYOK 直接短路），
+# 只是让 _precheck 那种"够不够点"的前置检查一律通过。
+_BYOK_REMAINING = 10 ** 9
 
 
 async def require_card(request: Request,
                        x_card_key: str = Header(default="", alias="X-Card-Key")) -> Card:
     """FastAPI 依赖：解析身份 + 熔断检查。挂在每个花钱的端点上。
 
-    两种身份，解析出来都是一个 card_hash，下游计费逻辑一律不区分：
+    三种身份，解析出来都是一个 card_hash，下游计费逻辑一律不区分：
+      0. **内部 BYOK**（最优先）—— 带 X-Internal-Token + 自己的 key，绕开全部计费
       1. **登录会话**（主路径）—— cookie 里的 token → 账户 → 它的钱包卡
       2. **裸卡密**（兼容路径）—— X-Card-Key 请求头，给老用户和未登录直接用卡的场景
 
     会话优先。名字还叫 require_card 是为了不动六个工具路由的签名，
-    它现在的语义是"要求一个能扣点的身份"。
+    它现在的语义是"要求一个能干活的身份"。
     """
     ip = _client_ip(request)
+
+    # BYOK 走在最前面：它花的是自己的钱，所以**不查余额、不进全局熔断、不吃单卡日限**
+    # —— 那三道闸保护的是我们的账单，对自带 key 的请求没有意义。
+    # 门禁在 byok.parse() 里（口令不对直接 401/404，不会静默落到下面的正常路径）。
+    cfg = byok.parse(request)
+    if cfg is not None:
+        return Card(key_hash=cfg.identity, ip=ip, remaining=_BYOK_REMAINING,
+                    label="内部 BYOK", byok=cfg)
 
     acct = accounts.account_by_token(request.cookies.get(SESSION_COOKIE, ""))
     if acct is not None:
@@ -217,6 +235,20 @@ async def charge(card: Card, tool: str, action: str, tier: str = "basic",
     """先扣后干活；失败自动退点。"""
     tier = tier_of(tier)
     need = price(tool, action, tier) if credits is None else int(credits)
+
+    # 内部 BYOK：花的是用户自己的 key。不扣点、不写 usage、不落 results ——
+    # 后两样都以 card_hash 为主键，BYOK 的 hash 是合成的、库里没有对应的卡，
+    # 写进去只会污染流水和别人的「我的记录」。usage_sink 仍然挂着，
+    # 好让 LLM 层的 report_tokens 有地方去（值被丢弃，不进熔断统计）。
+    if card.byok is not None:
+        tx = Charge(card=card, tool=tool, action=action, tier=tier, credits=0)
+        sink_token = usage_sink.set_sink(tx.report_tokens)
+        try:
+            yield tx
+        finally:
+            usage_sink.reset_sink(sink_token)
+        return
+
     tx = Charge(card=card, tool=tool, action=action, tier=tier, credits=need)
 
     if need > 0:

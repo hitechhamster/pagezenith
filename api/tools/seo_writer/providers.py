@@ -79,11 +79,17 @@ class LLMTarget:
     api_key: str
     model: str          # 兜底模型(未命中槽位时用)
     tier: str = "pro"
+    # 槽位 → 模型 的整表覆盖。只有内部 BYOK 会传（用户在页面上自己填 OpenRouter 模型名）；
+    # 线上为 None,照旧读 billing.pricing 的档位表。
+    models: Optional[dict] = None
 
     def model_for_task(self, task: str) -> str:
         """按任务取模型;取不到就用兜底。"""
+        slot = TASK_SLOT.get(task, "utility")
+        if self.models:
+            return self.models.get(slot) or self.model
         from billing.pricing import model_for
-        return model_for(TASK_SLOT.get(task, "utility"), self.tier) or self.model
+        return model_for(slot, self.tier) or self.model
 
 
 def provider_of(model: str) -> str:
@@ -95,6 +101,15 @@ def provider_of(model: str) -> str:
     return "openrouter"
 
 
+def provider_for(s: Settings, model: str) -> str:
+    """该用哪个供应商：settings 钉死了就听它,否则按模型名推断。
+
+    BYOK 只有一把 OpenRouter key,而它填的模型名多半带 `google/` 前缀 ——
+    走 provider_of 会被判成 Gemini 直连,拿着 OpenRouter 的 key 去打 Google 的地址。
+    """
+    return (getattr(s, "force_llm_provider", "") or "").strip() or provider_of(model)
+
+
 def endpoint_of(s: Settings, provider: str) -> tuple[str, str]:
     if provider == "deepseek":
         return s.deepseek_base_url, s.deepseek_key
@@ -103,22 +118,27 @@ def endpoint_of(s: Settings, provider: str) -> tuple[str, str]:
     return s.openrouter_base_url, s.openrouter_api_key
 
 
-def resolve_llm(s: Settings, tier: str = "pro", model: Optional[str] = None) -> LLMTarget:
+def resolve_llm(s: Settings, tier: str = "pro", model: Optional[str] = None,
+                models: Optional[dict] = None) -> LLMTarget:
     """解析一次调用需要的三件套。
 
     2026-08 两处结构变化：
     1. 模型选择权在服务端（billing.pricing.TIERS 按**任务**映射），用户只选档位；
     2. 不再绑死 OpenRouter —— 大纲/正文走 Gemini 直连、润色走 DeepSeek 直连，
        少一层加价，key 也都是现成的。供应商由模型名自动推断。
-    """
-    from billing.pricing import model_for as _model_for  # 延迟导入，避免循环依赖
 
-    m = model or _model_for("article", tier)
-    prov = provider_of(m)
+    `models` 是内部 BYOK 的整表覆盖（见 byok.py）；线上传 None，行为不变。
+    """
+    if models:
+        m = model or models.get("article") or ""
+    else:
+        from billing.pricing import model_for as _model_for  # 延迟导入，避免循环依赖
+        m = model or _model_for("article", tier)
+    prov = provider_for(s, m)
     base, key = endpoint_of(s, prov)
     if not key and not s.use_mocks:
         raise ProviderError(f"服务端未配置 {prov} 的 API Key，请联系站长。")
-    return LLMTarget(prov, base, key, m, tier=tier)
+    return LLMTarget(prov, base, key, m, tier=tier, models=models)
 
 
 class LLM:
@@ -149,7 +169,7 @@ class LLM:
         """按任务取 (model, base_url, api_key) —— 一次生成里会跨供应商：
         大纲/正文 Gemini、润色 DeepSeek、杂活 Gemini flash-lite。"""
         model = self.t.model_for_task(task)
-        prov = provider_of(model)
+        prov = provider_for(self.s, model)
         base, key = endpoint_of(self.s, prov)
         return model, (base or self.t.base_url), (key or self.t.api_key)
 
@@ -176,7 +196,7 @@ class LLM:
             # OpenAI 兼容端点收 reasoning_effort 字符串。按**实际供应商**判断，
             # 不能看 self.t.provider —— 一次生成里会跨供应商（见 _route）。
             model, _, _ = self._route(task)
-            if provider_of(model) == "openrouter":
+            if provider_for(self.s, model) == "openrouter":
                 payload["reasoning"] = {"effort": "low", "exclude": True}
             else:
                 payload["reasoning_effort"] = "low"
@@ -633,15 +653,24 @@ async def _search_exa(s: Settings, query: str) -> str:
 #   1. 必须走代理 —— 香港机器直连 Google 会被拒（老实现完全没设代理）
 #   2. 回包结构不同 —— Gemini 是 candidates[].content.parts[].inlineData
 #   3. 守卫换成 gemini_api_key
+def _image_prompt(prompt: str, style_suffix: str) -> str:
+    return f"{prompt}. {style_suffix} Wide horizontal aspect ratio (16:9)."
+
+
 async def generate_image(s: Settings, prompt: str, style_suffix: str) -> Optional[bytes]:
-    """返回图片字节；失败返回 None（配图失败不该拖垮整篇文章）。"""
+    """返回图片字节；失败返回 None（配图失败不该拖垮整篇文章）。
+
+    两条路：线上走 Gemini 原生（下面这段），内部 BYOK 只有 OpenRouter key，
+    走 `_generate_image_openrouter`。按 force_llm_provider 分流，不猜模型名。
+    """
     if s.use_mocks:
         return None
+    if provider_for(s, s.writer_image_model) == "openrouter":
+        return await _generate_image_openrouter(s, prompt, style_suffix)
     key = s.gemini_api_key
     if not key:
         return None
-    enhanced = (f"{prompt}. {style_suffix} "
-                "Wide horizontal aspect ratio (16:9).")
+    enhanced = _image_prompt(prompt, style_suffix)
     payload = {
         "contents": [{"parts": [{"text": enhanced}]}],
         "generationConfig": {"responseModalities": ["IMAGE"]},
@@ -664,6 +693,63 @@ async def generate_image(s: Settings, prompt: str, style_suffix: str) -> Optiona
         return None
     except Exception as exc:
         logger.warning("配图生成失败: %s", exc)
+        return None
+
+
+def _data_url_bytes(url: str) -> Optional[bytes]:
+    """`data:image/png;base64,xxxx` → 字节。不是 data URL 就返回 None。"""
+    if not isinstance(url, str) or not url.startswith("data:"):
+        return None
+    _, _, b64 = url.partition(",")
+    try:
+        return base64.b64decode(b64)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _generate_image_openrouter(s: Settings, prompt: str,
+                                     style_suffix: str) -> Optional[bytes]:
+    """OpenRouter 出图（内部 BYOK 用）。失败返回 None，与 Gemini 分支同语义。
+
+    OpenRouter 的出图不是独立端点，是 chat/completions 加 `modalities`，
+    图片挂在 `choices[0].message.images[].image_url.url`（data URL）。
+    回包结构按几种见过的写法都试一遍 —— 出图这块各家字段名不稳定，
+    与其赌一种，不如全兜住；真取不到就把结构打进日志，下次照着修。
+    """
+    key = s.openrouter_api_key
+    if not key:
+        return None
+    payload = {
+        "model": s.writer_image_model,
+        "messages": [{"role": "user", "content": _image_prompt(prompt, style_suffix)}],
+        "modalities": ["image", "text"],
+    }
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+               "HTTP-Referer": s.site_url, "X-Title": "PageZenith SEO Writer (BYOK)"}
+    try:
+        async with httpx.AsyncClient(timeout=s.writer_timeout, trust_env=False,
+                                     proxy=s.proxy_for(s.openrouter_base_url)) as client:
+            resp = await client.post(f"{s.openrouter_base_url}/chat/completions",
+                                     headers=headers, json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+        msg = ((result.get("choices") or [{}])[0].get("message") or {})
+        for item in (msg.get("images") or []):
+            if isinstance(item, str):                      # 直接给 data URL
+                got = _data_url_bytes(item)
+            elif isinstance(item, dict):                   # {"image_url":{"url":...}} 或 {"url":...}
+                iu = item.get("image_url")
+                got = _data_url_bytes((iu or {}).get("url") if isinstance(iu, dict) else iu
+                                      or item.get("url") or "")
+            else:
+                got = None
+            if got:
+                return got
+        logger.warning("OpenRouter 出图没解析到图片，message 字段：%s",
+                       sorted(msg.keys()))
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("配图生成失败（OpenRouter）: %s", exc)
         return None
 
 
