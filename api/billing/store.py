@@ -291,8 +291,17 @@ def _prune_results(card_hash: str, keep: int = 50, max_age_days: int = 90) -> No
 
 
 def list_results(card_hash: str, limit: int = 50) -> list[dict[str, Any]]:
+    """最近的排在前面。
+
+    ⚠️ 必须带 rowid 这个次级排序键：ts 是**秒**级的，写正文和写大纲常常落在同一秒
+    （mock 下几乎必然），只按 ts 排时 SQLite 返回的顺序就是不确定的 ——
+    「我的记录」里同秒的两条会随机换位，test_billing_flow 的「按 id 取回结果」
+    也因此长期 flaky（实测干净主线上 6 次挂 5 次）。
+    id 是随机 uuid，排不出先后；rowid 才是插入顺序。
+    """
     rows = conn().execute(
-        "SELECT id,ts,tool,title,summary FROM results WHERE card_hash=? ORDER BY ts DESC LIMIT ?",
+        "SELECT id,ts,tool,title,summary FROM results WHERE card_hash=? "
+        "ORDER BY ts DESC, rowid DESC LIMIT ?",
         (card_hash, limit),
     ).fetchall()
     return [dict(r) for r in rows]
