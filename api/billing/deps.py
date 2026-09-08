@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -37,9 +36,11 @@ SESSION_COOKIE = "pz_session"
 logger = logging.getLogger(__name__)
 
 # 护栏参数（可用环境变量覆盖）
-CARD_DAILY_LIMIT = int(os.environ.get("BILLING_CARD_DAILY_LIMIT", "200"))      # 点/天/卡
-GLOBAL_DAILY_COST_CNY = float(os.environ.get("BILLING_GLOBAL_DAILY_CNY", "300"))
-BAD_KEY_PER_HOUR = int(os.environ.get("BILLING_BAD_KEY_PER_HOUR", "20"))
+from tools.seo_gap.config import get_settings  # noqa: E402
+_S = get_settings()
+CARD_DAILY_LIMIT = int(_S.billing_card_daily_limit)        # 点/天/卡
+GLOBAL_DAILY_COST_CNY = float(_S.billing_global_daily_cny)
+BAD_KEY_PER_HOUR = int(_S.billing_bad_key_per_hour)
 
 _bad_attempts: dict[str, list[float]] = {}
 

@@ -277,6 +277,7 @@ class SEOWriter:
         try:
             raw = await self.llm.complete(
                 P.GAP_ANGLES_PROMPT.format(
+                    language=ctx.get("language") or "English",
                     topic=ctx.get("topic", ""), main_keyword=ctx.get("main_keyword", ""),
                     titles="\n".join(f"- {t}" for t in (serp.get("titles") or [])[:20]) or "- (none)",
                     questions="\n".join(f"- {q}" for q in (serp.get("questions") or [])[:8]) or "- (none)"),
@@ -369,6 +370,7 @@ class SEOWriter:
         try:
             raw = await self.llm.complete(
                 P.FACTS_PROMPT.format(
+                    language=ctx.get("language") or "English",
                     topic=ctx.get("topic", ""),
                     main_keyword=ctx.get("main_keyword", ""),
                     secondary_keyword=ctx.get("secondary_keyword", ""),

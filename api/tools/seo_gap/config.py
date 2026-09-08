@@ -1,6 +1,7 @@
 """集中配置。从环境变量 / .env 读取，所有模块共用同一个 settings 实例。"""
 
 from functools import lru_cache
+from typing import Optional
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
@@ -113,6 +114,20 @@ class Settings(BaseSettings):
     # 那个文件只有 pydantic-settings 会读。2026-09-08 上线时就是这么栽的：.env 里明明配了，
     # 服务进程的 environ 里却是空的，页面一直 404。放这里之后 env 变量和 .env 两条路都认。
     internal_path: str = ""
+
+    # ── 运行时开关：以前散落在各处直接读 os.environ，现在统一收进来 ──
+    # 2026-09-08 审计：systemd 不加载 /srv/pagezenith/.env（只有 pydantic-settings 读它），
+    # 所以任何 os.environ.get() 在线上都读不到 .env 里的值。INTERNAL_PATH 先炸了一次，
+    # 审计又翻出 6 处同款：.env 里配着 BILLING_DB / 两个熔断阈值，代码全在用默认值，
+    # 今天没出事纯属默认值恰好相等。tests/test_guards.py 用 AST 盯着不许再新增。
+    billing_db: str = ""                        # 空 = 仓库 data/billing.db（见 store.db_path）
+    billing_card_daily_limit: int = 200         # 点/天/卡，防单个买家脚本狂刷
+    billing_global_daily_cny: float = 300.0     # 全站日成本熔断（¥），读 usage 表真实成本
+    billing_bad_key_per_hour: int = 20          # 单 IP 每小时无效卡密尝试上限
+    polish_model: str = ""                      # 润色模型零代码切换/回滚；空 = TIERS 里的
+    signup_credits: Optional[int] = None        # 注册送点；被薅时设 0 重启即关；None = 代码默认
+    log_level: str = "INFO"
+    enable_docs: bool = False                   # /docs /redoc 会把内部端点摊给任何人，默认关
 
     # 行为开关
     use_mocks: bool = True

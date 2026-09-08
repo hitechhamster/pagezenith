@@ -121,7 +121,12 @@ cd api && python ../tests/test_byok_flow.py      # 内部 BYOK：门禁 + 配置
 cd api && python ../tests/test_postfix_language.py  # 补写块跟着文章语言走
 cd api && python ../tests/test_keyword_casing.py     # 关键词转小写再进流水线
 cd api && python ../tests/test_paa_intent_filter.py  # PAA 按搜索意图过滤（含 fail-open 护栏）
+cd api && python ../tests/test_guards.py             # 四道永久护栏：os.environ / 日志脱敏 / prompt 语言 / .env 可见
 ```
+
+**真 API 冒烟**（要花钱，约 ¥1-2/篇；改过 prompt 或流水线就跑一遍）：
+`python scripts/smoke_article.py --base https://pagezenith.com --card PZ-… --keyword … --secondary … --topic … --language English --images 2`
+断言英文文章无中文、关键词句中不大写、配图张数对得上、无大纲元信息漏入，并把 H2 列出来给人眼看有没有跑题。
 
 `test_account_flow.py` / `test_pay_flow.py` 要**先起服务器**再跑
 （`python tests/test_account_flow.py http://127.0.0.1:8012`）。

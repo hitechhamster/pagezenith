@@ -184,6 +184,7 @@ FACTS_PROMPT = """从下面的参考资料里，抽出所有**可核实的事实
 {secondary_search_results}
 {reddit_context}
 
+清单条目用 {language} 写（产品名、标准号、专有名词保持原文）。
 直接输出清单，不要任何前言或解释。"""
 
 
@@ -209,7 +210,8 @@ Questions searchers ask (People Also Ask):
 List 3 angles a reader of this topic would need that NONE of the pages above cover. Each angle must be
 factual and searchable: a cost breakdown, a regulation or standard, a procedure, a comparison, a failure
 mode, a spec range, a timeline. Not "case studies", not "our experience", not "future trends".
-Output exactly 3 lines, each a short English search query (4-9 words) for that angle. No numbering, no commentary."""
+Output exactly 3 lines, each a short search query (4-9 words) for that angle, written in {language}
+(the same language the article will be written in). No numbering, no commentary."""
 
 GAP_ANGLES_BLOCK = """
 

@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import os
 
 # ── 模型档位 ────────────────────────────────────────────────────────
 # 全部走 OpenRouter（服务端 key）。用户只能看到 basic / pro。
@@ -49,7 +48,8 @@ DEFAULT_TIER = "pro"
 # 润色模型可用环境变量覆盖，零代码切换/回滚（气流报告线同款做法）。
 # 背景：DeepSeek 偶尔把思考链当正文吐出来，且它的 reasoning token 占润色成本的九成以上。
 # 换 Gemini 前先跑 work/pz-polish-bakeoff 对拍，别凭感觉切。
-_POLISH_OVERRIDE = os.getenv("POLISH_MODEL", "").strip()
+from tools.seo_gap.config import get_settings  # noqa: E402
+_POLISH_OVERRIDE = (get_settings().polish_model or "").strip()
 if _POLISH_OVERRIDE:
     TIERS["pro"]["polish"] = _POLISH_OVERRIDE
 
@@ -146,10 +146,8 @@ def signup_credits() -> int:
     API 成本。兜底有两层：全局 ¥300/天熔断，以及这里 ——
     **被薅时把 .env 里 SIGNUP_CREDITS 设成 0，重启即关，不用改代码。**
     """
-    raw = os.getenv("SIGNUP_CREDITS", "").strip()
-    if raw.isdigit():
-        return int(raw)
-    return SIGNUP_CREDITS_DEFAULT
+    v = get_settings().signup_credits
+    return int(v) if v is not None and v >= 0 else SIGNUP_CREDITS_DEFAULT
 
 
 def price(tool: str, action: str, tier: str = DEFAULT_TIER) -> int:

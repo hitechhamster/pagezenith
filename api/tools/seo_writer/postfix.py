@@ -132,12 +132,14 @@ _REWRITE_SENT = """Rewrite this one sentence so that the phrase "{kw}" appears o
 (no "Figuring out…", "Implementing…", "To …", "True …", "When we evaluate…").
 Keep the meaning, keep the length within ±20%, keep the same tone. If the phrase cannot fit naturally,
 drop it from the sentence entirely and say the same thing in plain words.
+Write in {language}.
 Output the rewritten sentence only — no quotes, no explanation.
 
 Sentence: {sent}"""
 
 _REWRITE_HEAD = """Rewrite this article heading so it does NOT contain the exact phrase "{kw}".
-Keep the meaning, 4-9 words, plain language, sentence case. Output the heading text only — no # marks, no quotes.
+Keep the meaning, 4-9 words, plain wording, sentence case. Write in {language}.
+Output the heading text only — no # marks, no quotes.
 
 Heading: {head}"""
 
@@ -152,7 +154,7 @@ def _clean_llm_line(s: str) -> str:
 
 
 async def fix_keyword_stuffing(text: str, keywords: list[str], complete: Optional[CompleteFn],
-                               max_rounds: int = 2) -> tuple[str, list[str]]:
+                               max_rounds: int = 2, language: str = "English") -> tuple[str, list[str]]:
     """对检测器命中的句子逐句重写；重写后再检测，两轮仍命中就删句 / 从标题里去掉关键词。
 
     complete(prompt, task=..., temperature=...) -> str 是 LLM 调用；传 None 就只走删除兜底。
@@ -168,7 +170,8 @@ async def fix_keyword_stuffing(text: str, keywords: list[str], complete: Optiona
             return None
         tpl = _REWRITE_HEAD if is_head else _REWRITE_SENT
         try:
-            raw = await complete(tpl.format(kw=kw, sent=unit.strip(), head=unit.strip().lstrip("# ").strip()),
+            raw = await complete(tpl.format(kw=kw, sent=unit.strip(), head=unit.strip().lstrip("# ").strip(),
+                                            language=language or "English"),
                                  task="polish", temperature=0.2)
         except Exception:  # noqa: BLE001  改不动就走兜底
             return None
@@ -791,7 +794,7 @@ Hard limits — the rewrite is discarded if any is broken:
   new tool, product, file name, spreadsheet, template, standard, number or percentage. If the
   paragraph has no concrete item, just get to the point faster; do not invent one.
 - Do not add first-person claims ("we control / we audit / in our work").
-- Keep every concrete item already in the paragraph. Same language, same or shorter length.
+- Keep every concrete item already in the paragraph. Write in {language}; same or shorter length.
 Output the rewritten paragraph only.
 
 Paragraph:
@@ -843,7 +846,7 @@ def introduced_names(new: str, *sources: str) -> list[str]:
 
 _SELF_CONTAINED = """Rewrite this single sentence so it can stand alone as the first sentence of a
 section titled "{head}": name the subject explicitly instead of "this / that / it / they / as
-mentioned", keep every fact and number, same language, similar length. Output the sentence only.
+mentioned", keep every fact and number, similar length. Write in {language}. Output the sentence only.
 
 Sentence: {sent}"""
 
@@ -861,7 +864,7 @@ _SHAPE_HINT = {
 
 
 async def fix_opening_gap(text: str, material: str, complete: Optional[CompleteFn],
-                          max_gap: int = 120) -> tuple[str, list[str]]:
+                          max_gap: int = 120, language: str = "English") -> tuple[str, list[str]]:
     """开头 120 词之内没有任何可照做的信息 → 只重写第一段，让它两句内给出答案。
 
     验证：空转词数真的变小、没编统计、没丢原段里的具体信息、没变长。一条不过就丢。
@@ -887,7 +890,7 @@ async def fix_opening_gap(text: str, material: str, complete: Optional[CompleteF
         return text, []
     para = m2.group(0)
     try:
-        raw = await complete(_LEAD_REWRITE.format(para=para), task="polish", temperature=0.3)
+        raw = await complete(_LEAD_REWRITE.format(para=para, language=language or "English"), task="polish", temperature=0.3)
     except Exception:  # noqa: BLE001
         return text, []
     new = re.sub(r"^```[a-z]*\s*|\s*```$", "", (raw or "").strip()).strip()
@@ -918,7 +921,7 @@ async def fix_opening_gap(text: str, material: str, complete: Optional[CompleteF
 
 
 async def fix_orphan_h2(text: str, complete: Optional[CompleteFn],
-                        max_heads: int = 3) -> tuple[str, list[str]]:
+                        max_heads: int = 3, language: str = "English") -> tuple[str, list[str]]:
     """H2 首句靠 This / 因此 接上文 → 单句改写成自足的，最多改三节。
     验证：改完不再以指代词开头、句里的具体信息一个不少。"""
     if complete is None or not text:
@@ -937,7 +940,8 @@ async def fix_orphan_h2(text: str, complete: Optional[CompleteFn],
         if first not in body:
             continue
         try:
-            raw = await complete(_SELF_CONTAINED.format(head=head, sent=first),
+            raw = await complete(_SELF_CONTAINED.format(head=head, sent=first,
+                                                        language=language or "English"),
                                  task="polish", temperature=0.2)
         except Exception:  # noqa: BLE001
             continue
@@ -989,7 +993,7 @@ async def postfix(text: str, keywords: list[str], facts: str,
                   material: str = "", language: str = "English") -> tuple[str, list[str]]:
     """交付前跑一遍：假经验句（纯代码）→ 塞词（小调用 + 闭环）→ 空转小节补写（同上）。"""
     t1, c1 = strip_fake_experience(text, facts)
-    t2, c2 = await fix_keyword_stuffing(t1, keywords, complete)
+    t2, c2 = await fix_keyword_stuffing(t1, keywords, complete, language=language)
     t2, c2b = strip_fabricated_files(t2, material or facts)
     if not report:
         t2, c2c = debacktick_prose(t2)
@@ -1000,7 +1004,7 @@ async def postfix(text: str, keywords: list[str], facts: str,
     t5, c5 = dedupe_repeated_stats(t4)
     # 句子级的三个局部修，各只改一次
     t6, c6 = t5, []          # 开头改写已停用（用户 2026-09-05：不要求开头 100 词内给具体信息）
-    t7, c7 = await fix_orphan_h2(t6, complete)
+    t7, c7 = await fix_orphan_h2(t6, complete, language=language)
     t8, c8 = await fix_title_shape(t7, report, (keywords or [""])[0], complete)
     t9, c9 = fix_stale_year(t8)
     t10, c10 = fix_title_cliche(t9)

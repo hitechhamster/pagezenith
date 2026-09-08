@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 import sys
 
@@ -22,11 +21,62 @@ import sys
 # 钱包卡不存在 —— 它们的全部价值就是"出事时有人能看见"。
 # 放在其它 import 之前：模块级 getLogger 拿到的是同一个对象，handler 在 emit 时才查，
 # 所以顺序不影响已创建的 logger。
+from tools.seo_gap.config import get_settings  # noqa: E402  最早导入：日志级别也从 Settings 读
+
 logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    level=(get_settings().log_level or "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     stream=sys.stdout,        # systemd 直接收进 journal
 )
+
+
+# ---- 日志脱敏：任何 handler 出去的文本先把秘密打成 *** ----
+# 2026-09-08 事故：Gemini 出图把 key 放在 ?key= 查询串里，httpx 的 INFO 日志原样打整条 URL，
+# 用户（和公司自己）的 key 明文躺进 journal。那次是改了那一处调用；这里是**兜底**：
+# 以后无论谁再往 URL / 异常文本里塞 key、token、Bearer，出日志前一律被抹掉。
+# 挂在 handler 上而不是 logger 上 —— logger 级 filter 不作用于从子 logger 传播上来的记录，
+# 而 httpx 恰恰是子 logger。
+_SECRET_PATTERNS = [
+    (re.compile(r"([?&](?:key|api_key|apikey|token|access_token|secret|password)=)[^&\s'\"]+", re.I), r"\1***"),
+    (re.compile(r"(\bBearer\s+)[A-Za-z0-9._\-]{8,}"), r"\1***"),
+    (re.compile(r"((?:x-goog-api-key|x-api-key|authorization)[\"':\s]+)[A-Za-z0-9._\-]{8,}", re.I), r"\1***"),
+    # 已知 key 形态：Google（AIza…、AQ.…）、OpenRouter
+    (re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}"), "AIza***"),
+    (re.compile(r"\bAQ\.[0-9A-Za-z_\-]{20,}"), "AQ.***"),
+    (re.compile(r"\bsk-or-v1-[0-9a-f]{16,}"), "sk-or-v1-***"),
+]
+
+
+def redact(text: str) -> str:
+    for pat, rep in _SECRET_PATTERNS:
+        text = pat.sub(rep, text)
+    return text
+
+
+class _RedactFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:  # noqa: BLE001  格式化本身炸了就别再碰它
+            return True
+        clean = redact(msg)
+        if clean != msg:
+            record.msg, record.args = clean, ()
+        if record.exc_text:
+            record.exc_text = redact(record.exc_text)
+        return True
+
+
+def _install_redaction() -> None:
+    seen: set[int] = set()
+    for name in (None, "uvicorn", "uvicorn.error", "uvicorn.access", "httpx", "httpcore"):
+        for h in logging.getLogger(name).handlers:
+            if id(h) not in seen:
+                h.addFilter(_RedactFilter())
+                seen.add(id(h))
+
+
+_install_redaction()
 from pathlib import Path
 
 # Windows 上 Playwright 需要 Proactor 事件循环（见 router 内说明）。Linux 无影响。
@@ -40,7 +90,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from tools.seo_gap.config import get_settings
 from billing import store as billing_store
 from billing.router import router as billing_router
 
@@ -90,7 +139,7 @@ def page(path: Path) -> HTMLResponse:
 
 # 自动文档默认关闭：/docs /redoc /openapi.json 会把全部内部端点（含店主接口的结构）
 # 摊开给任何人看。本地开发想要就设 ENABLE_DOCS=1。
-_DOCS = os.environ.get("ENABLE_DOCS", "").strip() in ("1", "true", "yes")
+_DOCS = bool(get_settings().enable_docs)
 app = FastAPI(title="页面科技 — AI 跨境营销工具",
               docs_url="/docs" if _DOCS else None,
               redoc_url="/redoc" if _DOCS else None,

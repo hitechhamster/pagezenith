@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import secrets
 import sqlite3
 import string
@@ -34,7 +33,8 @@ CARD_PREFIX = "PZ"
 
 
 def db_path() -> Path:
-    p = os.environ.get("BILLING_DB") or str(Path(__file__).resolve().parents[2] / "data" / "billing.db")
+    from tools.seo_gap.config import get_settings   # 延迟导入：store 在启动最早期就被 main 调
+    p = get_settings().billing_db or str(Path(__file__).resolve().parents[2] / "data" / "billing.db")
     Path(p).parent.mkdir(parents=True, exist_ok=True)
     return Path(p)
 
