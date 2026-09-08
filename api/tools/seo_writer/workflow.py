@@ -743,7 +743,17 @@ class SEOWriter:
         out: dict[str, bytes] = {}
         style = P.image_style_suffix(topic_type, image_style)
         for item in extract_image_prompts(article)[:limit]:
-            png = await generate_image(self.s, item["prompt"], style)
+            # 重试两次。2026-09-08 实测：Gemini 出图接口会成片返回 503（过载），
+            # 两张图两次调用全 503，整篇交付出来一张图没有、正文里留着占位符。
+            # 出图是按张收费的动作，值得多等几秒再放弃；4xx（key 错 / 模型名错）
+            # 不会因为重试变好，generate_image 内部已经吞掉并返回 None，这里只是再给两次机会。
+            png = None
+            for attempt in range(3):
+                png = await generate_image(self.s, item["prompt"], style)
+                if png:
+                    break
+                if attempt < 2:
+                    await asyncio.sleep(3 * (attempt + 1))
             if png:
                 out[item["placeholder"]] = png
             await asyncio.sleep(1)

@@ -291,7 +291,7 @@ Hard rules:
 - Statistics are locked: do NOT introduce any percentage, price, bounce rate, sample size,
   or "studies show / according to" claim that is not already in the reference material below.
   Concrete operating values from your own expertise are fine, stated as recommendations.
-- Same language as the section.
+- Write in {language}.
 
 ## Items the article already has (do not repeat any of these)
 {have_list}
@@ -307,7 +307,8 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
                               complete: Optional[CompleteFn],
                               max_sections: int = 4,
                               sections: Optional[list[str]] = None,
-                              budget: Optional[int] = None) -> tuple[str, list[str]]:
+                              budget: Optional[int] = None,
+                              language: str = "English") -> tuple[str, list[str]]:
     """给检测器判为「空转」的小节**追加**一块具体信息，原文一个字不动。
 
     2026-09-05 从「整节重写」改成「只加不换」。重写版实测 8 次补写落地 0 次：
@@ -366,7 +367,8 @@ async def boost_thin_sections(text: str, report: dict, facts: str, material: str
                                               else "3-8 bullet points, each a COMPLETE SENTENCE stating the value and what it means "
                                                    "for the reader (no bare noun-phrase fragments; NO table — the article already has enough tables)"),
                                        have_list="\n".join(f"- {u}" for u in have[:80]) or "- (none)",
-                                       material=re.sub(r"`([^`\n]+)`", r"\1", material[:12000]), section=block),
+                                       material=re.sub(r"`([^`\n]+)`", r"\1", material[:12000]), section=block,
+                                       language=language or "English"),
                 task="polish", temperature=0.3)
         except Exception:  # noqa: BLE001  补写失败不该拖垮整篇交付
             continue
@@ -993,7 +995,7 @@ async def postfix(text: str, keywords: list[str], facts: str,
         t2, c2c = debacktick_prose(t2)
         return t2, c1 + c2 + c2b + c2c
     changes = c1 + c2 + c2b
-    t3, c3 = await boost_thin_sections(t2, report, facts, material, complete)
+    t3, c3 = await boost_thin_sections(t2, report, facts, material, complete, language=language)
     t4, c4 = await ensure_paa_coverage(t3, report, material, language, complete)
     t5, c5 = dedupe_repeated_stats(t4)
     # 句子级的三个局部修，各只改一次

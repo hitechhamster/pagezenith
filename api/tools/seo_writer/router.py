@@ -509,7 +509,7 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                     text, more = await postfix.boost_thin_sections(
                         text, report, ctx.get("facts", ""),
                         ctx.get("facts", "") + "\n" + serp_corpus + "\n" + (ctx.get("expansion") or ""), wf.llm.complete,
-                        sections=weak, budget=budget_left)
+                        sections=weak, budget=budget_left, language=ctx["language"])
                     budget_left = max(0, int(1.2 * words_at_draft) - density_audit.word_count(text))
                     if not more:
                         break

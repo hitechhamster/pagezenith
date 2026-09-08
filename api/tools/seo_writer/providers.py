@@ -677,11 +677,15 @@ async def generate_image(s: Settings, prompt: str, style_suffix: str) -> Optiona
     }
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{s.writer_image_model}:generateContent")
+    # ⚠️ key 走 header，**绝不能**放回 `params={"key": ...}`。
+    # 2026-09-08 实测：httpx 的 INFO 日志会把完整 URL 打进 journal，于是用户的
+    # Gemini key 明文躺在系统日志里 —— 直接打脸"服务端用完即弃、不落库不打日志"。
+    # BYOK 那条路尤其严重：那是别人的 key。x-goog-api-key 与 ?key= 等价，且不进日志。
     try:
         async with httpx.AsyncClient(timeout=s.writer_timeout,
                                      proxy=s.proxy_for("gemini"),
                                      trust_env=False) as client:
-            resp = await client.post(url, params={"key": key}, json=payload)
+            resp = await client.post(url, headers={"x-goog-api-key": key}, json=payload)
             resp.raise_for_status()
             result = resp.json()
         # parts 里 text 和图混着，取第一个带数据的（下划线/驼峰两种键名都见过）
