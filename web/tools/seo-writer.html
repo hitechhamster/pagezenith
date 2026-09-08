@@ -348,10 +348,15 @@
       <h2>BYOK · 用自己的 key</h2>
       <p class="note">这一页不扣站内点数，所有调用都记在你自己的 key 上。<br />
         key 只存在这台浏览器，服务端用完即弃。<b>别把地址栏这条 URL 发出去</b>。</p>
-      <div class="row"><div class="f"><label>OpenRouter Key <b>*</b></label>
-        <input id="bkOpenrouter" type="password" autocomplete="off" placeholder="sk-or-..." /></div></div>
+      <div class="row"><div class="f"><label>模型供应商</label>
+        <select id="bkProvider">
+          <option value="openrouter">OpenRouter（一把 key 通吃，需预付费充值）</option>
+          <option value="gemini">Gemini 直连（线上那条线，模型按它调优）</option>
+        </select></div></div>
+      <div class="row"><div class="f"><label id="bkLlmLabel">OpenRouter Key <b>*</b></label>
+        <input id="bkLlm" type="password" autocomplete="off" placeholder="sk-or-v1-..." /></div></div>
       <div class="row"><div class="f"><label>Serper Key <b>*</b></label>
-        <input id="bkSerper" type="password" autocomplete="off" placeholder="serper.dev 的 key" /></div></div>
+        <input id="bkSerper" type="password" autocomplete="off" placeholder="serper.dev 的 key（两家都要用它搜索）" /></div></div>
       <span class="more" id="bkMore">模型设置 ▾</span>
       <div class="models" id="bkModels"></div>
       <div class="btns"><button id="bkSave" class="ghost">保存到本机</button>
@@ -589,23 +594,40 @@ const BYOK = (() => {
   // 它已经在 URL 里了，再存一份只是多一处泄漏点。
   const SECRET = location.pathname.replace(/^\/+|\/+$/g, "");
   const LS = "pz_byok";
-  let cfg = { openrouter:"", serper:"", models:{} };
-  let slots = [], defaults = {};
+  /* 两家供应商各存各的 key 和模型表 —— 来回切的时候不会互相覆盖。
+     keys[p] = 那家的 key；models[p] = 那家的五个槽位。 */
+  let cfg = { provider:"openrouter", keys:{}, models:{}, serper:"" };
+  let slots = [], defaults = {};          // defaults[provider][slot]
 
   try { Object.assign(cfg, JSON.parse(localStorage.getItem(LS) || "{}")); } catch(e) {}
-  cfg.models = cfg.models || {};
+  cfg.keys = cfg.keys || {}; cfg.models = cfg.models || {};
+  // 单供应商时代的残留：那时 cfg.openrouter 是一把裸 key，cfg.models 是扁平表
+  if(cfg.openrouter){ cfg.keys.openrouter = cfg.keys.openrouter || cfg.openrouter; delete cfg.openrouter; }
+  if(cfg.models.outline){ cfg.models = { openrouter: cfg.models }; }
   delete cfg.token;                       // 口令时代的残留，清掉
 
   const $$ = id => document.getElementById(id);
-  const ready = () => ON && !!(SECRET && cfg.openrouter && cfg.serper);
+  const P = () => cfg.provider || "openrouter";
+  const key = () => (cfg.keys[P()] || "").trim();
+  const models = () => (cfg.models[P()] = cfg.models[P()] || {});
+  const ready = () => ON && !!(SECRET && key() && cfg.serper);
 
-  /* 四个头。body 完全不动，四个端点共用。 */
+  /* 五个头。body 完全不动，四个端点共用。 */
   function headers(){
     if(!ready()) return {};
     return { "X-Internal-Token": SECRET,
-             "X-Openrouter-Key": cfg.openrouter,
+             "X-Byok-Provider": P(),
+             "X-Byok-Llm-Key": key(),
              "X-Serper-Key": cfg.serper,
-             "X-Byok-Models": JSON.stringify(cfg.models || {}) };
+             "X-Byok-Models": JSON.stringify(models()) };
+  }
+
+  /* key 那栏的标题和占位符跟着供应商走，别让人对着 OpenRouter 的提示填 Gemini 的 key */
+  function paintProvider(){
+    const gem = P()==="gemini";
+    const lab=$$("bkLlmLabel"), inp=$$("bkLlm");
+    if(lab) lab.innerHTML = (gem?"Gemini API Key":"OpenRouter Key") + ' <b>*</b>';
+    if(inp) inp.placeholder = gem ? "AIza..." : "sk-or-v1-...";
   }
 
   function state(msg, cls){
@@ -617,19 +639,20 @@ const BYOK = (() => {
 
   function renderModels(){
     const box=$$("bkModels"); if(!box) return;
+    const M=models(), D=(defaults[P()]||{});
     box.innerHTML="";
     slots.forEach(k=>{
       const row=document.createElement("div"); row.className="row";
       const f=document.createElement("div"); f.className="f";
       const lab=document.createElement("label"); lab.textContent=k;
       const inp=document.createElement("input");
-      inp.value=cfg.models[k] || defaults[k] || "";
+      inp.value=M[k] || D[k] || "";
       // ⚠️ 显示什么就必须发什么。只在 oninput 里写 cfg.models 的话，用户没手动
       // 改过的槽位就是空的，请求里发的是 {}，实际用的是后端默认值 —— 眼下两边
       // 恰好一样所以看不出来，等后端默认值一改，页面上显示的模型就是骗人的。
-      cfg.models[k]=inp.value;
+      M[k]=inp.value;
       inp.autocomplete="off"; inp.spellcheck=false;
-      inp.oninput=()=>{ cfg.models[k]=inp.value.trim(); persist(); };
+      inp.oninput=()=>{ M[k]=inp.value.trim(); persist(); };
       f.append(lab,inp); row.append(f); box.append(row);
     });
     persist();
@@ -648,8 +671,9 @@ const BYOK = (() => {
         return false;
       }
       const j=await r.json();
-      slots=j.slots||[]; defaults=j.models||{};
+      slots=j.slots||[]; defaults=j.models||{};    // {provider:{slot:model}}
       renderModels();
+      paintProvider();
       state(ready() ? "已就绪 · 不扣站内点数" : "填两把 key 就能开跑",
             ready() ? "ok" : "");
       return true;
@@ -663,11 +687,21 @@ const BYOK = (() => {
     const tool=document.querySelector(".ab-tool");
     if(tool) tool.textContent="SEO 文章生成 · BYOK（内部）";
 
-    $$("bkOpenrouter").value=cfg.openrouter;
+    $$("bkProvider").value=P();
+    $$("bkLlm").value=key();
     $$("bkSerper").value=cfg.serper;
+    paintProvider();
     $$("bkMore").onclick=()=>{ $$("bkModels").classList.toggle("on"); };
+    // 切供应商：先把当前那把 key 收好，再把另一家的填回来 —— 两家各存各的，不互相覆盖
+    $$("bkProvider").onchange=()=>{
+      cfg.keys[P()]=$$("bkLlm").value.trim();
+      cfg.provider=$$("bkProvider").value;
+      $$("bkLlm").value=key();
+      paintProvider(); renderModels(); persist();
+      state(ready()?"已就绪 · 不扣站内点数":"这家还没填 key", ready()?"ok":"");
+    };
     $$("bkSave").onclick=async()=>{
-      cfg.openrouter=$$("bkOpenrouter").value.trim();
+      cfg.keys[P()]=$$("bkLlm").value.trim();
       cfg.serper=$$("bkSerper").value.trim();
       persist();
       await loadDefaults();
@@ -936,7 +970,7 @@ $("btnOutline").onclick=async()=>{
   if(!mainKw||!secKw||!topic){ setStatus("主关键词 / 次关键词 / 主题 都要填。",true); return; }
   if(BYOK.on){
     // BYOK 页没有账户概念，凭证在地址里，只需检查两把 key 填了没
-    if(!BYOK.ready()){ setStatus("请先填 OpenRouter Key 和 Serper Key，并点「保存到本机」。",true);
+    if(!BYOK.ready()){ setStatus("请先填模型供应商的 Key 和 Serper Key，并点「保存到本机」。",true);
                        BYOK.state("两把 key 都要填","bad"); return; }
   }else if(!CARD.has()){ setStatus("请先登录。",true); CARD.onBadgeClick(); return; }
 

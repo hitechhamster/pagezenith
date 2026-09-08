@@ -164,7 +164,11 @@ async def byok_defaults(request: Request) -> dict:
     后端改了、前端没跟着动，页面上显示的数就是错的。模型名同理。
     """
     byok.require_token(request)
-    return {"slots": list(byok.SLOTS), "models": byok.DEFAULT_MODELS}
+    return {"slots": list(byok.SLOTS),
+            "providers": list(byok.PROVIDERS),
+            "default_provider": byok.DEFAULT_PROVIDER,
+            "models": byok.DEFAULT_MODELS,          # {provider: {slot: model}}
+            }
 
 
 # --------------------------------------------------------------------------- #

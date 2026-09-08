@@ -58,32 +58,68 @@ def internal_path() -> str:
     return (get_settings().internal_path or "").strip().strip("/")
 
 HEADER_TOKEN = "X-Internal-Token"
-HEADER_OPENROUTER = "X-Openrouter-Key"
+HEADER_PROVIDER = "X-Byok-Provider"      # openrouter | gemini
+HEADER_LLM = "X-Byok-Llm-Key"            # 上面那家的 key
+HEADER_OPENROUTER = "X-Openrouter-Key"   # 旧名，保留兼容（等价于 provider=openrouter）
 HEADER_SERPER = "X-Serper-Key"
 HEADER_MODELS = "X-Byok-Models"          # JSON: {"outline":..,"article":..,...}
 
-# 默认模型 = 线上那套 Gemini 阵容在 OpenRouter 上的对应写法。
-# 2026-09-08 对着 openrouter.ai/api/v1/models（公开端点，无需 key）逐个核对过，
-# 五个 ID 当时都在，image 那个的 output_modalities 也确实含 image。
-# OpenRouter 会下架 / 改名模型，所以页面上五个框**都可编辑** ——
+# 两家都能跑。搜索永远是 Serper，只有 LLM/出图这一头在切。
+#   openrouter —— 一把 key 通吃，但要预付费充值
+#   gemini     —— 线上那条线本来就是 Gemini 直连，模型是照着它调优的；
+#                 香港机器直连 Google 会被拒，走的是 settings.outbound_proxy 那条隧道
+#                 （所以 settings_for 里绝不能把 outbound_proxy 清掉）
+PROVIDERS = ("openrouter", "gemini")
+DEFAULT_PROVIDER = "openrouter"
+
+# 默认模型。gemini 那组就是线上 billing.pricing.TIERS 里的原值；
+# openrouter 那组是同一批模型在 OpenRouter 上的写法
+# （2026-09-08 对着 openrouter.ai/api/v1/models 逐个核对过，五个当时都在，
+#   image 那个的 output_modalities 也确实含 image）。
+# 两家都会下架 / 改名模型，所以页面上五个框**都可编辑** ——
 # 哪天某个失效，在页面上改一下就能跑，不用改代码重启。
-DEFAULT_MODELS: dict[str, str] = {
-    "outline": "google/gemini-3.1-pro-preview",
-    "article": "google/gemini-3.1-pro-preview",
-    "polish": "google/gemini-3.7-flash",
-    "utility": "google/gemini-3.1-flash-lite",
-    "image": "google/gemini-3-pro-image",
+DEFAULT_MODELS: dict[str, dict[str, str]] = {
+    "openrouter": {
+        "outline": "google/gemini-3.1-pro-preview",
+        "article": "google/gemini-3.1-pro-preview",
+        "polish": "google/gemini-3.7-flash",
+        "utility": "google/gemini-3.1-flash-lite",
+        "image": "google/gemini-3-pro-image",
+    },
+    "gemini": {
+        "outline": "gemini-3.1-pro-preview",
+        "article": "gemini-3.1-pro-preview",
+        "polish": "gemini-3.7-flash",
+        "utility": "gemini-3.1-flash-lite",
+        "image": "gemini-3-pro-image",
+    },
 }
-SLOTS = tuple(DEFAULT_MODELS)
+SLOTS = tuple(DEFAULT_MODELS[DEFAULT_PROVIDER])
+
+
+def provider_of(name: str) -> str:
+    n = (name or "").strip().lower()
+    return n if n in PROVIDERS else DEFAULT_PROVIDER
+
+
+def defaults_for(provider: str) -> dict[str, str]:
+    return dict(DEFAULT_MODELS[provider_of(provider)])
 
 
 @dataclass
 class ByokConfig:
     """一次 BYOK 请求带来的全部配置。只活在内存里，不落库、不打日志。"""
 
-    openrouter_key: str
+    llm_key: str                                   # provider 那家的 key
     serper_key: str
-    models: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MODELS))
+    provider: str = DEFAULT_PROVIDER               # openrouter | gemini
+    models: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.provider = provider_of(self.provider)
+        base = defaults_for(self.provider)
+        base.update({k: v for k, v in (self.models or {}).items() if v})
+        self.models = base
 
     @property
     def identity(self) -> str:
@@ -92,19 +128,19 @@ class ByokConfig:
         取 key 的哈希而不是口令的：同一个内部人换台机器用同一把 key，
         断线重连还能取回自己的任务；换了 key 就是另一个身份，互相看不见。
         """
-        return "byok:" + hashlib.sha256(self.openrouter_key.encode()).hexdigest()[:16]
+        return "byok:" + hashlib.sha256(self.llm_key.encode()).hexdigest()[:16]
 
     def model_for(self, slot: str) -> str:
-        return self.models.get(slot) or DEFAULT_MODELS.get(slot, "")
+        return self.models.get(slot) or defaults_for(self.provider).get(slot, "")
 
 
 def enabled() -> bool:
     return bool(internal_path())
 
 
-def _parse_models(raw: str) -> dict[str, str]:
-    """解析前端传来的模型表。只认已知槽位，其余忽略；坏 JSON 直接用默认值。"""
-    models = dict(DEFAULT_MODELS)
+def _parse_models(raw: str, provider: str) -> dict[str, str]:
+    """解析前端传来的模型表。只认已知槽位，其余忽略；坏 JSON 直接用该供应商的默认值。"""
+    models = defaults_for(provider)
     if not raw:
         return models
     try:
@@ -155,15 +191,19 @@ def parse(request: Request) -> Optional[ByokConfig]:
                        request.client.host if request.client else "-")
         raise HTTPException(status_code=404)
 
-    openrouter = (request.headers.get(HEADER_OPENROUTER) or "").strip()
+    provider = provider_of(request.headers.get(HEADER_PROVIDER) or "")
+    # 新头优先；X-Openrouter-Key 是改成双供应商之前的写法，留着不破坏老标签页
+    llm = ((request.headers.get(HEADER_LLM) or "").strip()
+           or (request.headers.get(HEADER_OPENROUTER) or "").strip())
     serper = (request.headers.get(HEADER_SERPER) or "").strip()
-    if not openrouter:
-        raise HTTPException(status_code=400, detail="BYOK 模式需要填 OpenRouter Key。")
+    if not llm:
+        label = "OpenRouter" if provider == "openrouter" else "Gemini"
+        raise HTTPException(status_code=400, detail=f"BYOK 模式需要填 {label} Key。")
     if not serper:
         raise HTTPException(status_code=400, detail="BYOK 模式需要填 Serper Key。")
 
-    return ByokConfig(openrouter_key=openrouter, serper_key=serper,
-                      models=_parse_models(request.headers.get(HEADER_MODELS) or ""))
+    return ByokConfig(llm_key=llm, serper_key=serper, provider=provider,
+                      models=_parse_models(request.headers.get(HEADER_MODELS) or "", provider))
 
 
 def settings_for(cfg: ByokConfig) -> Settings:
@@ -173,24 +213,32 @@ def settings_for(cfg: ByokConfig) -> Settings:
     只要留着，任何一个没走到 OpenRouter 分支的调用都会悄悄花公司的钱。
     """
     s = get_settings()
-    return s.model_copy(update={
-        # —— 用户自带 ——
-        "openrouter_api_key": cfg.openrouter_key,
+    upd: dict = {
+        # —— 搜索永远是 Serper，两家都一样 ——
         "serper_key": cfg.serper_key,
         "serper_keys": cfg.serper_key,       # key 池读的是这个，只写上面那个会被服务端的池盖掉
         "serp_provider": "serper",
         "writer_image_model": cfg.model_for("image"),
-        # —— 钉死供应商：模型名一律按 OpenRouter 解析 ——
-        "force_llm_provider": "openrouter",
+        # —— 钉死供应商：模型名不再参与推断 ——
+        "force_llm_provider": cfg.provider,
         # —— 服务端 key 全部清空，杜绝静默回落 ——
+        # ⚠️ 注意这里**不动** outbound_proxy：香港机器直连 Google 会被拒
+        #    （400 User location is not supported），Gemini 必须走那条隧道。
+        "openrouter_api_key": "",
         "gemini_api_key": "",
         "deepseek_key": "",
         "serpapi_key": "",
         "tavily_key": "",
         "exa_key": "",
-        # 写手线不用 embedding（grep 过，零命中），这里只是把回落路径一起堵死
-        "embedding_base_url": s.openrouter_base_url,
-        "embedding_api_key": cfg.openrouter_key,
         # 服务端万一处在 mock 模式，内部人要的是真产出，不是假文本
         "use_mocks": False,
-    })
+    }
+    if cfg.provider == "gemini":
+        upd["gemini_api_key"] = cfg.llm_key
+        upd["embedding_base_url"] = s.gemini_base_url
+    else:
+        upd["openrouter_api_key"] = cfg.llm_key
+        upd["embedding_base_url"] = s.openrouter_base_url
+    # 写手线不用 embedding（grep 过，零命中），这里只是把回落路径一起堵死
+    upd["embedding_api_key"] = cfg.llm_key
+    return s.model_copy(update=upd)

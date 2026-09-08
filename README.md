@@ -74,15 +74,22 @@ render.yaml               # Render Blueprint
 - **凭证 = 地址本身**：页面把 URL 里那串乱码原样放进请求头，后端拿它比对。
   所以只藏页面是不够的这件事已经处理了 —— 能白嫖的是 `/api/seo-writer/*`，凭证该带还得带，
   只是不用人手输。收藏一条 URL 就行。
-- **用法**：进页面 → 左上角面板填「OpenRouter Key + Serper Key」→ 保存到本机。
+- **用法**：进页面 → 左上角面板选模型供应商、填它的 Key + Serper Key → 保存到本机。
   两把 key 只存这台浏览器的 localStorage，按请求走 header 传，服务端用完即弃、不落库不打日志。
+- **两家供应商可选**（搜索永远是 Serper，只有 LLM/出图这头在切）：
+  - `openrouter` —— 一把 key 通吃，但要预付费充值
+  - `gemini` —— 线上那条线本来就是 Gemini 直连，模型是照着它调优的；香港机器直连 Google
+    会被拒（`User location is not supported`），走的是服务端 `OUTBOUND_PROXY` 那条隧道，
+    所以 `settings_for()` 里**绝不能**把 `outbound_proxy` 清掉
+  两家的 key 和模型表在浏览器里各存各的，来回切不会互相覆盖。
 - **换地址**：改 `.env` 重启，旧 URL 当场失效（旧书签点进去会看到「这条地址已失效」）。
   ⚠️ URL 里带秘密的代价：会落进浏览器历史、书签和沿途访问日志。这一页不引任何外部资源
   （字体都在本地），所以不会顺着 Referer 漏给第三方。
 - **模型可改**：面板里「模型设置」有五个槽位（outline / article / polish / utility / image），
-  默认值从 `/api/seo-writer/byok/defaults` 取（即 `api/byok.py` 的 `DEFAULT_MODELS`），
-  是线上那套 Gemini 阵容在 OpenRouter 上的写法（2026-09-08 对着 OpenRouter 的公开模型表核对过，
-  五个当时都在）。OpenRouter 会下架 / 改名模型，哪天某个失效就在页面上改，不用改代码重启。
+  默认值从 `/api/seo-writer/byok/defaults` 取（即 `api/byok.py` 的 `DEFAULT_MODELS`，按供应商分两组）。
+  gemini 那组就是线上 `billing.pricing.TIERS` 的原值；openrouter 那组是同一批模型在 OpenRouter 上的
+  写法（2026-09-08 对着 OpenRouter 公开模型表核对过，五个当时都在）。两家都会下架 / 改名模型，
+  哪天某个失效就在页面上改，不用改代码重启。
 - **不落库**：不扣点、不进 usage 流水、不进「我的记录」。产物直接在页面上下载 Word。
 
 实现全部收在 `api/byok.py` 一个文件里（门禁 + 配置装配），工具流水线一行没动：

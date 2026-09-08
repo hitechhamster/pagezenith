@@ -45,7 +45,7 @@ from tools.seo_gap.clients import serper_pool  # noqa: E402
 from tools.seo_writer.providers import provider_for, resolve_llm  # noqa: E402
 
 TOKEN = os.environ["INTERNAL_PATH"]
-GOOD = {"X-Internal-Token": TOKEN, "X-Openrouter-Key": "sk-or-user",
+GOOD = {"X-Internal-Token": TOKEN, "X-Byok-Llm-Key": "sk-or-user",
         "X-Serper-Key": "serper-user"}
 
 PASS, FAIL = [], []
@@ -73,8 +73,10 @@ async def test_gate(client):
                          headers={"X-Internal-Token": TOKEN})
     j = r.json() if r.status_code == 200 else {}
     ok("对凭证取默认模型表 → 200", r.status_code == 200, r.status_code)
-    ok("默认模型表覆盖全部槽位",
-       set(j.get("models") or {}) == set(byok.SLOTS), sorted(j.get("models") or {}))
+    ok("两家供应商都给了默认表",
+       set(j.get("models") or {}) == {"openrouter", "gemini"}, sorted(j.get("models") or {}))
+    ok("每家都覆盖全部槽位",
+       all(set(v) == set(byok.SLOTS) for v in (j.get("models") or {}).values()))
 
     body = {"main_keyword": "a", "secondary_keyword": "b", "topic": "c"}
 
@@ -91,8 +93,16 @@ async def test_gate(client):
     ok("对凭证但没填 key → 400", r.status_code == 400, r.status_code)
 
     r = await client.post("/api/seo-writer/outline", json=body,
-                          headers={"X-Internal-Token": TOKEN, "X-Openrouter-Key": "x"})
+                          headers={"X-Internal-Token": TOKEN, "X-Byok-Llm-Key": "x"})
     ok("少 Serper key → 400", r.status_code == 400, r.status_code)
+
+    # 旧标签页用的是改成双供应商之前那个头，不能因为发版就把人挡在外面。
+    # 这里只带老头、不带 Serper：如果老头被无视，报的会是「需要填 OpenRouter Key」；
+    # 被认下来了，报的才是 Serper 那条 —— 用错误内容区分，不用真去起一个任务。
+    r = await client.post("/api/seo-writer/outline", json=body,
+                          headers={"X-Internal-Token": TOKEN, "X-Openrouter-Key": "x"})
+    detail = r.json().get("detail", "") if r.status_code == 400 else ""
+    ok("老的 X-Openrouter-Key 仍被认成 LLM key", "Serper" in detail, detail or r.status_code)
 
     # 回归：没有 BYOK 头的普通请求，行为一如既往（未登录 = 401 请先登录）
     r = await client.post("/api/seo-writer/outline", json=body)
@@ -143,8 +153,9 @@ def test_reads_from_settings():
 
 
 def test_settings():
-    print("\n[配置装配]")
-    cfg = byok.ByokConfig(openrouter_key="sk-or-user", serper_key="serper-user")
+    print("\n[配置装配 · OpenRouter]")
+    cfg = byok.ByokConfig(llm_key="sk-or-user", serper_key="serper-user",
+                          provider="openrouter")
     s = byok.settings_for(cfg)
 
     ok("OpenRouter key = 用户的", s.openrouter_api_key == "sk-or-user")
@@ -165,10 +176,42 @@ def test_settings():
        g.gemini_api_key == "server-gemini" and g.force_llm_provider == "",
        f"{g.gemini_api_key!r}/{g.force_llm_provider!r}")
 
+    print("\n[配置装配 · Gemini 直连]")
+    cfg2 = byok.ByokConfig(llm_key="AIza-user", serper_key="serper-user", provider="gemini")
+    s2 = byok.settings_for(cfg2)
+    ok("Gemini key = 用户的", s2.gemini_api_key == "AIza-user")
+    ok("OpenRouter key 已清空", s2.openrouter_api_key == "")
+    ok("供应商被钉死成 gemini", s2.force_llm_provider == "gemini")
+    ok("Serper 仍是用户那把（搜索两家共用）",
+       serper_pool.keys(s2) == ["serper-user"], serper_pool.keys(s2))
+    # 香港机器直连 Google 会被拒，Gemini 必须走服务端配的那条隧道 —— 清掉就全挂了
+    ok("outbound_proxy 没被清掉（Gemini 靠它出海）",
+       s2.outbound_proxy == g.outbound_proxy, repr(s2.outbound_proxy))
+    ok("默认模型是不带 google/ 前缀的直连写法",
+       cfg2.model_for("article") == "gemini-3.1-pro-preview", cfg2.model_for("article"))
+
+
+def test_model_routing_gemini():
+    print("\n[模型路由 · Gemini 直连]")
+    cfg = byok.ByokConfig(llm_key="AIza-user", serper_key="serper-user", provider="gemini")
+    s = byok.settings_for(cfg)
+    t = resolve_llm(s, "pro", models=cfg.models)
+    ok("target 落在 gemini", t.provider == "gemini", t.provider)
+    ok("base_url 是 Google", "googleapis" in t.base_url, t.base_url)
+    ok("api_key 是用户的", t.api_key == "AIza-user")
+    ok("正文用直连模型名", t.model_for_task("article") == "gemini-3.1-pro-preview",
+       t.model_for_task("article"))
+    ok("润色用直连模型名", t.model_for_task("polish") == "gemini-3.7-flash",
+       t.model_for_task("polish"))
+    # 反过来也要钉住：即使模型名带了 openrouter 风格前缀，也不许跑去 OpenRouter
+    ok("带 google/ 前缀也仍判成 gemini",
+       provider_for(s, "google/gemini-3.1-pro-preview") == "gemini")
+
 
 def test_model_routing():
-    print("\n[模型路由]")
-    cfg = byok.ByokConfig(openrouter_key="sk-or-user", serper_key="serper-user",
+    print("\n[模型路由 · OpenRouter]")
+    cfg = byok.ByokConfig(llm_key="sk-or-user", serper_key="serper-user",
+                          provider="openrouter",
                           models={"outline": "google/gemini-3.1-pro-preview",
                                   "article": "anthropic/claude-sonnet-5",
                                   "polish": "google/gemini-3.7-flash",
@@ -208,7 +251,7 @@ def test_model_routing():
 # --------------------------------------------------------------------------- #
 async def test_no_billing():
     print("\n[不计费]")
-    cfg = byok.ByokConfig(openrouter_key="sk-or-user", serper_key="serper-user")
+    cfg = byok.ByokConfig(llm_key="sk-or-user", serper_key="serper-user")
     card = Card(key_hash=cfg.identity, ip="1.2.3.4", remaining=10 ** 9,
                 label="内部 BYOK", byok=cfg)
 
@@ -224,8 +267,8 @@ async def test_no_billing():
        f"{before} → {store.global_cost_today()}")
 
     # 身份是按 key 算的：同一把 key 断线重连还能认回自己的任务
-    same = byok.ByokConfig(openrouter_key="sk-or-user", serper_key="other")
-    diff = byok.ByokConfig(openrouter_key="sk-or-OTHER", serper_key="serper-user")
+    same = byok.ByokConfig(llm_key="sk-or-user", serper_key="other")
+    diff = byok.ByokConfig(llm_key="sk-or-OTHER", serper_key="serper-user")
     ok("同 key 同身份", same.identity == cfg.identity)
     ok("换 key 换身份", diff.identity != cfg.identity)
 
@@ -237,6 +280,7 @@ async def main_() -> int:
     test_reads_from_settings()
     test_settings()
     test_model_routing()
+    test_model_routing_gemini()
     await test_no_billing()
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
