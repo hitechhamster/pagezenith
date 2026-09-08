@@ -219,6 +219,17 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 if all(x.startswith("（") and "搜索失败" in x for x in (_m, _s)):
                     logger.error("搜索服务不可用：%s", _m[:200])
                     raise RuntimeError("搜索服务暂时不可用（额度或故障），本次没有扣点，请稍后再试。")
+                # PAA 意图过滤：搜索页的子问题里混着"词面像、意图不同"的
+                # （实测：找代工厂的文章被塞进「哪个牌子最好」，还被提拔成 H2）。
+                # 放在扩展层之前 —— 跑题问题不该再去搜一层，那既费 Serper 额度又污染素材。
+                _m, _dropped = await wf.filter_questions(
+                    _m, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"])
+                if _dropped:
+                    job.emit({"type": "step", "key": "search",
+                              "message": (f"剔掉 {len(_dropped)} 个意图不符的搜索页问题："
+                                          + "；".join(q[:40] for q in _dropped[:3])
+                                          + ("…" if len(_dropped) > 3 else ""))})
+
                 # 全文版给审计（增益 / 基线 / 意图），截短版给 prompt
                 ctx["main_search_full"], ctx["sec_search_full"] = _m, _s
                 ctx["main_search"], ctx["sec_search"] = trim_search(_m), trim_search(_s)

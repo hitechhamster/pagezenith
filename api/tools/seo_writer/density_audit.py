@@ -819,10 +819,13 @@ def gap_brief(search_text: str, keyword: str = "", max_items: int = 14,
     if questions:
         parts.append("**搜索页上读者正在问的（People Also Ask，真实数据不是推测）：**\n"
                      + "\n".join(f"- {q}" for q in questions)
-                     + "\n**这几个问题一个都不能漏。** 每个问题要么直接拿去当 H2 标题，"
+                     + "\n**和本文是同一件事的，一个都不能漏**：要么直接拿去当 H2 标题，"
                        "要么在正文里有一处专门回答它的段落。判据是：把那一段单独摘出来，"
                        "它本身就是这个问题的完整答案 —— 不能靠上文才读得懂，"
-                       "也不能只是顺带提了一句相关的词。")
+                       "也不能只是顺带提了一句相关的词。\n"
+                       "**但凡有一个问题和本文的搜索意图不是一回事，跳过它，不要为它开一节。**"
+                       "上游已经过滤过一轮（见 workflow.filter_questions），漏网的由你兜底："
+                       "词面像不算相关，要解决的是不是同一件事才算。")
     if serp["related"]:
         parts.append("**相关搜索（次级意图，能覆盖就覆盖）：** "
                      + "、".join(serp["related"][:8]))

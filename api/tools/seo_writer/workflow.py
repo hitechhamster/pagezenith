@@ -423,6 +423,48 @@ class SEOWriter:
                 return t
         return "conceptual"
 
+    async def filter_questions(self, search_text: str, main_keyword: str,
+                               secondary_keyword: str, topic: str) -> tuple[str, list[str]]:
+        """把搜索文本里意图不符的 `Q:`（PAA）行删掉，返回 (新文本, 被丢掉的问题)。
+
+        为什么改的是**搜索文本本身**而不是各个下游：`Q:` 行有三个消费方 ——
+        大纲 prompt（"这几个问题一个都不能漏"，会直接变成 H2）、意图打分、
+        交付前的 FAQ 补写。在源头删掉，三处一次性都干净，且不用改它们的签名。
+
+        护栏（这是一次 LLM 调用，不能让它把文章搞坏）：
+          · 只认原样抄回来的问题，模型自己编的一律不算（防它改写或发明问题）
+          · 一个都没留下 → 当成过滤失败，**全部保留**（fail-open）
+          · 调用炸了 → 全部保留
+        宁可漏过一个跑题问题，也不能因为过滤器抽风把 PAA 整个清空 —— 那是本产品
+        少数几个"真实数据不是推测"的输入之一。
+        """
+        lines = search_text.split("\n")
+        qs = [l[2:].strip() for l in lines if l.startswith("Q:") and l[2:].strip()]
+        if len(qs) < 2:
+            return search_text, []              # 0/1 个问题没有过滤的必要
+        try:
+            raw = await self.llm.complete(
+                P.QUESTION_FILTER_PROMPT.format(
+                    main_keyword=main_keyword, secondary_keyword=secondary_keyword,
+                    topic=topic, questions="\n".join(f"- {q}" for q in qs)),
+                task="classify", temperature=0.1)
+        except Exception:  # noqa: BLE001  过滤失败不该拖垮整篇
+            logger.warning("PAA 意图过滤调用失败，保留全部问题", exc_info=True)
+            return search_text, []
+
+        norm = lambda s: re.sub(r"[^a-z0-9一-鿿]+", "", (s or "").lower())
+        kept_norm = {norm(l.strip().lstrip("-*0123456789. ").strip())
+                     for l in (raw or "").split("\n") if l.strip()}
+        keep = [q for q in qs if norm(q) in kept_norm]
+        if not keep:
+            return search_text, []              # 全被丢掉 = 过滤器不可信，全留
+        dropped = [q for q in qs if q not in keep]
+        if not dropped:
+            return search_text, []
+        out = [l for l in lines
+               if not (l.startswith("Q:") and l[2:].strip() in dropped)]
+        return "\n".join(out), dropped
+
     # -------------------------------------------------------------- 大纲
     def outline_prompt(self, ctx: dict[str, Any]) -> str:  # noqa: D102
         """组装大纲 prompt（2026-08 换成用户实际在用的 EEAT 版）。
