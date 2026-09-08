@@ -14,9 +14,22 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 Tier = Literal["basic", "pro"]
+
+# 关键词一律转小写再进流水线。
+# 2026-09-08 用户报：主关键词填成「Best headphone factory in China」，正文句子中间
+# 也照抄成「…the Best headphone factory in China…」—— prompt 里那句「关键词保留」
+# 被模型当成"连大小写一起保留"了。与其在交付前去猜哪些词是专有名词，不如从入口
+# 就别把用户的大小写带进去：模型按自己的语感写英文，标题该大写就大写。
+# 放在请求模型上而不是 router 里，是为了让会话过期后前端回传参数的降级路径也走到。
+_KW_FIELDS = ("main_keyword", "secondary_keyword")
+
+
+def _lower_keyword(v):
+    return v.lower() if isinstance(v, str) else v
+
 
 LANGUAGES = [
     "English", "Indonesian", "Spanish", "French", "German", "Japanese",
@@ -48,6 +61,8 @@ class OutlineRequest(Tiered):
     product_url: str = ""
     product_level: str = "中等介绍"     # 简短提及 | 中等介绍 | 详细介绍
 
+    _lower = field_validator(*_KW_FIELDS)(_lower_keyword)
+
 
 class ReviseRequest(Tiered):
     """第二步：根据修改意见重出大纲。前 N 次免费，超出按点扣（见 pricing.REVISE_FREE）。"""
@@ -74,6 +89,8 @@ class ArticleRequest(Tiered):
     image_style: Optional[str] = None
     voice: Optional[str] = None
 
+    _lower = field_validator(*_KW_FIELDS)(_lower_keyword)
+
 
 class PolishRequest(Tiered):
     """独立润色：把已生成的文章整篇改写到「美国 12 年级学生能读懂」。
@@ -86,3 +103,5 @@ class PolishRequest(Tiered):
     session_id: Optional[str] = None
     main_keyword: Optional[str] = None      # 只用于 Word 文件名
     voice: Optional[str] = None             # 会话丢失时前端回传，否则润色会抹平文风
+
+    _lower = field_validator("main_keyword")(_lower_keyword)

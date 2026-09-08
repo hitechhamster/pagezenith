@@ -119,6 +119,7 @@ PYTHONPATH=api python tests/test_semantic_dedup.py
 cd api && python ../tests/test_billing_flow.py   # 卡密/扣点/退点/断线不丢
 cd api && python ../tests/test_byok_flow.py      # 内部 BYOK：门禁 + 配置装配 + 不计费
 cd api && python ../tests/test_postfix_language.py  # 补写块跟着文章语言走
+cd api && python ../tests/test_keyword_casing.py     # 关键词转小写再进流水线
 ```
 
 `test_account_flow.py` / `test_pay_flow.py` 要**先起服务器**再跑
