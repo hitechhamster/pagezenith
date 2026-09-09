@@ -89,7 +89,11 @@
   .doc h3{font-size:17px;margin:18px 0 6px;padding-left:9px;border-left:3px solid var(--accent)}
   .doc h4{font-size:15px;margin:15px 0 4px;color:var(--muted);text-transform:none;
        letter-spacing:.02em;padding-left:9px;border-left:2px solid var(--line)}
-  .doc p{margin:0 0 11px} .doc ul{margin:0 0 11px;padding-left:20px} .doc li{margin:2px 0}
+  .doc p{margin:0 0 11px} .doc ul,.doc ol{margin:0 0 11px;padding-left:20px} .doc li{margin:2px 0}
+  .doc pre.md-code{white-space:pre;overflow-x:auto;max-width:100%;box-sizing:border-box;
+    padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:8px;
+    font:13px/1.5 ui-monospace,Consolas,monospace;margin:10px 0}
+  .doc pre.md-code code{font:inherit;white-space:inherit}
   .doc table{border-collapse:collapse;width:100%;margin:10px 0;font-family:var(--font-ui);font-size:13px}
   .doc th,.doc td{border:1px solid var(--line);padding:6px 9px;text-align:left}
   .doc th{background:var(--soft)}
@@ -487,7 +491,7 @@
 </main>
 
 <script src="/shared/keys.js?v=60ca7386"></script>
-<script src="/shared/md.js"></script>
+<script src="/shared/md.js?v=ascii-fences-1"></script>
 <script>
 const $=id=>document.getElementById(id);
 const E=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
@@ -950,7 +954,12 @@ function throttleRender(box,getText){
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
     const text=getText();
     // 按空行切块；表格/列表内部没有空行，天然不会被切开
-    const blocks=text.split(/\n{2,}/);
+    if(final){
+      box.innerHTML=MD.render(text); settled=null; tail=null; done=0;
+      if(atBottom) box.scrollTop=box.scrollHeight;
+      return;
+    }
+    const blocks=MD.splitBlocks(text);
     const settle = final ? blocks.length : Math.max(0, blocks.length-1);
     if(final && done>0 && blocks.length<done){ box.innerHTML=""; settled=null; ensure(); }
     for(;done<settle;done++) settled.insertAdjacentHTML("beforeend", MD.render(blocks[done]));

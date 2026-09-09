@@ -14,14 +14,54 @@
     return t;
   }
 
+  const fenceStart = s => s.match(/^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/);
+  const fenceEnd = (s, f) => new RegExp("^ {0,3}" + f[1][0] + "{" + f[1].length + ",}\\s*$").test(s);
+
+  // Only settle blank-line boundaries outside fenced code. Keep internal whitespace intact.
+  function splitBlocks(md) {
+    const blocks = [], lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+    let current = [], fence = null;
+    for (const line of lines) {
+      if (fence) {
+        current.push(line);
+        if (fenceEnd(line, fence)) fence = null;
+      } else if (fenceStart(line)) {
+        fence = fenceStart(line); current.push(line);
+      } else if (!line.trim()) {
+        if (current.length) { blocks.push(current.join("\n")); current = []; }
+      } else current.push(line);
+    }
+    blocks.push(current.join("\n"));
+    return blocks;
+  }
+
   function render(md) {
     const lines = String(md || "").split("\n");
     const out = [];
     let i = 0, inList = false;
-    const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+    const closeList = () => { if (inList) { out.push(`</${inList}>`); inList = false; } };
 
     while (i < lines.length) {
       const line = lines[i].trim();
+
+      const fence = fenceStart(lines[i]);
+      if (fence) {
+        closeList();
+        const code = []; i++;
+        while (i < lines.length && !fenceEnd(lines[i], fence)) code.push(lines[i++]);
+        if (i < lines.length) i++;
+        out.push(`<pre class="md-code"><code>${esc(code.join("\n"))}</code></pre>`);
+        continue;
+      }
+
+      // Legacy, unfenced ASCII boxes: display faithfully, never interpret them as tables.
+      if (/^\+(?:[-=]{3,}\+)+$/.test(line)) {
+        closeList();
+        const diagram = [lines[i++]];
+        while (i < lines.length && (/^\s*[|+]/.test(lines[i]) || !lines[i].trim())) diagram.push(lines[i++]);
+        out.push(`<pre class="md-code"><code>${esc(diagram.join("\n").trimEnd())}</code></pre>`);
+        continue;
+      }
 
       // 表格：靠「分隔行」认，不要求首尾竖线。
       // 2026-09-03 实测：模型有时输出松散写法（`列一 | 列二` + `--- | --- | ---`，行首尾没有竖线），
@@ -59,14 +99,14 @@
       if (h) { closeList(); const lv = h[1].length; out.push(`<h${lv}>${inline(h[2])}</h${lv}>`); i++; continue; }
 
       if (/^[-*]\s+/.test(line)) {
-        if (!inList) { out.push("<ul>"); inList = true; }
+        if (inList !== "ul") { closeList(); out.push("<ul>"); inList = "ul"; }
         out.push(`<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`);
         i++; continue;
       }
 
       const ol = line.match(/^\d+\.\s+(.*)$/);
       if (ol) {
-        if (!inList) { out.push("<ul>"); inList = true; }
+        if (inList !== "ol") { closeList(); out.push("<ol>"); inList = "ol"; }
         out.push(`<li>${inline(ol[1])}</li>`);
         i++; continue;
       }
@@ -79,5 +119,5 @@
     return out.join("\n");
   }
 
-  window.MD = { render, escape: esc };
+  window.MD = { render, splitBlocks, escape: esc };
 })();
