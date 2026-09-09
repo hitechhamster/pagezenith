@@ -229,7 +229,7 @@ class Settings(BaseSettings):
     #   香港服务器    ：**Google 不给 HK IP 用 Gemini API**（400 FAILED_PRECONDITION
     #                   "User location is not supported"），经自有纽约 VPS 中转
     # ⚠️ 分流规则不能一刀切,谁走谁不走是实测出来的：
-    #   Gemini            → 走代理（唯一被地域封的）
+    #   Gemini / OpenRouter → 走代理（模型可用性受请求出口地区影响）
     #   DeepSeek          → **必须直连**，走代理反而不通
     #   Serper / Reddit   → 香港直连正常，不进隧道（少一条依赖就少一个故障点）
     # 免签支付：手机到账通知转发 与 /payadmin 管理页 共用的口令（见 billing/payorders.py）
@@ -246,8 +246,8 @@ class Settings(BaseSettings):
     mail_from: str = "页面科技 <noreply@pagezenith.com>"
     site_url: str = "https://pagezenith.com"
     outbound_proxy: str = ""
-    # 需要走代理的目的地关键词；留空则用默认（只有 gemini/google）
-    proxy_targets: str = "gemini,generativelanguage,googleapis"   # dodo 香港直连正常，无需入列
+    # 需要走代理的目的地关键词；显式留空禁用分流。OpenRouter 的 Google 模型也受地区限制。
+    proxy_targets: str = "gemini,generativelanguage,googleapis,openrouter"   # dodo 香港直连正常，无需入列
 
     def proxy_for(self, host_or_provider: str) -> str | None:
         """返回该目的地该用的代理；不需要代理时返回 None。"""
