@@ -90,7 +90,43 @@ class ResearchChart(BaseModel):
     items: list[dict] = Field(default_factory=list)
 
 
+class ResearchFinding(BaseModel):
+    title: str
+    observation: str = ""
+    interpretation: str = ""
+    action: str = ""
+    caveat: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    quotes: list[str] = Field(default_factory=list)
+    quote_evidence: list[QuoteEvidence] = Field(default_factory=list)
+
+
+class ResearchSection(BaseModel):
+    key: str
+    title: str
+    introduction: str = ""
+    findings: list[ResearchFinding] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+
+
+class ResearchAction(BaseModel):
+    priority: str = ""
+    task: str = ""
+    rationale: str = ""
+    test: str = ""
+    success_signal: str = ""
+    stop_signal: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+
+
 class RedditResearch(BaseModel):
+    report_version: int = 2
+    sections: list[ResearchSection] = Field(default_factory=list)
+    cross_checks: list[ResearchFinding] = Field(default_factory=list)
+    action_plan: list[ResearchAction] = Field(default_factory=list)
+    decision: str = ""
+    depth_note: str = ""
+    narrative_chars: int = 0
     question: str = ""
     market: str = ""
     additional_questions: list[str] = Field(default_factory=list)

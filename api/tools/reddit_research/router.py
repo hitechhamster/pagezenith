@@ -52,6 +52,8 @@ async def _research(req: RedditResearchRequest, card: Card,
         async with charge(card, "reddit-research", "run") as tx:
             try:
                 out = await RedditResearcher(s).research(req, on_step=on_step)
+                if out.depth_note:
+                    raise HTTPException(status_code=502, detail="本次报告未达到深度与完整性要求，点数会自动退回。请补充研究范围或稍后重试。")
             except HTTPException:
                 raise
             except Exception as exc:
@@ -92,13 +94,21 @@ async def analyze_stream(req: RedditResearchRequest,
         task = asyncio.create_task(work())
         try:
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
                 if event is None:
                     return
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         finally:
             if not task.done():
                 task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

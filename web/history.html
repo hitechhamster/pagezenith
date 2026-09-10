@@ -255,6 +255,10 @@ async function openResult(id){
     const j=await r.json(); current=j;
     $("vTitle").textContent=j.title||"结果";
     const p=j.payload||{};
+    if(p.kind==="reddit-research" && p.sections?.length){
+      window.location.href="/tools/reddit-research?result="+encodeURIComponent(id);
+      return;
+    }
     const text=p.article||p.outline||"";
     $("vBody").innerHTML = text ? MD.render(text)
       : "<pre>"+esc(JSON.stringify(p,null,2)).slice(0,20000)+"</pre>";

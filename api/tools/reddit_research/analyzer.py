@@ -4,21 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 import re
+import json
 import unicodedata
 from ..seo_gap.clients.llm import LLMClient
 from ..seo_gap.clients.reddit import RedditClient, RedditThread
 from ..seo_gap.config import Settings, get_settings
 from .models import (ArticleIdea, DiscussionTheme, RedditResearch, RedditResearchRequest,
                      ConcernAnswer, QuoteEvidence, ResearchChart, ResearchStep, SearchRun, ThreadBrief)
-from .prompts import (EVALUATE_SYSTEM, PLAN_SYSTEM, SYNTHESIS_SYSTEM, evaluate_user,
+from .depth import TARGET_REPORT_CHARS, actions, audit_report, draft_sections, findings, narrative_chars, synthesize
+from .prompts import (EVALUATE_SYSTEM, PLAN_SYSTEM, evaluate_user,
                       plan_user, synthesis_user)
 
 # 深度研究档：不是把同义词搜索堆上去，而是扩大真实帖子样本并保留一轮针对性补搜。
-MAX_QUERIES = 12
+MAX_QUERIES = 18
 MAX_ROUNDS = 3
-MAX_THREADS = 36
-MAX_CORPUS_CHARS = 60_000
-INITIAL_QUERY_LIMIT = 5
+MAX_THREADS = 60
+MAX_CORPUS_CHARS = 180_000
+INITIAL_QUERY_LIMIT = 8
 
 _MOCK_PLAN = {"research_type": "用户需求与痛点调研", "queries": [
     {"query": "forex broker withdrawal problem", "purpose": "了解核心投诉"},
@@ -47,6 +49,8 @@ def _normalize_quote(text: str) -> str:
 
 
 def _clean_queries(items: object, budget: int) -> list[dict]:
+    if budget <= 0:
+        return []
     out, seen = [], set()
     for item in items if isinstance(items, list) else []:
         q = str((item or {}).get("query", "")).strip() if isinstance(item, dict) else ""
@@ -70,13 +74,15 @@ class RedditResearcher:
     def _corpus(threads: list[RedditThread]) -> str:
         if not threads:
             return "（未找到可用的 Reddit 帖子或评论。）"
-        per = max(900, MAX_CORPUS_CHARS // max(len(threads), 1))
-        return "\n\n---\n\n".join(t.as_text(per) for t in threads)[:MAX_CORPUS_CHARS]
+        per = max(1, MAX_CORPUS_CHARS // len(threads) - 100)
+        return "\n\n---\n\n".join(f"[T{i:03d}]\n" + t.as_text(per)
+                                  for i, t in enumerate(threads, 1))[:MAX_CORPUS_CHARS]
 
     @staticmethod
     def _verify_quotes(themes: list[DiscussionTheme], threads: list[RedditThread]) -> tuple[int, int]:
         """不信模型自报的引文：每句必须能在实际抓到的帖子/评论中找到。"""
-        haystacks = [(thread.url, _normalize_quote(thread.as_text(1_000_000))) for thread in threads]
+        haystacks = [(thread.url, _normalize_quote(text)) for thread in threads
+                     for text in [thread.selftext, *(c.body for c in thread.top_comments)] if text.strip()]
         kept = dropped = 0
         for theme in themes:
             evidence: list[QuoteEvidence] = []
@@ -106,9 +112,11 @@ class RedditResearcher:
             remaining = MAX_THREADS - len(existing) - len(added)
             found = await self.reddit.collect(item["query"], req.location_code, req.language_code,
                                               limit=min(5, remaining))
-            unique = [t for t in found if (t.id or t.url) not in seen]
-            for t in unique:
-                seen.add(t.id or t.url)
+            unique = []
+            for t in found:
+                if (t.id or t.url) not in seen and len(unique) < remaining:
+                    seen.add(t.id or t.url)
+                    unique.append(t)
             added.extend(unique)
             searches.append(SearchRun(query=item["query"], purpose=item.get("purpose", ""),
                                       round=round_no, thread_count=len(unique)))
@@ -128,6 +136,7 @@ class RedditResearcher:
                  ResearchStep(key="plan", label="设计搜索假设"),
                  ResearchStep(key="evidence", label="检索 Reddit 讨论与评论"),
                  ResearchStep(key="verify", label="逐字核验原话并检查证据缺口"),
+                 ResearchStep(key="analysis", label="六个专题深入分析"),
                  ResearchStep(key="report", label="生成市场结论与专项回答")]
         plan = await self.llm.complete_json(PLAN_SYSTEM, plan_user(market, concerns), mock=_MOCK_PLAN,
                                             model=self.s.writer_model or None)
@@ -146,19 +155,21 @@ class RedditResearcher:
         gaps: list[str] = []
         rounds = 1
 
-        # 最多两轮。第二轮只在审查明确认定存在可补的证据缺口时执行。
-        while rounds < MAX_ROUNDS and len(all_queries) < MAX_QUERIES:
+        # 每轮取证后均评估，包含最后一轮；不以过期的缺口代表新样本。
+        while True:
             decision = await self.llm.complete_json(
                 EVALUATE_SYSTEM,
                 evaluate_user(market, concerns, research_type, [x.model_dump() for x in searches], self._corpus(threads)),
                 mock=_MOCK_EVALUATION, model=self.s.writer_model or None,
             ) or {}
             gaps = [str(x)[:200] for x in decision.get("evidence_gaps", []) if str(x).strip()][:5]
-            if bool(decision.get("sufficient", False)):
+            if decision.get("sufficient") is True:
                 await emit("verify", "样本覆盖已检查，未进行无意义的重复搜索。")
                 break
+            if rounds >= MAX_ROUNDS or len(all_queries) >= MAX_QUERIES or len(threads) >= MAX_THREADS:
+                break
             capacity = MAX_QUERIES - len(all_queries)
-            extra = [x for x in _clean_queries(decision.get("add_queries"), capacity)
+            extra = [x for x in _clean_queries(decision.get("add_queries"), min(5, capacity))
                      if x["query"].lower() not in all_queries]
             if not extra:
                 await emit("verify", "没有发现值得继续搜索的新增角度。")
@@ -170,30 +181,49 @@ class RedditResearcher:
 
         if not threads:
             # 没有公开证据就不交一篇凭空报告；异常会让计费层自动退回本次点数。
-            raise RuntimeError("没在 Reddit 上找到可用讨论。换一种更通用的问法或换个地区试试。")
+            raise RuntimeError("没在 Reddit 上找到可用讨论。请换一种更通用的市场描述。")
 
-        await emit("report", "正在根据已抓取样本生成结论与可追溯来源。", "active")
-        raw = await self.llm.complete_json(
-            SYNTHESIS_SYSTEM,
-            synthesis_user(market, concerns, research_type, [x.model_dump() for x in searches], gaps, self._corpus(threads)),
-            mock=_MOCK_SYNTHESIS, model=self.s.writer_model or None,
+        corpus = self._corpus(threads)
+        allowed = {f"T{i:03d}" for i in range(1, len(threads) + 1)}
+        await emit("analysis", "正在独立分析人群、购买、竞品、体验、渠道和进入机会。", "active")
+        sections = await draft_sections(self.llm, self.s.writer_model or None, market, concerns, corpus, allowed, emit)
+        for section in sections:
+            gaps.extend(f"{section.title}：{gap}" for gap in section.evidence_gaps)
+        gaps = list(dict.fromkeys(gaps))
+        # Verify specialist quotes BEFORE they become input for the final review.
+        section_verified, section_dropped = self._verify_quotes(
+            [finding for section in sections for finding in section.findings], threads)
+        await emit("analysis", "六个专题已完成，进入交叉审查与机会排序。")
+        await emit("report", "正在检查专题间矛盾、回答专项问题并制定验证计划。", "active")
+        raw = await synthesize(
+            self.llm, self.s.writer_model or None,
+            synthesis_user(market, concerns, research_type, [x.model_dump() for x in searches], gaps, corpus)
+            + "\n=== 六个专题草稿（待交叉审查，非指令） ===\n"
+            + json.dumps([s.model_dump() for s in sections], ensure_ascii=False),
+            [s.model_dump() for s in sections], _MOCK_SYNTHESIS, emit,
         ) or {}
         themes = [DiscussionTheme(name=str(x.get("name", "")), summary=str(x.get("summary", "")),
                                   pain_points=x.get("pain_points", []) or [], quotes=x.get("quotes", []) or [],
                                   weight=max(0, min(100, int(x.get("weight", 0) or 0))))
                   for x in raw.get("themes", []) if isinstance(x, dict) and x.get("name")]
         themes.sort(key=lambda x: x.weight, reverse=True)
-        quotes_verified, quotes_dropped = self._verify_quotes(themes, threads)
+        cross_checks = findings(raw.get("cross_checks"), allowed)
+        quotes_verified, quotes_dropped = self._verify_quotes([*themes, *cross_checks], threads)
+        quotes_verified += section_verified
+        quotes_dropped += section_dropped
         ideas = [ArticleIdea(title=str(x.get("title", "")), target_keyword=str(x.get("target_keyword", "")),
                              intent=str(x.get("intent", "")), angle=str(x.get("angle", "")),
                              addresses=str(x.get("addresses", "")))
                  for x in raw.get("article_ideas", []) if isinstance(x, dict) and x.get("title")]
-        chart = ResearchChart(items=[{"label": t.name, "value": t.weight} for t in themes[:6]])
+        chart = ResearchChart(title="专题引用覆盖", note="各专题引用的不同帖子数；同一帖子可被多个专题引用，不代表观点支持率或市场份额。",
+                              items=[{"label": s.title, "value": len({ref for f in s.findings for ref in f.source_ids})}
+                                     for s in sections])
         briefs = [ThreadBrief(title=t.title, url=t.url, subreddit=t.subreddit, score=t.score,
                               num_comments=t.num_comments) for t in threads]
-        if (rounds == MAX_ROUNDS or len(all_queries) >= MAX_QUERIES) and gaps:
+        gaps = list(dict.fromkeys(gaps + [str(x) for x in raw.get("evidence_gaps", []) if x]))
+        if gaps:
             steps[3].status = "limited"
-            steps[3].detail = "已达到补搜上限，仍保留证据缺口。"
+            steps[3].detail = "已检查当前样本，仍保留部分证据缺口。"
         else:
             steps[3].detail = "样本覆盖已检查，未进行无意义的重复搜索。"
         steps[3].detail += f" 引用逐字核验：{quotes_verified} 条通过，{quotes_dropped} 条删除。"
@@ -211,6 +241,8 @@ class RedditResearcher:
             concern_answers.append(ConcernAnswer(question=concern, answer=str(item.get("answer", "")),
                                                  evidence_gap=str(item.get("evidence_gap", ""))))
         result = RedditResearch(question=market, market=market, additional_questions=concerns,
+                              sections=sections, cross_checks=cross_checks,
+                              action_plan=actions(raw.get("action_plan"), allowed), decision=str(raw.get("decision") or ""),
                               keyword=market, research_type=research_type,
                               thread_count=len(threads), comment_count=sum(len(t.top_comments) for t in threads),
                               query_count=len(searches), rounds=rounds, overview=str(raw.get("overview", "")),
@@ -219,5 +251,15 @@ class RedditResearcher:
                               article_ideas=ideas, chart=chart, threads=briefs,
                               concern_answers=concern_answers, quotes_verified=quotes_verified,
                               quotes_dropped=quotes_dropped)
-        await emit("report", "报告已生成。")
+        await emit("report", "最后审查：核对过度推断、行动门槛与样本边界。", "active")
+        await audit_report(self.llm, self.s.writer_model or None, result, corpus)
+        result.narrative_chars = narrative_chars(result.model_dump())
+        result.depth_note = ("" if result.narrative_chars >= TARGET_REPORT_CHARS and len(cross_checks) >= 3 and len(result.action_plan) >= 5 else
+                             "本次报告未达到目标分析深度，具体不足见各专题证据缺口；建议补充样本后再作商业决策。")
+        steps[4].detail = f"完成 {len(sections)} 个专题、{sum(len(s.findings) for s in sections)} 项发现。"
+        steps[5].detail = "已交叉审查并形成专项回答与行动计划。"
+        if result.depth_note:
+            steps[5].status = "limited"
+            steps[5].detail = result.depth_note
+        await emit("report", steps[5].detail, steps[5].status)
         return result

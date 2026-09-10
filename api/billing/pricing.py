@@ -109,7 +109,7 @@ PRICES: dict[tuple[str, str], dict[str, int]] = {
     #      和抓取带宽。绝对值小，但别把它当成全成本。
     ("seo-gap", "analyze"):     {"pro": 3},
     ("article-quality", "check"): {"pro": 1},
-    # 深度 Reddit 调研：最多 12 条搜索、3 轮、36 帖，含规划/补搜/综合三类 LLM 调用。
+    # 深度 Reddit 调研：最多 18 条搜索、3 轮、60 帖，含六专题独立分析与综合。
     ("reddit-research", "run"): {"pro": 4},
     ("outreach", "run"):        {"pro": 2},
     ("site-recon", "run"):      {"pro": 1},
