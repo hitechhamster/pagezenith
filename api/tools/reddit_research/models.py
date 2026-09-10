@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 
 
 class RedditResearchRequest(BaseModel):
-    # keyword 保留兼容旧标签页/API；新页面只发 question。
+    # market + additional_questions 是新版市场调研入口。question / keyword 保留兼容旧客户端。
+    market: str = ""
+    additional_questions: list[str] = Field(default_factory=list)
     question: str = ""
     keyword: str = ""
     location_code: int = 2840
@@ -16,7 +18,18 @@ class RedditResearchRequest(BaseModel):
     max_threads: Optional[int] = None
 
     def research_question(self) -> str:
-        return (self.question or self.keyword).strip()
+        return (self.market or self.question or self.keyword).strip()
+
+    def concerns(self) -> list[str]:
+        """去掉空项和重复项，避免同一关切被重复检索。"""
+        out, seen = [], set()
+        for item in self.additional_questions:
+            text = str(item).strip()
+            key = text.casefold()
+            if text and key not in seen:
+                seen.add(key)
+                out.append(text[:300])
+        return out[:5]
 
 
 class ThreadBrief(BaseModel):
@@ -46,6 +59,7 @@ class DiscussionTheme(BaseModel):
     summary: str = ""
     pain_points: list[str] = Field(default_factory=list)
     quotes: list[str] = Field(default_factory=list)
+    quote_evidence: list["QuoteEvidence"] = Field(default_factory=list)
     # 样本中的相对讨论强度，不是 Reddit 全站统计比例。
     weight: int = 0
 
@@ -58,6 +72,18 @@ class ArticleIdea(BaseModel):
     addresses: str = ""
 
 
+class QuoteEvidence(BaseModel):
+    """经机器逐字核验过的原话及其实际来源。"""
+    text: str
+    source_url: str
+
+
+class ConcernAnswer(BaseModel):
+    question: str
+    answer: str = ""
+    evidence_gap: str = ""
+
+
 class ResearchChart(BaseModel):
     title: str = "样本讨论强度"
     note: str = "基于本次抓取样本，不代表 Reddit 全站比例。"
@@ -66,6 +92,8 @@ class ResearchChart(BaseModel):
 
 class RedditResearch(BaseModel):
     question: str = ""
+    market: str = ""
+    additional_questions: list[str] = Field(default_factory=list)
     # 兼容旧客户端与历史结果。
     keyword: str = ""
     research_type: str = "用户需求与痛点调研"
@@ -76,6 +104,9 @@ class RedditResearch(BaseModel):
     overview: str = ""
     audience: str = ""
     evidence_gaps: list[str] = Field(default_factory=list)
+    concern_answers: list[ConcernAnswer] = Field(default_factory=list)
+    quotes_verified: int = 0
+    quotes_dropped: int = 0
     steps: list[ResearchStep] = Field(default_factory=list)
     searches: list[SearchRun] = Field(default_factory=list)
     themes: list[DiscussionTheme] = Field(default_factory=list)

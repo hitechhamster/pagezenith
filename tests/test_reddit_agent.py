@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "api"))
 
 from tools.reddit_research.analyzer import MAX_QUERIES, MAX_ROUNDS, MAX_THREADS, RedditResearcher
-from tools.reddit_research.models import RedditResearchRequest
+from tools.reddit_research.models import DiscussionTheme, RedditResearchRequest
 from tools.seo_gap.clients.reddit import RedditComment, RedditThread
 from tools.seo_gap.config import Settings
 
@@ -62,6 +62,23 @@ class RedditAgentTests(unittest.TestCase):
     def test_legacy_keyword_is_supported(self):
         result = asyncio.run(self.make_agent().research(RedditResearchRequest(keyword="legacy keyword")))
         self.assertEqual(result.question, "legacy keyword")
+
+    def test_market_and_extra_questions_are_structured(self):
+        result = asyncio.run(self.make_agent().research(RedditResearchRequest(
+            market="US return policies", additional_questions=["What creates distrust?", "what creates distrust?", ""]
+        )))
+        self.assertEqual(result.market, "US return policies")
+        self.assertEqual(result.additional_questions, ["What creates distrust?"])
+        self.assertEqual(result.concern_answers[0].question, "What creates distrust?")
+
+    def test_quotes_must_appear_in_collected_corpus(self):
+        thread = RedditThread(id="one", title="title", url="https://reddit.com/one", subreddit="test",
+                              selftext="I waited nine days for my refund.")
+        themes = [DiscussionTheme(name="Refund", quotes=["I waited nine days for my refund.", "A fabricated quote."])]
+        kept, dropped = RedditResearcher._verify_quotes(themes, [thread])
+        self.assertEqual((kept, dropped), (1, 1))
+        self.assertEqual(themes[0].quotes, ["I waited nine days for my refund."])
+        self.assertEqual(themes[0].quote_evidence[0].source_url, "https://reddit.com/one")
 
     def test_supplement_is_bounded(self):
         result = asyncio.run(self.make_agent(True).research(RedditResearchRequest(question="test")))
