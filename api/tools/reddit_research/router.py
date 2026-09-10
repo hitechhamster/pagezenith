@@ -42,6 +42,9 @@ async def _research(req: RedditResearchRequest, card: Card,
                     on_step: Callable[[dict], Awaitable[None]] | None = None) -> RedditResearch:
     if not req.research_question():
         raise HTTPException(status_code=400, detail="请输入想调研的问题。")
+    # 这是英语 Reddit 调研工具；不允许旧客户端或手工请求改写检索市场与语言。
+    req.location_code = 2840
+    req.language_code = "en"
     s = _settings_for(req)
     if _sema.locked():
         raise HTTPException(status_code=429, detail="服务繁忙，请稍后重试。")
