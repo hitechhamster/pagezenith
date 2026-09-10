@@ -13,11 +13,12 @@ from .models import (ArticleIdea, DiscussionTheme, RedditResearch, RedditResearc
 from .prompts import (EVALUATE_SYSTEM, PLAN_SYSTEM, SYNTHESIS_SYSTEM, evaluate_user,
                       plan_user, synthesis_user)
 
-MAX_QUERIES = 8
-MAX_ROUNDS = 2
-MAX_THREADS = 15
-MAX_CORPUS_CHARS = 28_000
-INITIAL_QUERY_LIMIT = 4
+# 深度研究档：不是把同义词搜索堆上去，而是扩大真实帖子样本并保留一轮针对性补搜。
+MAX_QUERIES = 12
+MAX_ROUNDS = 3
+MAX_THREADS = 36
+MAX_CORPUS_CHARS = 60_000
+INITIAL_QUERY_LIMIT = 5
 
 _MOCK_PLAN = {"research_type": "用户需求与痛点调研", "queries": [
     {"query": "forex broker withdrawal problem", "purpose": "了解核心投诉"},
@@ -104,7 +105,7 @@ class RedditResearcher:
                 break
             remaining = MAX_THREADS - len(existing) - len(added)
             found = await self.reddit.collect(item["query"], req.location_code, req.language_code,
-                                              limit=min(4, remaining))
+                                              limit=min(5, remaining))
             unique = [t for t in found if (t.id or t.url) not in seen]
             for t in unique:
                 seen.add(t.id or t.url)
@@ -190,7 +191,7 @@ class RedditResearcher:
         chart = ResearchChart(items=[{"label": t.name, "value": t.weight} for t in themes[:6]])
         briefs = [ThreadBrief(title=t.title, url=t.url, subreddit=t.subreddit, score=t.score,
                               num_comments=t.num_comments) for t in threads]
-        if rounds == MAX_ROUNDS and gaps:
+        if (rounds == MAX_ROUNDS or len(all_queries) >= MAX_QUERIES) and gaps:
             steps[3].status = "limited"
             steps[3].detail = "已达到补搜上限，仍保留证据缺口。"
         else:

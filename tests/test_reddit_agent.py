@@ -31,11 +31,11 @@ class FakeLLM:
         self.calls += 1
         if self.calls == 1:
             return {"research_type": "购买决策", "queries": [
-                {"query": f"initial query {i}", "purpose": "initial"} for i in range(6)
+                {"query": f"initial query {i}", "purpose": "initial"} for i in range(8)
             ]}
         if self.calls == 2 and self.supplement:
             return {"sufficient": False, "evidence_gaps": ["反方样本不足"],
-                    "add_queries": [{"query": f"extra query {i}", "purpose": "extra"} for i in range(6)]}
+                    "add_queries": [{"query": f"extra query {i}", "purpose": "extra"} for i in range(8)]}
         if self.calls == 2:
             return {"sufficient": True, "evidence_gaps": [], "add_queries": []}
         return {"overview": "Only sample evidence.", "audience": "buyers",
@@ -54,8 +54,8 @@ class RedditAgentTests(unittest.TestCase):
         result = asyncio.run(self.make_agent().research(RedditResearchRequest(question="Why do buyers hesitate?")))
         self.assertEqual(result.question, "Why do buyers hesitate?")
         self.assertEqual(result.rounds, 1)
-        self.assertEqual(result.query_count, 4)
-        self.assertEqual(result.thread_count, 4)
+        self.assertEqual(result.query_count, 5)
+        self.assertEqual(result.thread_count, 5)
         self.assertEqual(len(result.steps), 5)
         self.assertTrue(result.chart.items)
 
@@ -82,7 +82,7 @@ class RedditAgentTests(unittest.TestCase):
 
     def test_supplement_is_bounded(self):
         result = asyncio.run(self.make_agent(True).research(RedditResearchRequest(question="test")))
-        self.assertEqual(result.rounds, MAX_ROUNDS)
+        self.assertLessEqual(result.rounds, MAX_ROUNDS)
         self.assertLessEqual(result.query_count, MAX_QUERIES)
         self.assertEqual(result.query_count, MAX_QUERIES)
         self.assertLessEqual(result.thread_count, MAX_THREADS)

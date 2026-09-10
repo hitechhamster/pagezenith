@@ -10,7 +10,7 @@ PLAN_SYSTEM = """你是严谨的 Reddit 用户研究员。把“目标市场”�
 搜索词必须覆盖不同角度（问题表述、用户处境、替代方案或反对观点），不是同义词堆砌。
 额外问题会影响优先级和搜索角度；但不要为每个问题机械增加一条搜索，能用同一条证据覆盖就合并。
 只输出 JSON：{"research_type":"中文","queries":[{"query":"英文搜索词","purpose":"中文"}]}。
-queries 最多 4 条；不确定专业名词时宁可使用 Reddit 用户会说的自然表达。"""
+queries 最多 5 条；不确定专业名词时宁可使用 Reddit 用户会说的自然表达。"""
 
 EVALUATE_SYSTEM = """你是证据覆盖审查员。根据目标市场、用户额外关心的问题、当前调研计划与抓到的 Reddit 样本，判断是否需要补搜。
 只有确实缺关键人群、反方观点、具体场景或问题主因时才补搜。不能为了凑数量重复搜索。
@@ -27,7 +27,7 @@ SYNTHESIS_SYSTEM = """你是面向跨境独立站经营者的尽职 Reddit 调�
 "themes":[{"name":"中文","summary":"中文","pain_points":["中文"],"quotes":["原话"],"weight":1-100}],
 "questions":["中文问题"],"article_ideas":[{"title":"英文 SEO 标题","target_keyword":"英文词","intent":"中文","angle":"中文","addresses":"中文"}],
 "concern_answers":[{"question":"必须原样等于用户问题","answer":"中文专项回答","evidence_gap":"若证据不足写中文原因，否则空"}]}
-themes 3-6 条；questions 4-10 条；article_ideas 4-8 条。weight 只能表示本次样本的相对讨论强度，不能写成百分比或总体统计。"""
+themes 5-8 条；questions 6-12 条；article_ideas 6-10 条。每个 theme 尽量给 2-3 条原话；若样本不足，宁可少给并说明。weight 只能表示本次样本的相对讨论强度，不能写成百分比或总体统计。"""
 
 
 def _brief(market: str, concerns: list[str]) -> str:
