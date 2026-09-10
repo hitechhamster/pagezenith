@@ -1,38 +1,49 @@
-"""独立 Reddit 研究编排：collect 帖子 → 拼语料 → LLM 分析 → 结构化结果。"""
+"""有上限的 Reddit 调研编排：规划 → 取证 → 必要时补搜 → 综合。"""
 
 from __future__ import annotations
 
-import logging
-
+from collections.abc import Awaitable, Callable
 from ..seo_gap.clients.llm import LLMClient
-from ..seo_gap.clients.reddit import RedditClient
+from ..seo_gap.clients.reddit import RedditClient, RedditThread
 from ..seo_gap.config import Settings, get_settings
-from .models import (
-    ArticleIdea, DiscussionTheme, RedditResearch, RedditResearchRequest, ThreadBrief,
-)
-from .prompts import RESEARCH_SYSTEM, build_research_user
+from .models import (ArticleIdea, DiscussionTheme, RedditResearch, RedditResearchRequest,
+                     ResearchChart, ResearchStep, SearchRun, ThreadBrief)
+from .prompts import (EVALUATE_SYSTEM, PLAN_SYSTEM, SYNTHESIS_SYSTEM, evaluate_user,
+                      plan_user, synthesis_user)
 
-logger = logging.getLogger(__name__)
+MAX_QUERIES = 8
+MAX_ROUNDS = 2
+MAX_THREADS = 15
+MAX_CORPUS_CHARS = 28_000
+INITIAL_QUERY_LIMIT = 4
 
-# 喂给 LLM 的总语料上限（控 token + 提速；按帖均摊）
-_CORPUS_MAX = 16000
+_MOCK_PLAN = {"research_type": "用户需求与痛点调研", "queries": [
+    {"query": "forex broker withdrawal problem", "purpose": "了解核心投诉"},
+    {"query": "forex broker scam reddit", "purpose": "识别风险信号"},
+    {"query": "how to verify forex broker reddit", "purpose": "寻找解决方案"},
+]}
+_MOCK_EVALUATION = {"sufficient": True, "evidence_gaps": [], "add_queries": []}
+_MOCK_SYNTHESIS = {"overview": "样本中的用户主要担心出金受阻与监管核验，但这不是全体用户的统计。",
+ "audience": "刚开始选择经纪商、或遇到出金延迟的散户。",
+ "themes": [{"name": "出金风险", "summary": "多帖讨论延迟或无法出金。", "pain_points": ["等待时间长", "客服无回应"],
+             "quotes": ["They delay my withdrawal for 9 days"], "weight": 80}],
+ "questions": ["如何在入金前核验经纪商监管？"],
+ "article_ideas": [{"title": "How to Verify if a Forex Broker Is Regulated", "target_keyword": "verify forex broker regulation",
+                    "intent": "信息型/避坑型", "angle": "做成可执行核验清单", "addresses": "回应出金风险"}]}
 
-_MOCK = {
-    "overview": "Reddit 用户主要在讨论如何识别外汇黑平台、出金被拖延后怎么办。",
-    "audience": "刚入门的散户交易者，遭遇过或担心遇到不出金的经纪商。",
-    "themes": [
-        {"name": "出金困难", "summary": "大量用户反映入金容易出金难。",
-         "pain_points": ["出金被拖延数周", "客服已读不回"],
-         "quotes": ["They delay my withdrawal for 9 days"], "weight": 80},
-    ],
-    "questions": ["怎么核验经纪商是否受监管？", "被黑平台骗了还能追回吗？"],
-    "article_ideas": [
-        {"title": "How to Verify if a Forex Broker Is Regulated (Step by Step)",
-         "target_keyword": "how to verify forex broker regulation",
-         "intent": "信息型/避坑型", "angle": "把核验监管牌照做成可照做的清单",
-         "addresses": "回应‘出金困难’主题里反复出现的‘怎么提前识别’"},
-    ],
-}
+
+def _clean_queries(items: object, budget: int) -> list[dict]:
+    out, seen = [], set()
+    for item in items if isinstance(items, list) else []:
+        q = str((item or {}).get("query", "")).strip() if isinstance(item, dict) else ""
+        key = q.lower()
+        if not q or key in seen:
+            continue
+        seen.add(key)
+        out.append({"query": q[:180], "purpose": str(item.get("purpose", "")).strip()[:180]})
+        if len(out) >= budget:
+            break
+    return out
 
 
 class RedditResearcher:
@@ -41,49 +52,120 @@ class RedditResearcher:
         self.llm = LLMClient(self.s)
         self.reddit = RedditClient(self.s)
 
-    async def research(self, req: RedditResearchRequest) -> RedditResearch:
-        threads = await self.reddit.collect(
-            req.keyword, req.location_code, req.language_code, req.max_threads
-        )
+    @staticmethod
+    def _corpus(threads: list[RedditThread]) -> str:
         if not threads:
-            raise RuntimeError("没在 Reddit 上找到相关讨论。换个更通用的英文关键词试试。")
+            return "（未找到可用的 Reddit 帖子或评论。）"
+        per = max(900, MAX_CORPUS_CHARS // max(len(threads), 1))
+        return "\n\n---\n\n".join(t.as_text(per) for t in threads)[:MAX_CORPUS_CHARS]
 
-        per = max(1500, _CORPUS_MAX // max(len(threads), 1))
-        corpus = "\n\n---\n\n".join(t.as_text(per) for t in threads)[:_CORPUS_MAX]
-        comment_count = sum(len(t.top_comments) for t in threads)
+    async def _collect(self, queries: list[dict], req: RedditResearchRequest, round_no: int,
+                       existing: list[RedditThread], searches: list[SearchRun]) -> list[RedditThread]:
+        seen = {t.id or t.url for t in existing}
+        added: list[RedditThread] = []
+        for item in queries:
+            if len(existing) + len(added) >= MAX_THREADS:
+                break
+            remaining = MAX_THREADS - len(existing) - len(added)
+            found = await self.reddit.collect(item["query"], req.location_code, req.language_code,
+                                              limit=min(4, remaining))
+            unique = [t for t in found if (t.id or t.url) not in seen]
+            for t in unique:
+                seen.add(t.id or t.url)
+            added.extend(unique)
+            searches.append(SearchRun(query=item["query"], purpose=item.get("purpose", ""),
+                                      round=round_no, thread_count=len(unique)))
+        return added
 
+    async def research(self, req: RedditResearchRequest,
+                       on_step: Callable[[dict], Awaitable[None]] | None = None) -> RedditResearch:
+        async def emit(key: str, detail: str, status: str = "done") -> None:
+            if on_step is not None:
+                await on_step({"key": key, "detail": detail, "status": status})
+
+        question = req.research_question()
+        if not question:
+            raise RuntimeError("请输入你想调研的问题。")
+        steps = [ResearchStep(key="understand", label="理解问题与调研目标"),
+                 ResearchStep(key="plan", label="拆分搜索词"),
+                 ResearchStep(key="evidence", label="检索 Reddit 讨论与评论"),
+                 ResearchStep(key="verify", label="检查证据缺口并决定是否补搜"),
+                 ResearchStep(key="report", label="生成结论、图表与行动建议")]
+        plan = await self.llm.complete_json(PLAN_SYSTEM, plan_user(question), mock=_MOCK_PLAN,
+                                            model=self.s.writer_model or None)
+        await emit("understand", "已识别问题与需要核实的用户视角。")
+        research_type = str((plan or {}).get("research_type") or "Reddit 用户需求调研")
+        planned = _clean_queries((plan or {}).get("queries"), INITIAL_QUERY_LIMIT)
+        if not planned:
+            planned = [{"query": question, "purpose": "直接检索用户问题"}]
+        await emit("plan", f"第一轮规划 {len(planned)} 条不同角度的搜索词。")
+
+        threads: list[RedditThread] = []
+        searches: list[SearchRun] = []
+        threads.extend(await self._collect(planned, req, 1, threads, searches))
+        await emit("evidence", f"第一轮取得 {len(threads)} 帖公开讨论，正在检查证据覆盖。", "active")
+        all_queries = [x["query"].lower() for x in planned]
+        gaps: list[str] = []
+        rounds = 1
+
+        # 最多两轮。第二轮只在审查明确认定存在可补的证据缺口时执行。
+        while rounds < MAX_ROUNDS and len(all_queries) < MAX_QUERIES:
+            decision = await self.llm.complete_json(
+                EVALUATE_SYSTEM,
+                evaluate_user(question, research_type, [x.model_dump() for x in searches], self._corpus(threads)),
+                mock=_MOCK_EVALUATION, model=self.s.writer_model or None,
+            ) or {}
+            gaps = [str(x)[:200] for x in decision.get("evidence_gaps", []) if str(x).strip()][:5]
+            if bool(decision.get("sufficient", False)):
+                await emit("verify", "样本覆盖已检查，未进行无意义的重复搜索。")
+                break
+            capacity = MAX_QUERIES - len(all_queries)
+            extra = [x for x in _clean_queries(decision.get("add_queries"), capacity)
+                     if x["query"].lower() not in all_queries]
+            if not extra:
+                await emit("verify", "没有发现值得继续搜索的新增角度。")
+                break
+            rounds += 1
+            all_queries.extend(x["query"].lower() for x in extra)
+            threads.extend(await self._collect(extra, req, rounds, threads, searches))
+            await emit("evidence", f"已补搜第 {rounds} 轮，目前累计 {len(threads)} 帖。", "active")
+
+        if not threads:
+            # 没有公开证据就不交一篇凭空报告；异常会让计费层自动退回本次点数。
+            raise RuntimeError("没在 Reddit 上找到可用讨论。换一种更通用的问法或换个地区试试。")
+
+        await emit("report", "正在根据已抓取样本生成结论与可追溯来源。", "active")
         raw = await self.llm.complete_json(
-            RESEARCH_SYSTEM, build_research_user(req.keyword, corpus),
-            mock=_MOCK, model=self.s.writer_model or None,
-        )
-        if not isinstance(raw, dict):
-            raw = {}
-
-        themes = [
-            DiscussionTheme(
-                name=t.get("name", ""), summary=t.get("summary", ""),
-                pain_points=t.get("pain_points", []) or [],
-                quotes=t.get("quotes", []) or [], weight=int(t.get("weight", 0) or 0),
-            )
-            for t in raw.get("themes", []) if t.get("name")
-        ]
+            SYNTHESIS_SYSTEM,
+            synthesis_user(question, research_type, [x.model_dump() for x in searches], gaps, self._corpus(threads)),
+            mock=_MOCK_SYNTHESIS, model=self.s.writer_model or None,
+        ) or {}
+        themes = [DiscussionTheme(name=str(x.get("name", "")), summary=str(x.get("summary", "")),
+                                  pain_points=x.get("pain_points", []) or [], quotes=x.get("quotes", []) or [],
+                                  weight=max(0, min(100, int(x.get("weight", 0) or 0))))
+                  for x in raw.get("themes", []) if isinstance(x, dict) and x.get("name")]
         themes.sort(key=lambda x: x.weight, reverse=True)
-        ideas = [
-            ArticleIdea(
-                title=i.get("title", ""), target_keyword=i.get("target_keyword", ""),
-                intent=i.get("intent", ""), angle=i.get("angle", ""),
-                addresses=i.get("addresses", ""),
-            )
-            for i in raw.get("article_ideas", []) if i.get("title")
-        ]
-        briefs = [
-            ThreadBrief(title=t.title, url=t.url, subreddit=t.subreddit,
-                        score=t.score, num_comments=t.num_comments)
-            for t in threads
-        ]
-        return RedditResearch(
-            keyword=req.keyword, thread_count=len(threads), comment_count=comment_count,
-            overview=raw.get("overview", ""), audience=raw.get("audience", ""),
-            themes=themes, questions=raw.get("questions", []) or [],
-            article_ideas=ideas, threads=briefs,
-        )
+        ideas = [ArticleIdea(title=str(x.get("title", "")), target_keyword=str(x.get("target_keyword", "")),
+                             intent=str(x.get("intent", "")), angle=str(x.get("angle", "")),
+                             addresses=str(x.get("addresses", "")))
+                 for x in raw.get("article_ideas", []) if isinstance(x, dict) and x.get("title")]
+        chart = ResearchChart(items=[{"label": t.name, "value": t.weight} for t in themes[:6]])
+        briefs = [ThreadBrief(title=t.title, url=t.url, subreddit=t.subreddit, score=t.score,
+                              num_comments=t.num_comments) for t in threads]
+        if rounds == MAX_ROUNDS and gaps:
+            steps[3].status = "limited"
+            steps[3].detail = "已达到补搜上限，仍保留证据缺口。"
+        else:
+            steps[3].detail = "样本覆盖已检查，未进行无意义的重复搜索。"
+        steps[1].detail = f"规划并执行 {len(searches)} 条搜索词。"
+        steps[2].detail = f"取得 {len(threads)} 帖、{sum(len(t.top_comments) for t in threads)} 条高赞评论。"
+        await emit("evidence", steps[2].detail)
+        await emit("verify", steps[3].detail, steps[3].status)
+        result = RedditResearch(question=question, keyword=question, research_type=research_type,
+                              thread_count=len(threads), comment_count=sum(len(t.top_comments) for t in threads),
+                              query_count=len(searches), rounds=rounds, overview=str(raw.get("overview", "")),
+                              audience=str(raw.get("audience", "")), evidence_gaps=gaps, steps=steps,
+                              searches=searches, themes=themes, questions=raw.get("questions", []) or [],
+                              article_ideas=ideas, chart=chart, threads=briefs)
+        await emit("report", "报告已生成。")
+        return result
