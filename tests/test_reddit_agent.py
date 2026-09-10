@@ -15,6 +15,7 @@ from tools.reddit_research.models import DiscussionTheme, RedditResearchRequest
 from tools.reddit_research.depth import audit_report, findings, narrative_chars
 from tools.reddit_research.models import RedditResearch, ResearchAction
 from tools.reddit_research.prompts import PLAN_SYSTEM, EVALUATE_SYSTEM, SECTION_SYSTEM
+from tools.reddit_research.tables import TABLE_SYSTEM, TABLE_SPECS, build_tables, parse_tables, review_cells
 from tools.seo_gap.clients.reddit import RedditComment, RedditThread
 from tools.seo_gap.config import Settings
 
@@ -36,6 +37,8 @@ class FakeLLM:
 
     async def complete_json(self, system, user, **_kwargs):
         self.calls += 1
+        if system == TABLE_SYSTEM:
+            return _kwargs["mock"]
         if system == PLAN_SYSTEM:
             return {"research_type": "购买决策", "queries": [
                 {"query": f"initial query {i}", "purpose": "initial"} for i in range(8)
@@ -130,6 +133,80 @@ class RedditAgentTests(unittest.TestCase):
         self.assertEqual(result.quotes_dropped, 6)
         self.assertEqual(result.chart.items[0]["value"], 1)
         self.assertTrue(result.depth_note)
+        self.assertEqual(len(result.market_tables), 4)
+        restored = RedditResearch.model_validate_json(result.model_dump_json())
+        self.assertEqual(restored.market_tables, result.market_tables)
+
+    def test_market_cells_require_quotes_from_the_named_source(self):
+        threads = [RedditThread(id="one", url="https://reddit.com/one", selftext="I drive every Saturday at the park."),
+                   RedditThread(id="two", url="https://reddit.com/two", selftext="I am a beginner buying a car.")]
+        sample = lambda text, source, quote: {"text": text, "basis": "sample", "source_ids": [source], "quote": quote}
+        raw = {"tables": [{"key": "audiences", "rows": [{"cells": {
+            "who": sample("入门玩家", "T002", "I am a beginner buying a car."),
+            "when": sample("每周六", "T002", "I drive every Saturday at the park."),
+            "where": sample("公园", "T001", "I drive every Saturday at the park."),
+            "job": {"text": "培养爱好", "basis": "inference", "source_ids": ["T002", "T999"]},
+            "barrier": sample("编造事实", "T999", "fabricated quote")}}]}]}
+        tables = parse_tables(raw, threads)
+        self.assertEqual(len(tables), 4)
+        cells = tables[0].rows[0].cells
+        self.assertEqual(cells["when"].basis, "unknown")  # Correct quote, wrong source must fail.
+        self.assertEqual(cells["where"].quote_evidence[0].source_url, "https://reddit.com/one")
+        self.assertEqual(cells["job"].source_ids, ["T002"])
+        self.assertEqual(cells["barrier"].source_ids, [])
+        self.assertTrue(tables[1].evidence_gap)
+
+    def test_market_time_and_price_cannot_be_guessed_and_columns_are_fixed(self):
+        threads = [RedditThread(id="one", selftext="I drive every Saturday at the park.")]
+        guessed = {"text": "猜测内容", "basis": "inference", "source_ids": ["T001"]}
+        raw = {"tables": [{"key": key, "columns": {"evil": "bad"}, "rows": [{"cells": {
+            **{name: guessed for name in columns}, "evil": guessed}}]} for key, _, columns in TABLE_SPECS]}
+        tables = parse_tables(raw, threads)
+        self.assertEqual(tables[0].rows[0].cells["when"].text, "样本未提及")
+        self.assertEqual(tables[2].rows[0].cells["price"].basis, "unknown")
+        self.assertNotIn("evil", tables[0].columns)
+        self.assertEqual(narrative_chars({"market_tables": [t.model_dump() for t in tables]}), 0)
+
+    def test_market_tables_retry_is_bounded_and_omission_fails(self):
+        llm = type("LLM", (), {"complete_json": AsyncMock(return_value={})})()
+        with self.assertRaises(ExceptionGroup) as failed:
+            asyncio.run(build_tables(llm, None, "test", [], "corpus", []))
+        self.assertTrue(all("对照表" in str(e) for e in failed.exception.exceptions))
+        self.assertGreaterEqual(llm.complete_json.await_count, 2)
+        self.assertLessEqual(llm.complete_json.await_count, 8)
+
+    def test_expanded_price_range_is_rejected_despite_real_quote(self):
+        threads = [RedditThread(id="one", selftext="Used Slash cars cost around 100-150.")]
+        raw = {"tables": [{"key": "competition", "rows": [{"cells": {
+            "option": {"text": "Slash", "basis": "sample", "source_ids": ["T001"], "quote": threads[0].selftext},
+            "price": {"text": "$100-700", "basis": "sample", "source_ids": ["T001"], "quote": threads[0].selftext}}}]}]}
+        tables = parse_tables(raw, threads)
+        self.assertEqual(tables[2].rows[0].cells["price"].basis, "unknown")
+
+    def test_cell_review_preserves_verified_sources_and_removes_unsupported_claims(self):
+        threads = [RedditThread(id="one", url="https://reddit.com/one", selftext="I drive every Saturday at the park.")]
+        sample = {"text": "公园、后院、赛车场", "basis": "sample", "source_ids": ["T001"], "quote": threads[0].selftext}
+        tables = parse_tables({"tables": [{"key": "audiences", "rows": [{"cells": {
+            "who": sample, "where": sample, "when": sample}}]}]}, threads)
+        llm = type("LLM", (), {"complete_json": AsyncMock(return_value={"cells": [
+            {"id": "0.0.who", "text": "自述驾车的发帖人"}, {"id": "0.0.where", "text": "公园"}]})})()
+        asyncio.run(review_cells(llm, None, tables))
+        cells = tables[0].rows[0].cells
+        self.assertEqual(cells["where"].text, "公园")
+        self.assertEqual(cells["where"].quote_evidence[0].source_url, "https://reddit.com/one")
+        self.assertEqual(cells["when"].basis, "unknown")  # Missing review must not silently pass.
+
+    def test_old_reports_remain_readable_without_invented_tables(self):
+        old = RedditResearch.model_validate({"overview": "old report", "report_version": 2})
+        self.assertEqual(old.market_tables, [])
+
+    def test_flat_model_rows_are_normalized_without_losing_market_data(self):
+        threads = [RedditThread(id="one", selftext="I drive every Saturday at the park.")]
+        who = {"text": "自述玩家", "basis": "sample", "source_ids": ["T001"], "quote": threads[0].selftext}
+        table = parse_tables({"tables": [{"key": "audiences", "rows": [{"who": who}, None]}]}, threads)[0]
+        self.assertEqual(len(table.rows), 1)
+        self.assertEqual(table.rows[0].cells["who"].text, "自述玩家")
+        self.assertEqual(table.rows[0].cells["when"].basis, "unknown")
 
     def test_unknown_sources_cannot_be_presented_as_observations(self):
         entries = findings([{"title": "unsupported", "observation": "made up fact", "source_ids": ["T999"],

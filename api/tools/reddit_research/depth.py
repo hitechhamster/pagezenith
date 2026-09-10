@@ -81,6 +81,8 @@ def narrative_chars(value) -> int:
     def visit(node):
         if isinstance(node, dict):
             for key, item in node.items():
+                if key == "market_tables":
+                    continue  # Comparison cells must not replace the promised long-form analysis.
                 if key in fields and isinstance(item, str):
                     text = re.sub(r"\W+", "", item, flags=re.UNICODE)
                     if text:

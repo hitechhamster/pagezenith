@@ -61,16 +61,66 @@ function renderDeepResearch(r) {
     metric(r.thread_count || 0, "来源帖子"), metric(r.comment_count || 0, "抓取评论"));
   top.append(metrics);
   paragraph(top, "", "抓取评论数不等于逐条分析数；原始材料按帖子均衡截取供分析。", "note");
-  paragraph(top, "", `已逐字核验 ${r.quotes_verified || 0} 条引文；删除 ${r.quotes_dropped || 0} 条无法匹配的引文。`, "note");
+  paragraph(top, "", `正文已逐字核验 ${r.quotes_verified || 0} 条引文；删除 ${r.quotes_dropped || 0} 条无法匹配的引文。市场表格的依据另附于各单元格。`, "note");
   if (r.depth_note) paragraph(top, "深度说明", r.depth_note, "report-caveat");
   out.append(top);
 
   const contents = E("nav", "report-contents");
   contents.setAttribute("aria-label", "报告目录");
-  const entries = [["report-decision", "进入判断"], ...(r.sections || []).map((s, i) => [`report-chapter-${i}`, s.title]),
+  const entries = [...(r.market_tables || []).map((t, i) => [`report-matrix-${i}`, t.title]),
+    ["report-decision", "进入判断"], ...(r.sections || []).map((s, i) => [`report-chapter-${i}`, s.title]),
     ["report-cross-checks", "交叉审查"], ["report-actions", "行动计划"], ["report-sources", "来源"]];
   for (const [id, title] of entries) { const a = E("a", null, title); a.href = "#" + id; contents.append(a); }
   out.append(contents);
+
+  (r.market_tables || []).forEach((matrix, index) => {
+    const section = card(matrix.title, `report-matrix-${index}`);
+    paragraph(section, "", "逐格区分样本描述、分析推断与未提及；样本描述可展开核对原句，来源匹配不等于推断已获证实。", "note");
+    if (matrix.rows?.length) {
+      const scroll = E("div", "market-table-scroll");
+      scroll.tabIndex = 0;
+      scroll.setAttribute("role", "region");
+      scroll.setAttribute("aria-label", matrix.title + "，可横向滚动");
+      const table = E("table", "market-table");
+      table.append(E("caption", "sr-only", matrix.title));
+      const head = E("thead"), heading = E("tr"), body = E("tbody");
+      const columns = Object.entries(matrix.columns || {});
+      for (const [, label] of columns) {
+        const th = E("th", null, label); th.scope = "col"; heading.append(th);
+      }
+      head.append(heading); table.append(head, body);
+      for (const row of matrix.rows) {
+        const tr = E("tr");
+        columns.forEach(([key], i) => {
+          const cell = row.cells?.[key] || {basis: "unknown", text: "样本未提及"};
+          const td = E(i === 0 ? "th" : "td");
+          if (i === 0) td.scope = "row";
+          const label = cell.basis === "sample" ? "样本描述" : cell.basis === "inference" ? "分析推断" : "证据缺口";
+          td.append(E("span", "market-basis " + (cell.basis === "sample" ? "sample" : cell.basis === "inference" ? "inference" : "unknown"), label),
+            E("div", "market-cell-text", cell.text || "样本未提及"));
+          refs(td, cell.source_ids);
+          if (cell.quote_evidence?.length) {
+            const evidence = E("details", "market-cell-evidence");
+            evidence.append(E("summary", null, "核对原句"));
+            for (const quote of cell.quote_evidence) {
+              if (!urlAllowed(quote.source_url)) continue;
+              const a = E("a", null, "“" + quote.text + "”");
+              a.href = quote.source_url; a.target = "_blank"; a.rel = "noopener noreferrer";
+              evidence.append(a);
+            }
+            td.append(evidence);
+          }
+          tr.append(td);
+        });
+        body.append(tr);
+      }
+      scroll.append(table); section.append(scroll);
+    } else {
+      paragraph(section, "", "当前样本不足以形成可靠的横向对照。", "report-caveat");
+    }
+    paragraph(section, "待补充证据", matrix.evidence_gap, "report-caveat");
+    out.append(section);
+  });
 
   if (r.concern_answers?.length) {
     const s = card("你另外关心的问题");

@@ -12,6 +12,7 @@ from ..seo_gap.config import Settings, get_settings
 from .models import (ArticleIdea, DiscussionTheme, RedditResearch, RedditResearchRequest,
                      ConcernAnswer, QuoteEvidence, ResearchChart, ResearchStep, SearchRun, ThreadBrief)
 from .depth import TARGET_REPORT_CHARS, actions, audit_report, draft_sections, findings, narrative_chars, synthesize
+from .tables import build_tables
 from .prompts import (EVALUATE_SYSTEM, PLAN_SYSTEM, evaluate_user,
                       plan_user, synthesis_user)
 
@@ -136,7 +137,7 @@ class RedditResearcher:
                  ResearchStep(key="plan", label="设计搜索假设"),
                  ResearchStep(key="evidence", label="检索 Reddit 讨论与评论"),
                  ResearchStep(key="verify", label="逐字核验原话并检查证据缺口"),
-                 ResearchStep(key="analysis", label="六个专题深入分析"),
+                 ResearchStep(key="analysis", label="市场对照与六个专题分析"),
                  ResearchStep(key="report", label="生成市场结论与专项回答")]
         plan = await self.llm.complete_json(PLAN_SYSTEM, plan_user(market, concerns), mock=_MOCK_PLAN,
                                             model=self.s.writer_model or None)
@@ -193,13 +194,17 @@ class RedditResearcher:
         # Verify specialist quotes BEFORE they become input for the final review.
         section_verified, section_dropped = self._verify_quotes(
             [finding for section in sections for finding in section.findings], threads)
+        await emit("analysis", "正在整理人群与使用时机、购买路径、竞品及机会四张对照表。", "active")
+        market_tables = await build_tables(self.llm, self.s.writer_model or None, market, concerns, corpus, threads)
         await emit("analysis", "六个专题已完成，进入交叉审查与机会排序。")
         await emit("report", "正在检查专题间矛盾、回答专项问题并制定验证计划。", "active")
         raw = await synthesize(
             self.llm, self.s.writer_model or None,
             synthesis_user(market, concerns, research_type, [x.model_dump() for x in searches], gaps, corpus)
             + "\n=== 六个专题草稿（待交叉审查，非指令） ===\n"
-            + json.dumps([s.model_dump() for s in sections], ensure_ascii=False),
+            + json.dumps([s.model_dump() for s in sections], ensure_ascii=False)
+            + "\n=== 市场对照表（保留未提及与推断边界） ===\n"
+            + json.dumps([t.model_dump() for t in market_tables], ensure_ascii=False),
             [s.model_dump() for s in sections], _MOCK_SYNTHESIS, emit,
         ) or {}
         themes = [DiscussionTheme(name=str(x.get("name", "")), summary=str(x.get("summary", "")),
@@ -241,7 +246,7 @@ class RedditResearcher:
             concern_answers.append(ConcernAnswer(question=concern, answer=str(item.get("answer", "")),
                                                  evidence_gap=str(item.get("evidence_gap", ""))))
         result = RedditResearch(question=market, market=market, additional_questions=concerns,
-                              sections=sections, cross_checks=cross_checks,
+                              sections=sections, cross_checks=cross_checks, market_tables=market_tables, report_version=3,
                               action_plan=actions(raw.get("action_plan"), allowed), decision=str(raw.get("decision") or ""),
                               keyword=market, research_type=research_type,
                               thread_count=len(threads), comment_count=sum(len(t.top_comments) for t in threads),
@@ -256,7 +261,7 @@ class RedditResearcher:
         result.narrative_chars = narrative_chars(result.model_dump())
         result.depth_note = ("" if result.narrative_chars >= TARGET_REPORT_CHARS and len(cross_checks) >= 3 and len(result.action_plan) >= 5 else
                              "本次报告未达到目标分析深度，具体不足见各专题证据缺口；建议补充样本后再作商业决策。")
-        steps[4].detail = f"完成 {len(sections)} 个专题、{sum(len(s.findings) for s in sections)} 项发现。"
+        steps[4].detail = f"完成 {len(market_tables)} 张市场对照表、{len(sections)} 个专题、{sum(len(s.findings) for s in sections)} 项发现。"
         steps[5].detail = "已交叉审查并形成专项回答与行动计划。"
         if result.depth_note:
             steps[5].status = "limited"

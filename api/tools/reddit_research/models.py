@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -119,8 +119,28 @@ class ResearchAction(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
 
 
+class MarketCell(BaseModel):
+    text: str = "样本未提及"
+    basis: Literal["sample", "inference", "unknown"] = "unknown"
+    source_ids: list[str] = Field(default_factory=list)
+    quote_evidence: list[QuoteEvidence] = Field(default_factory=list)
+
+
+class MarketRow(BaseModel):
+    cells: dict[str, MarketCell] = Field(default_factory=dict)
+
+
+class MarketTable(BaseModel):
+    key: str
+    title: str
+    columns: dict[str, str] = Field(default_factory=dict)
+    rows: list[MarketRow] = Field(default_factory=list)
+    evidence_gap: str = ""
+
+
 class RedditResearch(BaseModel):
     report_version: int = 2
+    market_tables: list[MarketTable] = Field(default_factory=list)
     sections: list[ResearchSection] = Field(default_factory=list)
     cross_checks: list[ResearchFinding] = Field(default_factory=list)
     action_plan: list[ResearchAction] = Field(default_factory=list)
