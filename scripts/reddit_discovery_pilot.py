@@ -21,24 +21,20 @@ import argparse
 import asyncio
 import csv
 import json
+import os
 import re
 import sys
+import threading
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
-
-import httpx
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 REPO = Path(__file__).resolve().parents[1]
-API = REPO / "api"
-if str(API) not in sys.path:
-    sys.path.insert(0, str(API))
-
-from tools.seo_gap.clients import serper_pool  # noqa: E402
-from tools.seo_gap.config import get_settings  # noqa: E402
 
 
 SIGNALS: tuple[tuple[str, str], ...] = (
@@ -69,6 +65,65 @@ SIGNALS: tuple[tuple[str, str], ...] = (
 )
 
 SUBREDDIT_RE = re.compile(r"^https?://(?:www\.)?reddit\.com/r/([^/?#]+)", re.I)
+_KEY_LOCK = threading.Lock()
+_KEY_INDEX = 0
+
+
+def configured_keys() -> list[str]:
+    """Read only runtime environment; never persist API key material."""
+    pool = os.environ.get("SERPER_KEYS", "")
+    keys = [item.strip() for item in pool.split(",") if item.strip()]
+    if not keys and os.environ.get("SERPER_API_KEY", "").strip():
+        keys = [os.environ["SERPER_API_KEY"].strip()]
+    if not keys and os.environ.get("SERPER_KEY", "").strip():
+        keys = [os.environ["SERPER_KEY"].strip()]
+    return keys
+
+
+def _post_once(base_url: str, api_key: str, payload: dict[str, Any], timeout: float) -> tuple[int, dict[str, Any]]:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(base_url.rstrip("/") + "/search", data=body, method="POST", headers={
+        "Content-Type": "application/json", "X-API-KEY": api_key,
+    })
+    try:
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - explicit Serper URL
+            status, raw = response.status, response.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        status, raw = exc.code, exc.read().decode("utf-8", errors="replace")
+    except URLError as exc:
+        return 0, {"error": f"network error: {exc.reason}"}
+    except Exception as exc:  # noqa: BLE001
+        return 0, {"error": str(exc)}
+    try:
+        data = json.loads(raw)
+        return status, data if isinstance(data, dict) else {"response": data}
+    except json.JSONDecodeError:
+        return status, {"parse_error": True, "body_preview": raw[:500]}
+
+
+def _is_unusable_key(status: int, response: dict[str, Any]) -> bool:
+    if status in (401, 403):
+        return True
+    return status == 400 and "credit" in json.dumps(response).lower()
+
+
+def post_serper(base_url: str, payload: dict[str, Any], timeout: float) -> tuple[int, dict[str, Any]]:
+    """Synchronous request with pool rotation, used through asyncio.to_thread."""
+    global _KEY_INDEX
+    keys = configured_keys()
+    if not keys:
+        return 0, {"error": "SERPER_KEYS / SERPER_API_KEY / SERPER_KEY is not configured."}
+    last: tuple[int, dict[str, Any]] = (0, {"error": "No request made."})
+    for _ in range(len(keys)):
+        with _KEY_LOCK:
+            index = _KEY_INDEX % len(keys)
+        last = _post_once(base_url, keys[index], payload, timeout)
+        if not _is_unusable_key(*last):
+            return last
+        with _KEY_LOCK:
+            if _KEY_INDEX % len(keys) == index:
+                _KEY_INDEX = (index + 1) % len(keys)
+    return last
 
 
 def canonical_url(value: str) -> str:
@@ -118,23 +173,17 @@ def build_plan(today: date) -> list[dict[str, str]]:
     return out
 
 
-async def run_query(client: httpx.AsyncClient, query: dict[str, str], semaphore: asyncio.Semaphore) -> dict[str, Any]:
-    settings = get_settings()
+async def run_query(base_url: str, timeout: float, query: dict[str, str], semaphore: asyncio.Semaphore) -> dict[str, Any]:
     async with semaphore:
         try:
-            response = await serper_pool.post(client, settings, f"{settings.serper_base_url}/search", {
+            status, raw = await asyncio.to_thread(post_serper, base_url, {
                 "q": query["query_text"], "gl": "us", "hl": "en", "num": 10,
-            })
-            raw: dict[str, Any]
-            try:
-                raw = response.json()
-            except ValueError:
-                raw = {"parse_error": True, "body_preview": (response.text or "")[:500]}
+            }, timeout)
             organic = raw.get("organic") if isinstance(raw, dict) else []
             if not isinstance(organic, list):
                 organic = []
-            return {**query, "status": "completed" if response.is_success else "http_error",
-                    "http_status": response.status_code, "organic_count": len(organic), "raw": raw}
+            return {**query, "status": "completed" if 200 <= status < 300 else "http_error",
+                    "http_status": status, "organic_count": len(organic), "raw": raw}
         except Exception as exc:  # noqa: BLE001 - individual failures must not lose the run
             return {**query, "status": "error", "http_status": 0, "organic_count": 0,
                     "raw": {"error": str(exc)[:500]}}
@@ -156,11 +205,20 @@ def persist(output: Path, planned: list[dict[str, str]], completed: list[dict[st
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     plan_by_id = {row["query_id"]: row for row in completed}
-    plan_rows = [{**row, "status": plan_by_id.get(row["query_id"], {}).get("status", "planned")}
+    plan_rows = [{
+        **row,
+        "status": plan_by_id.get(row["query_id"], {}).get("status", "planned"),
+        "http_status": plan_by_id.get(row["query_id"], {}).get("http_status", ""),
+        "organic_count": plan_by_id.get(row["query_id"], {}).get("organic_count", ""),
+    }
                  for row in planned]
     write_csv(output / "query_plan.csv", [
         "query_id", "query_text", "signal_type", "signal_phrase", "time_window",
-        "after_date", "before_date", "phase", "status",
+        "after_date", "before_date", "phase", "status", "http_status", "organic_count",
+    ], plan_rows)
+    write_csv(output / "query_result_counts.csv", [
+        "query_id", "query_text", "signal_type", "signal_phrase", "time_window",
+        "http_status", "organic_count", "status",
     ], plan_rows)
 
     url_rows: list[dict[str, Any]] = []
@@ -250,12 +308,13 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--concurrency", type=int, default=5)
+    parser.add_argument("--base-url", default=os.environ.get("SERPER_BASE_URL", "https://google.serper.dev"))
+    parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--today", type=date.fromisoformat, default=date.today())
     args = parser.parse_args()
     if args.concurrency < 1:
         parser.error("--concurrency must be positive")
-    settings = get_settings()
-    if not serper_pool.has_key(settings):
+    if not configured_keys():
         raise SystemExit("SERPER_KEYS / SERPER_KEY is not configured.")
 
     started = datetime.now(timezone.utc)
@@ -264,9 +323,7 @@ async def main() -> int:
     if output.exists():
         raise SystemExit(f"Output directory already exists: {output}")
     semaphore = asyncio.Semaphore(args.concurrency)
-    async with httpx.AsyncClient(timeout=settings.request_timeout, trust_env=False,
-                                 proxy=settings.proxy_for("serper")) as client:
-        completed = await asyncio.gather(*(run_query(client, row, semaphore) for row in planned))
+    completed = await asyncio.gather(*(run_query(args.base_url, args.timeout, row, semaphore) for row in planned))
     metrics = persist(output, planned, completed, started)
     print(json.dumps({"output": str(output), **metrics}, ensure_ascii=False))
     return 0
