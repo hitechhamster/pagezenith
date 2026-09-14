@@ -6,10 +6,12 @@ search evidence required for the next verification stage:
 
     24 high-signal phrases × 2 time windows = 48 Google/Serper queries.
 
-Usage on the production host (where SERPER_KEYS is configured):
+For query-tuning runs, pass a versioned CSV catalog.  Each catalog candidate is
+run once over the prior 90 days before it is allowed into the higher-volume
+discovery library:
 
-    cd /srv/pagezenith
-    .venv/bin/python scripts/reddit_discovery_pilot.py
+    python scripts/reddit_discovery_pilot.py \
+        --catalog research/reddit_discovery_query_candidates_v2.csv
 
 Output defaults to data/reddit-discovery/<UTC run id>/, which is intentionally
 under the already-ignored data/ directory.  API keys are never written to output.
@@ -152,7 +154,63 @@ def windows(today: date) -> tuple[dict[str, str], dict[str, str]]:
     )
 
 
-def build_plan(today: date) -> list[dict[str, str]]:
+def load_catalog(path: Path) -> list[dict[str, str]]:
+    """Read a human-maintained query experiment catalog, not any credentials."""
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    required = {"candidate_id", "query_family", "query_text", "hypothesis"}
+    if not rows or not required.issubset(rows[0]):
+        missing = ", ".join(sorted(required - set(rows[0] if rows else {})))
+        raise ValueError(f"Catalog needs columns: {', '.join(sorted(required))}; missing: {missing}")
+    cleaned: list[dict[str, str]] = []
+    for row in rows:
+        candidate_id = (row.get("candidate_id") or "").strip()
+        query_text = (row.get("query_text") or "").strip()
+        if not candidate_id or not query_text:
+            raise ValueError("Every catalog row needs candidate_id and query_text.")
+        cleaned.append({key: (row.get(key) or "").strip() for key in row})
+    return cleaned
+
+
+def build_plan(
+    today: date,
+    catalog: list[dict[str, str]] | None = None,
+    catalog_windows: str = "trial_90d",
+    pages: int = 1,
+) -> list[dict[str, str]]:
+    if catalog is not None:
+        if catalog_windows == "trial_90d":
+            selected_windows = ({
+                "time_window": "trial_90d", "after_date": (today - timedelta(days=90)).isoformat(),
+                "before_date": "",
+            },)
+        elif catalog_windows == "split_90d":
+            selected_windows = windows(today)
+        else:
+            raise ValueError(f"Unknown catalog window mode: {catalog_windows}")
+        out: list[dict[str, str]] = []
+        for row in catalog:
+            for window in selected_windows:
+                for page in range(1, pages + 1):
+                    query_text = f'site:reddit.com/r/ {row["query_text"]} after:{window["after_date"]}'
+                    if window["before_date"]:
+                        query_text += f' before:{window["before_date"]}'
+                    out.append({
+                        "query_id": f"q{len(out) + 1:03d}",
+                        "candidate_id": row["candidate_id"],
+                        "query_text": query_text,
+                        "signal_type": row["query_family"],
+                        "signal_phrase": row["query_text"],
+                        "time_window": window["time_window"],
+                        "serper_page": str(page),
+                        "after_date": window["after_date"],
+                        "before_date": window["before_date"],
+                        "phase": "query_tuning" if catalog_windows == "trial_90d" else "core_discovery",
+                        "hypothesis": row["hypothesis"],
+                        "status": "planned",
+                    })
+        return out
+
     out: list[dict[str, str]] = []
     for signal_type, phrase in SIGNALS:
         for window in windows(today):
@@ -161,13 +219,16 @@ def build_plan(today: date) -> list[dict[str, str]]:
                 query += f' before:{window["before_date"]}'
             out.append({
                 "query_id": f"q{len(out) + 1:03d}",
+                "candidate_id": "",
                 "query_text": query,
                 "signal_type": signal_type,
                 "signal_phrase": phrase,
                 "time_window": window["time_window"],
+                "serper_page": "1",
                 "after_date": window["after_date"],
                 "before_date": window["before_date"],
                 "phase": "pilot_discovery",
+                "hypothesis": "",
                 "status": "planned",
             })
     return out
@@ -178,6 +239,7 @@ async def run_query(base_url: str, timeout: float, query: dict[str, str], semaph
         try:
             status, raw = await asyncio.to_thread(post_serper, base_url, {
                 "q": query["query_text"], "gl": "us", "hl": "en", "num": 10,
+                "page": int(query.get("serper_page", "1")),
             }, timeout)
             organic = raw.get("organic") if isinstance(raw, dict) else []
             if not isinstance(organic, list):
@@ -213,11 +275,11 @@ def persist(output: Path, planned: list[dict[str, str]], completed: list[dict[st
     }
                  for row in planned]
     write_csv(output / "query_plan.csv", [
-        "query_id", "query_text", "signal_type", "signal_phrase", "time_window",
-        "after_date", "before_date", "phase", "status", "http_status", "organic_count",
+        "query_id", "candidate_id", "query_text", "signal_type", "signal_phrase", "time_window", "serper_page",
+        "after_date", "before_date", "phase", "hypothesis", "status", "http_status", "organic_count",
     ], plan_rows)
     write_csv(output / "query_result_counts.csv", [
-        "query_id", "query_text", "signal_type", "signal_phrase", "time_window",
+        "query_id", "candidate_id", "query_text", "signal_type", "signal_phrase", "time_window", "serper_page",
         "http_status", "organic_count", "status",
     ], plan_rows)
 
@@ -241,7 +303,7 @@ def persist(output: Path, planned: list[dict[str, str]], completed: list[dict[st
                 "subreddit_normalized": subreddit, "rank": rank,
                 "title": item.get("title") or "", "snippet": item.get("snippet") or "",
                 "serper_date": item.get("date") or "", "signal_type": row["signal_type"],
-                "time_window": row["time_window"],
+                "time_window": row["time_window"], "serper_page": row.get("serper_page", "1"),
             })
             if subreddit:
                 subreddit_queries.setdefault(subreddit, set()).add(row["query_id"])
@@ -251,7 +313,7 @@ def persist(output: Path, planned: list[dict[str, str]], completed: list[dict[st
 
     write_csv(output / "urls_normalized.csv", [
         "query_id", "canonical_url", "original_url", "subreddit_normalized", "rank", "title", "snippet",
-        "serper_date", "signal_type", "time_window",
+        "serper_date", "signal_type", "time_window", "serper_page",
     ], url_rows)
     write_csv(output / "signal_posts.csv", [
         "query_id", "canonical_url", "subreddit_normalized", "title", "snippet", "serper_date",
@@ -311,14 +373,20 @@ async def main() -> int:
     parser.add_argument("--base-url", default=os.environ.get("SERPER_BASE_URL", "https://google.serper.dev"))
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--today", type=date.fromisoformat, default=date.today())
+    parser.add_argument("--catalog", type=Path, default=None,
+                        help="CSV of one-window query candidates for local tuning.")
+    parser.add_argument("--catalog-windows", choices=("trial_90d", "split_90d"), default="trial_90d",
+                        help="One 90-day trial window or two 30/60-day core-discovery windows.")
+    parser.add_argument("--pages", type=int, default=1, help="Serper result pages per catalog candidate/window.")
     args = parser.parse_args()
-    if args.concurrency < 1:
-        parser.error("--concurrency must be positive")
+    if args.concurrency < 1 or args.pages < 1:
+        parser.error("--concurrency and --pages must be positive")
     if not configured_keys():
         raise SystemExit("SERPER_KEYS / SERPER_KEY is not configured.")
 
     started = datetime.now(timezone.utc)
-    planned = build_plan(args.today)
+    catalog = load_catalog(args.catalog) if args.catalog else None
+    planned = build_plan(args.today, catalog, args.catalog_windows, args.pages)
     output = args.output or (REPO / "data" / "reddit-discovery" / started.strftime("%Y%m%dT%H%M%SZ"))
     if output.exists():
         raise SystemExit(f"Output directory already exists: {output}")

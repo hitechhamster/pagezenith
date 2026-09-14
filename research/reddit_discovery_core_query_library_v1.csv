@@ -1,0 +1,21 @@
+candidate_id,query_family,query_text,hypothesis,source_round,guardrail
+repl_01,replacement_availability,"""replacement part"" ""out of stock""","High-intent spare-part availability failures.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_02,replacement_availability,"""replacement parts"" ""out of stock""","Repair-community parts availability failures.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_03,replacement_availability,"""can't find a replacement""","Concrete unavailable replacement-part searches.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_04,replacement_availability,"""where can I buy"" ""replacement part""","Explicit purchase intent for a physical replacement.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_05,replacement_availability,"""looking for a replacement part""","Direct physical component searches.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_06,replacement_availability,"""spare part"" ""out of stock""","Spare-part availability language.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_08,replacement_availability,"""can't find it anywhere"" ""replacement""","Physical device and appliance replacement availability.",v2,Exclude medical safety-critical and regulated replacement parts
+repl_09,replacement_availability,"""replacement parts"" ""not available""","Plain-language part unavailability.",v3,Exclude medical safety-critical and regulated replacement parts
+repl_10,replacement_availability,"""no replacement parts available""","Repair supply failures.",v3,Exclude medical safety-critical and regulated replacement parts
+repl_12,replacement_availability,"""replacement part"" ""impossible to find""","Severe availability friction for components.",v3,Exclude medical safety-critical and regulated replacement parts
+repl_14,replacement_availability,"""can't find"" ""spare part""","Direct spare-part searching.",v3,Exclude medical safety-critical and regulated replacement parts
+repl_15,replacement_availability,"""need a replacement part"" ""out of stock""","High-precision need-and-stock failures.",v3,Exclude medical safety-critical and regulated replacement parts
+failure_01,repeat_failure,"""keeps breaking"" ""replacement part""","Repeated failures with repair demand.",v2,Exclude medical safety-critical and regulated products
+failure_09,repeat_failure,"""broke after"" ""replacement part""","Short-lived replacement components.",v3,Exclude medical safety-critical and regulated products
+work_11,causal_workaround,"""temporary fix"" ""replacement part""","Improvised repair while awaiting a real replacement.",v3,Exclude safety-critical and IP-dependent parts
+work_05,causal_workaround,"""3D printed"" ""replacement part""","Repair-driven fabrication demand.",v2,Exclude safety-critical and IP-dependent parts
+need_01,non_repair_gap,"""does anyone make a"" -software -app -game -book -movie -job","Direct request for a physical maker or purchasable item.",v4,Exclude weapons medical and regulated categories
+need_03,non_repair_gap,"""looking for something that"" -software -app -game -book","Buyer-defined functional and fit requirements.",v4,Exclude medical and intimate products from phase one
+need_08,non_repair_gap,"""where can I find"" ""that fits"" -software -app -game","Physical fit and sourcing needs.",v4,Exclude medical and safety-critical products
+need_10,non_repair_gap,"""need something that"" ""fits"" -software -app -game","High-intent tangible fit requirements.",v4,Exclude medical and safety-critical products

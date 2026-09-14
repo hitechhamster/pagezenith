@@ -1,0 +1,27 @@
+candidate_id,decision,reason,next_action
+repl_09,retain,Repair supply and unavailable-parts posts dominate,Add to provisional library
+repl_10,retain,Mostly concrete repairability and unavailable-spares conversations,Add to provisional library
+repl_11,retain_with_risk,Direct shortage discussions but highly automotive-heavy,Keep with later category and safety filters
+repl_12,retain,High density of concrete hard-to-source physical components,Add to provisional library
+repl_13,retain_with_risk,Physical support gaps dominate but several posts are brand-specific,Keep for recurrence scoring only
+repl_14,retain,Direct spare-part searches across appliances tools and vehicles,Add to provisional library
+repl_15,retain,Only two results but both are highly concrete need-plus-stock failures,Keep as high-precision low-recall query
+repl_16,retain_with_risk,Discontinued support problems are useful but include news and expensive durable goods,Keep for recurrence scoring only
+fit_07,retain_with_risk,Physical mount and stand mismatches dominate but include equipment categories needing safety review,Keep only for mechanical-safe classification tests
+fit_08,rewrite,Physical but the holder term recalls broad product discussion rather than clear unmet needs,Try causal fit language later
+fit_09,retain_with_risk,Concrete physical compatibility problems found but electrical and vehicle scope is common,Keep only for mechanical-safe classification tests
+fit_10,discard,One result only,Do not expand
+fit_11,discard,No results,Do not expand
+work_08,rewrite,Some replacement evidence but 3D-print showcase content still dominates,Require explicit unavailable or broken-part cause
+work_09,discard,Very low recall and top results are not a repeatable consumer need pattern,Do not expand
+work_10,discard,No results,Do not expand
+work_11,retain_with_risk,Improvised repair posts are concrete but often branded equipment repair,Keep with later category filters
+work_12,discard,Zip-tie discussion dominates rather than a missing-part workaround,Do not expand
+failure_07,retain_with_risk,Product design failure and parts discussion is present but electronics vehicles and hobby items dominate,Keep for recurrence scoring only
+failure_08,discard,Software and generic defect noise remain too high,Do not expand
+failure_09,retain_with_risk,Repeated physical component failures are visible but largely branded repairs,Keep for recurrence scoring only
+failure_10,retain_with_risk,Low recall but concrete repeated product failures,Keep as high-precision low-recall query
+price_06,discard,Generic purchases and non-product chatter dominate,Do not expand
+price_07,rewrite,Right-to-repair signals are relevant but pricing and news noise dominate,Test explicit user-need wording later
+price_08,retain,Low recall but specific replacement stock shortages,Keep as high-precision low-recall query
+price_09,discard,Automotive ownership discussion dominates rather than a discrete part-price gap,Do not expand

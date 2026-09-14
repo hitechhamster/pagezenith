@@ -1,0 +1,38 @@
+candidate_id,decision,reason,next_action
+gap_01,discard,Top results are comics anime and fandom rather than purchasable physical gaps,Do not expand
+gap_02,discard,Negative terms do not prevent classes stories books and health discussions,Do not expand
+gap_03,discard,Top results remain abstract opinion discussions,Do not expand
+gap_04,discard,Mostly health and entertainment despite one direct product complaint,Do not expand
+gap_05,discard,Mostly games mods and content requests,Do not expand
+repl_01,retain,Concrete repairable-product and missing-part posts dominate,Expand after downstream risk filters
+repl_02,retain,Finds repair and spare-part availability discussions across several physical categories,Expand after downstream risk filters
+repl_03,retain,Only six results but most are concrete unavailable replacement parts,Keep as high-precision low-recall query
+repl_04,retain,Explicit physical-part purchase intent with diverse categories,Expand after downstream risk filters
+repl_05,retain,Direct physical component searches dominate,Expand after downstream risk filters
+repl_06,retain,Strong repair and parts-availability language despite brand-specific items,Expand after downstream risk filters
+repl_07,rewrite,Physical but dominated by duplicate Steam Deck discontinuation news,Test more user-need wording
+repl_08,retain,Mostly physical device and appliance replacement availability,Expand after downstream risk filters
+fit_01,retain_with_risk,Real fit failures but electrical automotive and cycling safety scope needs later exclusion,Keep only for mechanical-safe classification tests
+fit_02,retain_with_risk,Concrete hardware fit failures but many branded-device repairs,Keep only for mechanical-safe classification tests
+fit_03,retain_with_risk,Physical adapter demand but includes EV/electrical safety scope,Keep only for mechanical-safe classification tests
+fit_04,rewrite,Mostly travel plugs and general questions rather than unmet accessory gaps,Test no-adapter-exists wording
+fit_05,retain_with_risk,Physical enclosure and fit issues but dominated by computer hardware,Keep as a category-discovery candidate
+fit_06,rewrite,Installation services and electrical work dilute mount-accessory need,Use direct fit or compatibility wording instead
+work_01,discard,Custom merch and art dominate rather than supply-constrained workarounds,Do not expand
+work_02,discard,No results,Do not expand
+work_03,discard,Generic DIY and home projects dominate,Do not expand
+work_04,rewrite,Some real unavailable-item workarounds but still many show-and-tell posts,Use replacement-specific wording
+work_05,retain_with_risk,Strong replacement-part workaround evidence but IP and safety screening is essential,Expand only into allowed physical categories
+work_06,rewrite,Some physical workaround evidence but broad repair chatter remains,Test temporary-fix or missing-part wording
+work_07,discard,No results,Do not expand
+failure_01,retain,Repeated failures paired with parts show repair pain,Expand after downstream risk filters
+failure_02,retain_with_risk,Real physical failures but broad category includes medical and home systems,Keep with strict category filters
+failure_03,retain_with_risk,Mostly physical replacement cases but many branded repairs,Keep with brand and safety screening
+failure_04,rewrite,Generic health and housing results overwhelm product durability examples,Add part or product anchor
+failure_05,rewrite,Physical design complaints appear but repair and services dilute results,Test design-flaw plus part wording
+failure_06,retain_with_risk,Physical failure and parts language is present but includes electronics and HVAC,Keep with strict category filters
+price_01,discard,Games services and generic prices dominate,Do not expand
+price_02,rewrite,Right-to-repair signals are useful but repair quotes and news dilute demand,Use part-price wording
+price_03,retain_with_risk,Physical stock shortages dominate but may be transient branded availability,Keep for repeated-demand verification
+price_04,discard,No results,Do not expand
+price_05,rewrite,Jobs and vehicles dominate despite a few genuine parts needs,Use explicit part wording

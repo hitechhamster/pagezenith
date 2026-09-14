@@ -1,0 +1,11 @@
+candidate_id,query_family,query_text,hypothesis,decision,review_notes
+need_01,non_repair_gap,"""does anyone make a"" -software -app -game -book -movie -job","Direct request for a maker or purchasable item without repair framing.",pending,
+need_02,non_repair_gap,"""is there a product that"" -software -app -game","Explicit product-language query for functional gaps.",pending,
+need_03,non_repair_gap,"""looking for something that"" -software -app -game -book","Tests unmet functional and fit requirements expressed by buyers.",pending,
+need_04,non_repair_gap,"""wish I could buy"" -software -app -game -book","Tests direct unavailable purchase desire.",pending,
+need_05,non_repair_gap,"""I would buy a"" ""if it existed"" -software -app -game","Strong hypothetical willingness-to-pay signal.",pending,
+need_06,non_repair_gap,"""can't find anything that"" -software -app -game -job","Tests unmet functional requirements without assuming a product type.",pending,
+need_07,non_repair_gap,"""why is there no"" -software -app -game -movie -book","Tests absence-of-product frustration in everyday categories.",pending,
+need_08,non_repair_gap,"""where can I find"" ""that fits"" -software -app -game","Tests buyer language around physical fit and availability.",pending,
+need_09,non_repair_gap,"""there isn't a"" ""that fits"" -software -app -game","Tests explicit product fit gaps.",pending,
+need_10,non_repair_gap,"""need something that"" ""fits"" -software -app -game","Tests high-intent fit needs expressed as purchase requirements.",pending,

@@ -1,0 +1,11 @@
+candidate_id,decision,reason,next_action
+need_01,retain_with_risk,Direct maker requests uncover physical component and home-maintenance needs but include vehicles and regulated categories,Add to provisional library with category exclusions
+need_02,retain_with_risk,Low recall but finds product-function questions across home and automotive contexts,Add as an exploratory core query
+need_03,retain_with_risk,Strong consumer product phrasing across pet apparel shoes and sewing but includes health-sensitive terms,Add to provisional library with category exclusions
+need_04,discard,Top results are personal discussion and brand chatter rather than unavailable purchase needs,Do not expand
+need_05,discard,No results,Do not expand
+need_06,rewrite,Some physical shopping needs but personal and identity discussion dominates,Require a physical noun or fit wording
+need_07,discard,Community and policy absence dominates rather than product gaps,Do not expand
+need_08,retain_with_risk,Strong physical fit and sourcing results across kitchen apparel and parts but includes health-related categories,Add to provisional library with category exclusions
+need_09,discard,Relationship and entertainment context dominates,Do not expand
+need_10,retain_with_risk,Real tangible needs appear but medical and vehicle categories require exclusion,Add to provisional library with category exclusions
