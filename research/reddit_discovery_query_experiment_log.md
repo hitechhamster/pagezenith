@@ -35,3 +35,12 @@ one consumer query and one B2B query were retained with restrictions, seven were
 kept only as low-recall probes, two require new wording, and the rest were
 discarded. B2B supplier queries remain a separate track and must not be merged
 with consumer-product query precision metrics.
+
+## Selected-query collection
+
+The 32 retained queries were collected across all three planned date windows on
+2026-09-14. Adaptive pagination requested 474 result pages and every one of the
+96 query/window series reached an empty page. The run produced 3,424 raw result
+rows, 3,012 globally deduplicated Reddit URLs and 1,629 subreddits. See
+`reddit_discovery_full_run_20260914.md`; raw evidence remains in the ignored data
+directory.

@@ -258,8 +258,15 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> 
         writer.writerows(rows)
 
 
-def persist(output: Path, planned: list[dict[str, str]], completed: list[dict[str, Any]], started: datetime) -> dict[str, Any]:
-    output.mkdir(parents=True, exist_ok=False)
+def persist(
+    output: Path,
+    planned: list[dict[str, str]],
+    completed: list[dict[str, Any]],
+    started: datetime,
+    *,
+    allow_existing_output: bool = False,
+) -> dict[str, Any]:
+    output.mkdir(parents=True, exist_ok=allow_existing_output)
     ended = datetime.now(timezone.utc)
     raw_path = output / "serper_raw_results.jsonl"
     with raw_path.open("w", encoding="utf-8") as handle:
@@ -358,9 +365,15 @@ def persist(output: Path, planned: list[dict[str, str]], completed: list[dict[st
         "scope": "Discovery only; no Reddit page/API validation and no physical-product classification yet.",
     }
     (output / "run_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest_windows = sorted({str(row.get("time_window") or "") for row in planned if row.get("time_window")})
+    manifest_signals = {
+        str(row.get("candidate_id") or row.get("signal_phrase") or "")
+        for row in planned
+        if row.get("candidate_id") or row.get("signal_phrase")
+    }
     (output / "run_manifest.json").write_text(json.dumps({
         "run": output.name, "gl": "us", "hl": "en", "results_per_query": 10,
-        "signals": len(SIGNALS), "windows": ["current", "active"], "metrics_file": "run_metrics.json",
+        "signals": len(manifest_signals), "windows": manifest_windows, "metrics_file": "run_metrics.json",
         "key_material_written": False,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics

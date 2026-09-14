@@ -1,0 +1,33 @@
+candidate_id,query_family,query_text,hypothesis,track,priority,guardrail
+repl_01,replacement_availability,"""replacement part"" ""out of stock""","High-intent spare-part availability failures.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_02,replacement_availability,"""replacement parts"" ""out of stock""","Repair-community parts availability failures.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_03,replacement_availability,"""can't find a replacement""","Concrete unavailable replacement-part searches.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_04,replacement_availability,"""where can I buy"" ""replacement part""","Explicit purchase intent for a physical replacement.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_05,replacement_availability,"""looking for a replacement part""","Direct physical component searches.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_06,replacement_availability,"""spare part"" ""out of stock""","Spare-part availability language.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_08,replacement_availability,"""can't find it anywhere"" ""replacement""","Physical device and appliance replacement availability.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_09,replacement_availability,"""replacement parts"" ""not available""","Plain-language part unavailability.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_10,replacement_availability,"""no replacement parts available""","Repair supply failures.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_12,replacement_availability,"""replacement part"" ""impossible to find""","Severe availability friction for components.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_14,replacement_availability,"""can't find"" ""spare part""","Direct spare-part searching.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+repl_15,replacement_availability,"""need a replacement part"" ""out of stock""","High-precision need-and-stock failures.",consumer,core,Exclude medical safety-critical and regulated replacement parts
+failure_01,repeat_failure,"""keeps breaking"" ""replacement part""","Repeated failures with repair demand.",consumer,core,Exclude medical safety-critical and regulated products
+failure_09,repeat_failure,"""broke after"" ""replacement part""","Short-lived replacement components.",consumer,core,Exclude medical safety-critical and regulated products
+work_11,causal_workaround,"""temporary fix"" ""replacement part""","Improvised repair while awaiting a real replacement.",consumer,core,Exclude safety-critical and IP-dependent parts
+work_05,causal_workaround,"""3D printed"" ""replacement part""","Repair-driven fabrication demand.",consumer,core,Exclude safety-critical and IP-dependent parts
+need_01,non_repair_gap,"""does anyone make a"" -software -app -game -book -movie -job","Direct request for a physical maker or purchasable item.",consumer,core,Exclude weapons medical and regulated categories
+need_03,non_repair_gap,"""looking for something that"" -software -app -game -book","Buyer-defined functional and fit requirements.",consumer,core,Exclude medical and intimate products from phase one
+need_08,non_repair_gap,"""where can I find"" ""that fits"" -software -app -game","Physical fit and sourcing needs.",consumer,core,Exclude medical and safety-critical products
+need_10,non_repair_gap,"""need something that"" ""fits"" -software -app -game","High-intent tangible fit requirements.",consumer,core,Exclude medical and safety-critical products
+bundle_06,forced_bundle,"""buy the whole assembly""","Whole-assembly replacement caused by a smaller part.",consumer,core,Exclude automotive safety electrical medical and regulated parts
+bundle_07,forced_bundle,"""replace the entire assembly""","Separately manufacturable component may be missing.",consumer,core,Exclude automotive safety electrical medical and regulated parts
+geo_03,landed_cost,"""shipping costs more than"" -food -ticket","Landed cost destroys an otherwise valid purchase.",consumer,core,Require a physical item and exclude seller-only discussions
+pro_05,professional_use,"""commercial grade"" ""where to buy""","Professional buyers seek durable products.",consumer,core,Exclude regulated and service-only categories
+spend_08,custom_demand,"""custom made"" ""couldn't find"" -software -app -game","Users commission products when standard supply fails.",consumer,secondary,Require buyer causality and reject showcase-only posts
+bundle_05,forced_bundle,"""not sold separately"" -software -app -game","Demand for individual components.",consumer,secondary,Require a physical component and exclude regulated parts
+repeat_06,repeat_purchase,"""replaced it twice"" -software -app -game","Repeated purchase is stronger than a one-off complaint.",consumer,secondary,Require the same physical component to fail more than once
+pro_06,professional_use,"""for professional use"" ""recommend"" -software -app","Professional product sourcing.",consumer,secondary,Require purchase intent and exclude hobby-only chatter
+oem_02,oem_support,"""no spare parts available""","Unavailable spare-part and repairability problems.",consumer,core,Exclude vehicles medical devices electrical safety and regulated goods
+friction_03,use_friction,"""impossible to clean"" -software -app -game","Physical product cleanability problems.",consumer,core,Require an identifiable product and reject general cleaning-environment posts
+failed_01,failed_alternatives,"""none of them fit"" -software -app -game","Repeated physical fit failures.",consumer,secondary,Require trying or buying multiple tangible products
+b2b_04,b2b_supply,"""looking for a supplier"" ""small business"" -software -app -food","Small-business sourcing discussions.",b2b,core,Reject fulfilment-agent promotion and keep separate from consumer demand
