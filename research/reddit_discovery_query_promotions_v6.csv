@@ -1,0 +1,9 @@
+candidate_id,priority,query_family,query_text,why_promoted,required_filter
+bundle_06,core,forced_bundle,"""buy the whole assembly""","Consistently exposes expensive whole-assembly replacement caused by a smaller part.",Exclude automotive safety electrical medical and regulated parts
+bundle_07,core,forced_bundle,"""replace the entire assembly""","Finds repair situations where a separately manufacturable component may be missing.",Exclude automotive safety electrical medical and regulated parts
+geo_03,core,landed_cost,"""shipping costs more than"" -food -ticket","Captures cases where landed cost destroys an otherwise valid purchase.",Require an identifiable physical item and exclude seller-only discussions
+pro_05,core,professional_use,"""commercial grade"" ""where to buy""","Finds buyers actively sourcing durable products for heavier use.",Exclude regulated and service-only categories
+spend_08,secondary,custom_demand,"""custom made"" ""couldn't find"" -software -app -game","Can reveal physical items users commission when standard supply fails.",Require explicit buyer causality and reject showcase-only posts
+bundle_05,secondary,forced_bundle,"""not sold separately"" -software -app -game","Low-recall evidence of demand for individual components.",Require a physical component and exclude regulated parts
+repeat_06,secondary,repeat_purchase,"""replaced it twice"" -software -app -game","Repeated purchase is stronger evidence than a one-off complaint.",Require the same physical component to have failed more than once
+pro_06,secondary,professional_use,"""for professional use"" ""recommend"" -software -app","Low-recall but tangible professional product sourcing.",Require purchase intent and exclude hobby-only chatter

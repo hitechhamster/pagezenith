@@ -1,0 +1,25 @@
+candidate_id,decision,reason,next_action
+spend_05,discard,One unrelated retail-work result,Do not expand this exact phrase
+spend_06,discard,No results,Do not expand this exact phrase
+spend_07,discard,No results,Do not expand this exact phrase
+spend_08,retain_with_risk,Several physical custom products appear but showcase and unrelated results remain,Keep as a secondary custom-demand query
+bundle_05,retain_with_risk,Only two results but both involve physical parts and bundling,Keep as high-precision low-recall query
+bundle_06,retain_with_risk,Strong physical whole-assembly replacement results but automotive and repair safety scope dominates,Promote with category exclusions
+bundle_07,retain_with_risk,Strong physical full-assembly replacement results across vehicles locks and printers,Promote with category exclusions
+bundle_08,discard,No results,Do not expand this exact phrase
+repeat_05,discard,One service-related result,Do not expand this exact phrase
+repeat_06,retain_with_risk,Low recall but most results describe repeated physical-product replacement,Keep as a secondary repeat-failure query
+repeat_07,rewrite,Some real commercial and product usage appears but the phrase is too broad,Add a part or equipment anchor before reuse
+repeat_08,discard,One unrelated health result,Do not expand this exact phrase
+almost_05,discard,Entertainment and general comparison dominate,Do not expand this exact phrase
+almost_06,discard,Search snippets do not reliably preserve the purchase-and-fit meaning,Do not expand this exact phrase
+almost_07,discard,Brand and fandom chatter dominates,Do not expand this exact phrase
+almost_08,discard,Food travel and general missing-item chatter dominates,Do not expand this exact phrase
+geo_01,retain_with_risk,Finds physical regional availability gaps but also services and medical products,Promote with category exclusions
+geo_02,discard,No results,Do not expand this exact phrase
+geo_03,retain_with_risk,Direct landed-cost pain appears repeatedly although marketplaces and media add noise,Promote with physical-item classification
+geo_04,discard,No results,Do not expand this exact phrase
+pro_05,retain_with_risk,Commercial-grade sourcing produces physical durable-goods recommendations but also mature categories,Promote as professional-use discovery
+pro_06,retain_with_risk,Only three results but all are tangible products used in serious contexts,Keep as a secondary professional-use query
+pro_07,rewrite,Seller sourcing weapons and general chatter dilute buyer demand,Require a concrete professional-use context
+pro_08,discard,One geographically narrow packaging result,Do not expand this exact phrase

@@ -1,0 +1,25 @@
+candidate_id,decision,reason,next_action
+spend_01,rewrite,One manufacturing lead among three results but the full phrase has very low recall,Test shorter custom-order language
+spend_02,rewrite,Only one jewelry result and no repeated pattern,Test shorter custom-made language
+spend_03,discard,Results are art commissions rather than product supply gaps,Do not expand this exact phrase
+spend_04,discard,No results,Do not expand this exact phrase
+settle_01,discard,No results,Do not expand this exact phrase
+settle_02,rewrite,Six results but mostly identification food and personal discussion,Test shorter substitute-purchase language later
+settle_03,discard,No results,Do not expand this exact phrase
+settle_04,discard,No results,Do not expand this exact phrase
+bundle_01,rewrite,No results but the commercial hypothesis remains useful,Test shorter whole-assembly language
+bundle_02,rewrite,No results but the commercial hypothesis remains useful,Test standard not-sold-separately wording
+bundle_03,rewrite,No results but the commercial hypothesis remains useful,Test replace-entire-assembly wording
+bundle_04,rewrite,No results but the commercial hypothesis remains useful,Test shorter separately wording
+repeat_01,rewrite,No results but repeat replacement remains a useful signal,Test shorter repeat-failure phrases
+repeat_02,discard,Three results are geographically and topically noisy,Do not expand this exact phrase
+repeat_03,discard,No results,Do not expand this exact phrase
+repeat_04,discard,One unrelated non-English result,Do not expand this exact phrase
+almost_01,rewrite,One relevant watch result but low recall,Test the more common perfect-except-for wording
+almost_02,discard,Ten results but almost all are hypothetical or non-product noise,Do not expand this exact phrase
+almost_03,rewrite,One relevant watch comparison but very low recall,Test shorter deal-breaker wording later
+almost_04,rewrite,One result only and not useful,Test exact fit-return wording
+pro_01,rewrite,No results,Test shorter business-use language
+pro_02,rewrite,No results,Separate professional use from failure language
+pro_03,rewrite,Five mostly physical results but little explicit unmet demand,Combine commercial grade with sourcing language
+pro_04,rewrite,No results,Test shorter buy-in-bulk wording
