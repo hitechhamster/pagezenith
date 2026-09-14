@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "evidence_id",
+          "is_physical_product_demand",
+          "demand_role",
+          "specificity",
+          "product_object",
+          "component",
+          "usage_scene",
+          "problem_state",
+          "desired_resolution",
+          "current_workaround",
+          "purchase_intent",
+          "market_country",
+          "supply_chain_fit",
+          "supply_chain_reason",
+          "risk_flags",
+          "sector_family",
+          "sector_suggestion",
+          "solution_form",
+          "demand_key",
+          "evidence_quote",
+          "confidence"
+        ],
+        "properties": {
+          "evidence_id": {"type": "string"},
+          "is_physical_product_demand": {"type": "boolean"},
+          "demand_role": {
+            "type": "string",
+            "enum": ["self_need", "advice_to_other", "general_discussion", "seller_marketing", "unrelated"]
+          },
+          "specificity": {
+            "type": "string",
+            "enum": ["specific", "partly_specific", "generic", "insufficient"]
+          },
+          "product_object": {"type": "string"},
+          "component": {"type": "string"},
+          "usage_scene": {"type": "string"},
+          "problem_state": {
+            "type": "string",
+            "enum": [
+              "replacement_unavailable",
+              "forced_whole_assembly",
+              "temporary_or_custom_fix",
+              "not_repairable_or_unsupported",
+              "repeat_failure",
+              "cleaning_or_use_friction",
+              "repair_cost_too_high",
+              "landed_cost_too_high",
+              "commercial_durability_or_supply",
+              "repeat_consumable_need",
+              "other",
+              "none"
+            ]
+          },
+          "desired_resolution": {"type": "string"},
+          "current_workaround": {"type": "string"},
+          "purchase_intent": {
+            "type": "string",
+            "enum": ["none", "weak", "medium", "strong"]
+          },
+          "market_country": {"type": "string"},
+          "supply_chain_fit": {
+            "type": "string",
+            "enum": ["likely", "partial", "unclear", "unlikely"]
+          },
+          "supply_chain_reason": {"type": "string"},
+          "risk_flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "safety_critical",
+                "medical",
+                "weapon",
+                "ip_dependency",
+                "certification",
+                "hazardous_shipping",
+                "food_contact",
+                "child_safety",
+                "intimate_product"
+              ]
+            }
+          },
+          "sector_family": {
+            "type": "string",
+            "enum": [
+              "appliances_cleaning",
+              "home_hardware",
+              "consumer_electronics",
+              "gaming_hardware",
+              "automotive",
+              "cycling_micromobility",
+              "tools_industrial",
+              "outdoor_sports",
+              "photo_audio_watches",
+              "kitchen_foodservice",
+              "apparel_bags_textiles",
+              "models_rc_collectibles",
+              "baby_personal_aids",
+              "pet_products",
+              "garden_pool",
+              "musical_stage",
+              "eyewear",
+              "3d_printers_maker_tools",
+              "other",
+              "unclear"
+            ]
+          },
+          "sector_suggestion": {"type": "string"},
+          "solution_form": {
+            "type": "string",
+            "enum": [
+              "replacement_component",
+              "adapter_or_mount",
+              "repair_kit",
+              "complete_assembly",
+              "consumable",
+              "durable_complete_product",
+              "custom_product",
+              "service_or_information",
+              "other",
+              "none"
+            ]
+          },
+          "demand_key": {"type": "string"},
+          "evidence_quote": {"type": "string"},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    }
+  }
+}

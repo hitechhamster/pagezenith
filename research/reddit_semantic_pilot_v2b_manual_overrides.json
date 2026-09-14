@@ -1,0 +1,96 @@
+{
+  "1ressti:comment": {
+    "review_decision": "quarantine_insufficient_context",
+    "review_note": "The evidence identifies an IKEA part number but not the complete product, so it cannot be assigned to a product sector safely."
+  },
+  "1uggt01:post": {
+    "review_decision": "quarantine_insufficient_context",
+    "review_note": "The lock/latch need is real, but the complete product is absent from the captured excerpt."
+  },
+  "1wa6upi:post": {
+    "review_decision": "quarantine_insufficient_context",
+    "review_note": "The knob and nut are explicit, but the parent product is absent from the captured excerpt."
+  },
+  "1wf8tw6:post": {
+    "review_decision": "corrected",
+    "review_note": "Replaced a lightly rewritten quote with an exact contiguous source excerpt.",
+    "corrections": {
+      "evidence_quote": "I offered to pay full price for the replacement part"
+    }
+  },
+  "1t0wjy9:post": {
+    "review_decision": "corrected",
+    "review_note": "Replaced a Markdown-normalized quote with an exact contiguous source excerpt.",
+    "corrections": {
+      "evidence_quote": "I just changed out my second [hotend cooling fan]"
+    }
+  },
+  "1w8feqr:comment": {
+    "review_decision": "corrected",
+    "review_note": "The comment is an active trade-off evaluation, so a weak purchase-intent signal is present.",
+    "corrections": {
+      "purchase_intent": "weak"
+    }
+  },
+  "1p0po98:post": {
+    "review_decision": "corrected",
+    "review_note": "The title and body directly request a replacement or DIY solution, which is strong intent.",
+    "corrections": {
+      "purchase_intent": "strong"
+    }
+  },
+  "1o5m4si:comment": {
+    "review_decision": "corrected",
+    "review_note": "The concrete need belongs to the commenter's in-law; the commenter is relaying advice and a recommendation.",
+    "corrections": {
+      "demand_role": "advice_to_other"
+    }
+  },
+  "1s809al:comment": {
+    "review_decision": "corrected",
+    "review_note": "The commenter is discussing the original poster's unavailable parts, not their own current need.",
+    "corrections": {
+      "demand_role": "advice_to_other"
+    }
+  },
+  "17ljkns:comment": {
+    "review_decision": "corrected",
+    "review_note": "The commenter advises another vehicle owner; this is not the commenter's active unresolved demand.",
+    "corrections": {
+      "demand_role": "advice_to_other",
+      "demand_status": "historical_or_advice",
+      "specificity": "generic"
+    }
+  },
+  "1v15ihx:post": {
+    "review_decision": "excluded",
+    "review_note": "The unresolved action is an AppleCare service conversation, not a physical sourcing, design, fit, or manufacturing need.",
+    "corrections": {
+      "is_physical_product_demand": false,
+      "demand_status": "no_demand",
+      "problem_state": "none",
+      "desired_resolution": "",
+      "purchase_intent": "none",
+      "supply_chain_fit": "unclear",
+      "supply_chain_reason": "The evidence concerns an AppleCare service path rather than an open physical-product supply need.",
+      "solution_form": "none",
+      "demand_key": ""
+    }
+  },
+  "1watxwr:comment": {
+    "review_decision": "excluded",
+    "review_note": "The 3D-printed coffee-maker part is only an analogy in a discussion about art, not a stated demand event.",
+    "corrections": {
+      "is_physical_product_demand": false,
+      "demand_status": "no_demand",
+      "problem_state": "none",
+      "desired_resolution": "",
+      "current_workaround": "",
+      "purchase_intent": "none",
+      "supply_chain_fit": "unclear",
+      "supply_chain_reason": "The physical part is mentioned only as a rhetorical example.",
+      "solution_form": "none",
+      "demand_key": ""
+    }
+  }
+}
