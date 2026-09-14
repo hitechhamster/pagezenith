@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--size", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--output-name", default="semantic-pilot-v2")
+    parser.add_argument("--all", action="store_true", help="Prepare every validated demand card.")
     return parser.parse_args()
 
 
@@ -103,8 +104,13 @@ def main() -> int:
     rows = load_jsonl(run_dir / "validated_demand_cards.jsonl")
     manual = [row for row in rows if row.get("sector") == "待人工归类"]
     classified = [row for row in rows if row.get("sector") != "待人工归类"]
-    manual_target = args.size // 2
-    selected = round_robin(manual, manual_target) + round_robin(classified, args.size - manual_target)
+    if args.all:
+        selected = rows
+    else:
+        manual_target = args.size // 2
+        selected = round_robin(manual, manual_target) + round_robin(
+            classified, args.size - manual_target
+        )
     selected = sorted(selected, key=stable_key)
     inputs = [to_input(row) for row in selected]
 
@@ -124,6 +130,7 @@ def main() -> int:
         "post_evidence_records": sum(row.get("evidence_source") == "正文" for row in selected),
         "comment_evidence_records": sum(row.get("evidence_source") == "评论" for row in selected),
         "batches": (len(inputs) + args.batch_size - 1) // args.batch_size,
+        "selection": "all" if args.all else "balanced_pilot",
     }
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
