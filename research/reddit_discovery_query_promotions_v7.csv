@@ -1,0 +1,14 @@
+candidate_id,track,priority,query_text,reason,required_filter
+oem_02,consumer,core,"""no spare parts available""","Consistently returns concrete repairability and unavailable-part problems.",Exclude vehicles medical devices electrical safety and regulated goods
+friction_03,consumer,core,"""impossible to clean"" -software -app -game","Consistently returns physical product and household cleanability problems.",Require an identifiable product and reject general cleaning-environment posts
+failed_01,consumer,secondary,"""none of them fit"" -software -app -game","Finds repeated physical fit failures but with substantial non-product noise.",Require evidence of trying or buying multiple tangible products
+oem_04,consumer,probe,"""replacement costs almost as much""","Strong repair-economics meaning but only one result.",Require comparison with whole-product replacement cost
+refill_03,consumer,probe,"""wish they sold refills"" -food -drink","Strong refill-demand meaning but only one result.",Require a separately identifiable physical consumable
+failed_04,consumer,probe,"""returned multiple"" ""didn't fit""","Strong repeated-return meaning but only one result.",Require multiple actual product returns
+us_04,consumer,probe,"""imported one from"" -software -app -game","Can show cross-border willingness to buy but only one result.",Require an identifiable physical product and US buyer context
+friction_01,consumer,probe,"""too bulky to carry"" -software -app -game","Strong portability complaint but only one result.",Require an actual product switch or abandoned purchase
+friction_04,consumer,probe,"""wish it folded"" -software -app -game","Strong foldability complaint but only one result.",Require an identifiable rigid physical product
+refill_04,consumer,rewrite,"""proprietary cartridge"" -software -game","Finds vendor lock-in but is ambiguous and includes weapons.",Add expensive refill or replacement intent and exclude weapons ammunition and firearms
+us_03,consumer,rewrite,"""US alternative to"" -software -app -game -service","Finds some physical substitutes but digital and news noise remains.",Add where-to-buy language and exclude AI telecom and financial services
+b2b_04,b2b,core,"""looking for a supplier"" ""small business"" -software -app -food","Finds genuine small-business sourcing discussions.",Keep separate from consumer demand and reject fulfilment-agent promotion
+b2b_01,b2b,probe,"""supplier stopped making"" -software -app -game","Can expose discontinued supply but only one result.",Require an identifiable physical input and continuing business need

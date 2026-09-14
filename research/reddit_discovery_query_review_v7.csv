@@ -1,0 +1,29 @@
+candidate_id,decision,reason,next_action
+oem_01,discard,No results,Do not expand this exact phrase
+oem_02,retain,Ten results with concrete unavailable spare-part and repairability discussion,Promote to consumer core library
+oem_03,discard,No results,Do not expand this exact phrase
+oem_04,secondary,One relevant Kindle repair-economics result but insufficient recall,Keep only as a low-recall probe
+refill_01,discard,No results,Do not expand this exact phrase
+refill_02,discard,No results,Do not expand this exact phrase
+refill_03,secondary,One relevant fragrance-refill result but insufficient recall,Keep only as a low-recall probe
+refill_04,rewrite,Nine results show real proprietary consumables but include weapons and neutral discussion,Add complaint or replacement language and exclude weapons
+failed_01,retain_with_risk,Several physical fit failures and repeated purchases appear but clothing schedule and entertainment noise remain,Keep as secondary fit discovery with physical-item classification
+failed_02,discard,Two results do not establish repeated failed product alternatives,Do not expand this exact phrase
+failed_03,discard,No results,Do not expand this exact phrase
+failed_04,secondary,One precise repeated boot-return and fit result but insufficient recall,Keep only as a low-recall probe
+modify_01,discard,One hobby modification result without a supply gap,Do not expand this exact phrase
+modify_02,discard,Results are EV electrical and firearm adapters which are outside safe phase-one scope,Do not expand this exact phrase
+modify_03,discard,Generic DIY activity rather than unmet product supply,Do not expand this exact phrase
+modify_04,discard,Metaphorical software and workplace usage overwhelms physical repair results,Do not expand this exact phrase
+us_01,discard,Vehicle-market chatter dominates and does not show discrete product purchase demand,Do not expand this exact phrase
+us_02,discard,No results,Do not expand this exact phrase
+us_03,rewrite,Some physical substitute searches appear but AI telecom and news snippets dominate,Add a purchase phrase and stronger digital exclusions
+us_04,secondary,One relevant imported coffee-machine example but insufficient recall,Keep only as a low-recall probe
+friction_01,secondary,One precise portability-driven product switch but insufficient recall,Keep only as a low-recall probe
+friction_02,discard,No results,Do not expand this exact phrase
+friction_03,retain,Ten results are largely concrete physical cleanability problems across appliances drinkware displays and household products,Promote to consumer core library
+friction_04,secondary,One precise foldability complaint for a baby product but insufficient recall,Keep only as a low-recall probe
+b2b_01,secondary,One concrete discontinued packaging-supply example but insufficient recall,Keep only in the separate B2B library
+b2b_02,discard,No results,Do not expand this exact phrase
+b2b_03,discard,No results,Do not expand this exact phrase
+b2b_04,retain_with_risk,Four results include genuine small-business supplier searches but also fulfilment and reseller discussions,Promote only to a separate B2B query library

@@ -12,6 +12,7 @@ No run is a market-opportunity conclusion.
 | core v1 | 20 retained candidates | recent 30 days + preceding 60 days / 2 pages each | 80/80 | Collects the first verification-sized sample without expanding the query set. | `reddit_discovery_core_query_library_v1.csv` |
 | v5 | 24 | one trailing 90-day window / 1 page | 24/24 | Full commercial-intent sentences are too brittle; only 35 result rows returned. | `reddit_discovery_query_review_v5.csv` |
 | v6 | 24 | one trailing 90-day window / 1 page | 24/24 | Shorter phrases recover useful forced-bundle, landed-cost, custom-demand and professional-use signals. | `reddit_discovery_query_review_v6.csv` |
+| v7 | 28 | one trailing 90-day window / 1 page | 28/28 | Tests OEM support, consumables, failed alternatives, forced modification, US availability, use friction and separate B2B sourcing. | `reddit_discovery_query_review_v7.csv` |
 
 ## Core-sample run
 
@@ -28,3 +29,9 @@ not turn raw Google/Serper result counts into demand or market-size claims.
 The v6 promotion list is deliberately separate from core v1. Four candidates
 are ready for a later core-library revision and four remain secondary. This
 prevents one promising sample from immediately changing the full-run query set.
+
+The v7 run returned 76 result rows. Two consumer queries were promoted directly,
+one consumer query and one B2B query were retained with restrictions, seven were
+kept only as low-recall probes, two require new wording, and the rest were
+discarded. B2B supplier queries remain a separate track and must not be merged
+with consumer-product query precision metrics.
