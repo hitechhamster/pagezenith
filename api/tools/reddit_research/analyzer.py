@@ -7,7 +7,7 @@ import re
 import json
 import unicodedata
 from ..seo_gap.clients.llm import LLMClient
-from ..seo_gap.clients.reddit import RedditClient, RedditThread
+from ..seo_gap.clients.reddit import RedditClient, RedditThread, plain_search_query
 from ..seo_gap.config import Settings, get_settings
 from .models import (ArticleIdea, DiscussionTheme, RedditResearch, RedditResearchRequest,
                      ConcernAnswer, QuoteEvidence, ResearchChart, ResearchStep, SearchRun, ThreadBrief)
@@ -54,7 +54,8 @@ def _clean_queries(items: object, budget: int) -> list[dict]:
         return []
     out, seen = [], set()
     for item in items if isinstance(items, list) else []:
-        q = str((item or {}).get("query", "")).strip() if isinstance(item, dict) else ""
+        raw = str((item or {}).get("query", "")).strip() if isinstance(item, dict) else ""
+        q = plain_search_query(raw)
         key = q.lower()
         if not q or key in seen:
             continue

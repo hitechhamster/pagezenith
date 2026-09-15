@@ -10,13 +10,16 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "api"))
 
-from tools.reddit_research.analyzer import MAX_QUERIES, MAX_ROUNDS, MAX_THREADS, RedditResearcher
+from tools.reddit_research.analyzer import (MAX_QUERIES, MAX_ROUNDS, MAX_THREADS,
+                                            RedditResearcher, _clean_queries)
 from tools.reddit_research.models import DiscussionTheme, RedditResearchRequest
 from tools.reddit_research.depth import audit_report, findings, narrative_chars
 from tools.reddit_research.models import RedditResearch, ResearchAction
 from tools.reddit_research.prompts import PLAN_SYSTEM, EVALUATE_SYSTEM, SECTION_SYSTEM
 from tools.reddit_research.tables import TABLE_SYSTEM, TABLE_SPECS, build_tables, parse_tables, review_cells
-from tools.seo_gap.clients.reddit import RedditComment, RedditThread
+from tools.seo_gap.clients.reddit import (RedditClient, RedditComment, RedditThread,
+                                          plain_search_query)
+from tools.seo_gap.clients.serper import SerperError
 from tools.seo_gap.config import Settings
 
 
@@ -108,6 +111,44 @@ class RedditAgentTests(unittest.TestCase):
     def test_empty_question_is_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "问题"):
             asyncio.run(self.make_agent().research(RedditResearchRequest()))
+
+    def test_llm_queries_are_forced_to_plain_phrases_and_deduplicated(self):
+        queries = _clean_queries([
+            {"query": 'site:reddit.com "adult RC cars" OR intitle:repair after:2026-01-01 -toy'},
+            {"query": "adult RC cars repair"},
+            {"query": "inurl:reviews +durable AROUND(3) parts"},
+        ], 8)
+        self.assertEqual([item["query"] for item in queries], [
+            "adult RC cars repair", "reviews durable parts",
+        ])
+        self.assertNotRegex(" ".join(item["query"] for item in queries),
+                            r"(?i)site:|intitle:|inurl:|after:|\bOR\b|AROUND\(")
+
+    def test_reddit_search_retries_provider_pattern_error_with_plain_query(self):
+        class PatternThenSuccess:
+            def __init__(self):
+                self.calls = []
+
+            async def fetch_serp(self, query, *_args, **_kwargs):
+                self.calls.append(query)
+                if len(self.calls) == 1:
+                    raise SerperError(
+                        'HTTP 400: {"message":"Query pattern not allowed for free accounts."}'
+                    )
+                return []
+
+        client = RedditClient(Settings(_env_file=None, use_mocks=False, serper_key="test"))
+        client.serp = PatternThenSuccess()
+        result = asyncio.run(client.search_threads(
+            'site:reddit.com "adult RC cars" OR intitle:repair after:2026-01-01 -toy'
+        ))
+        self.assertEqual(result, [])
+        self.assertEqual(client.serp.calls[0], "adult RC cars repair reddit")
+        self.assertEqual(client.serp.calls[1], "adult RC cars repair discussion reddit")
+
+    def test_plain_query_helper_drops_exclusions_instead_of_reversing_them(self):
+        self.assertEqual(plain_search_query('best headphones -cheap +repairable'),
+                         "best headphones repairable")
 
     def test_real_stage_events_are_emitted(self):
         events = []
@@ -247,6 +288,32 @@ class RedditAgentTests(unittest.TestCase):
              patch.object(router.RedditResearcher, "research", new=AsyncMock(return_value=RedditResearch(depth_note="too short"))):
             with self.assertRaises(HTTPException):
                 asyncio.run(router._research(RedditResearchRequest(market="test"), object()))
+        self.assertEqual(outcomes, ["refund path"])
+
+    def test_provider_pattern_error_becomes_a_refunded_user_facing_error(self):
+        from fastapi import HTTPException
+        from tools.reddit_research import router
+        outcomes = []
+
+        @asynccontextmanager
+        async def charge(*_args):
+            try:
+                yield object()
+            except HTTPException:
+                outcomes.append("refund path")
+                raise
+
+        provider_error = SerperError(
+            'HTTP 400: {"message":"Query pattern not allowed for free accounts."}'
+        )
+        with patch.object(router, "_settings_for", return_value=Settings(_env_file=None, use_mocks=True)), \
+             patch.object(router, "charge", charge), \
+             patch.object(router.RedditResearcher, "research", new=AsyncMock(side_effect=provider_error)):
+            with self.assertRaises(HTTPException) as failed:
+                asyncio.run(router._research(RedditResearchRequest(market="test"), object()))
+        self.assertEqual(failed.exception.status_code, 502)
+        self.assertNotIn("Query pattern", failed.exception.detail)
+        self.assertIn("点数已自动退回", failed.exception.detail)
         self.assertEqual(outcomes, ["refund path"])
 
     def test_last_search_round_is_evaluated(self):

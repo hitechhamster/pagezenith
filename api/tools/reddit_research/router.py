@@ -58,6 +58,11 @@ async def _research(req: RedditResearchRequest, card: Card,
                 raise
             except Exception as exc:
                 logger.exception("reddit research failed")
+                if "query pattern not allowed for free accounts" in str(exc).lower():
+                    raise HTTPException(
+                        status_code=502,
+                        detail="搜索服务暂时无法处理其中一条检索词，点数已自动退回，请重试。",
+                    ) from exc
                 raise HTTPException(status_code=500, detail=str(exc)) from exc
             tx.set_result(title=f"Reddit 调研：{req.research_question()}", summary="",
                           payload={"kind": "reddit-research", **out.model_dump()})
@@ -87,7 +92,8 @@ async def analyze_stream(req: RedditResearchRequest,
                 await queue.put({"type": "result", "data": out.model_dump()})
             except Exception as exc:  # 错误也经 SSE 正常交给页面，计费层已自动退款。
                 logger.exception("reddit research stream failed")
-                await queue.put({"type": "error", "message": str(exc)})
+                message = str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
+                await queue.put({"type": "error", "message": message})
             finally:
                 await queue.put(None)
 

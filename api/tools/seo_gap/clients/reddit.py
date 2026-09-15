@@ -22,12 +22,45 @@ from pydantic import BaseModel, Field
 
 from ..config import Settings, get_settings
 from .serpapi import SerpApiClient
-from .serper import SerperClient
+from .serper import SerperClient, SerperError
 
 logger = logging.getLogger(__name__)
 
 # https://www.reddit.com/r/<sub>/comments/<id>/<slug>/
 _THREAD_RE = re.compile(r"reddit\.com/r/([^/]+)/comments/([a-z0-9]+)", re.I)
+
+# Serper 的免费账户拒绝 Google 高级检索语法。搜索词主要由 LLM 规划，不能只靠
+# prompt 约束：模型偶尔仍会产出 site:/intitle:/after: 等操作符，整份调研随即 400。
+# 这里是发请求前的最终边界；报告里保存的也应是净化后、真正执行的词。
+_DROP_QUERY_OPERATOR = re.compile(
+    r"(?i)(?<!\w)(?:site|filetype|ext|cache|related|source|before|after|daterange)"
+    r":\s*(?:\"[^\"]*\"|\S+)",
+)
+_UNWRAP_QUERY_OPERATOR = re.compile(
+    r"(?i)(?<!\w)(?:inurl|allinurl|intitle|allintitle|intext|allintext|define)"
+    r":\s*(?P<term>\"[^\"]*\"|\S+)",
+)
+
+
+def plain_search_query(value: str) -> str:
+    """Turn an LLM-produced Google query into a free-account-safe phrase."""
+    query = _DROP_QUERY_OPERATOR.sub(" ", value or "")
+    query = _UNWRAP_QUERY_OPERATOR.sub(lambda match: f" {match.group('term')} ", query)
+    query = re.sub(r"(?i)\bAROUND\s*\(\s*\d+\s*\)", " ", query)
+    query = re.sub(r"(?i)\b(?:AND|OR|NOT)\b", " ", query)
+    query = re.sub(r"(?<!\w)-(?:\"[^\"]*\"|\S+)", " ", query)
+    query = re.sub(r"(?<!\w)\+(?=\S)", " ", query)
+    query = query.translate(str.maketrans({
+        '"': " ", "'": " ", "`": " ", "“": " ", "”": " ", "‘": " ", "’": " ",
+        "(": " ", ")": " ", "[": " ", "]": " ", "{": " ", "}": " ",
+    }))
+    return re.sub(r"\s+", " ", query).strip()[:160]
+
+
+def _conservative_query(value: str) -> str:
+    """Second-pass fallback for provider patterns not covered by known operators."""
+    words = re.findall(r"[^\W_]+(?:[-'][^\W_]+)*", plain_search_query(value), re.UNICODE)
+    return " ".join(words[:10]).strip()
 
 # 关键词 → list[RedditThread] 的进程内 TTL 缓存（内容研究不需实时，削减共享限流压力）。
 _CACHE: dict[str, tuple[float, list["RedditThread"]]] = {}
@@ -81,9 +114,30 @@ class RedditClient:
         #    改成普通查询 "<关键词> reddit"，再按 URL 过滤出真帖：实测同样能拿到
         #    6/10 条 reddit 结果，质量甚至更好（Google 会把讨论度高的帖排前面）。
         #    Reddit 官方 search.json 也试过，数据中心/代理 IP 一律 403，不可用。
-        items = await self.serp.fetch_serp(
-            f"{keyword} reddit", location_code, language_code, depth=20
-        )
+        phrase = plain_search_query(keyword)
+        if not phrase:
+            return []
+        request_query = phrase if re.search(r"(?i)\breddit\b", phrase) else f"{phrase} reddit"
+        try:
+            items = await self.serp.fetch_serp(
+                request_query, location_code, language_code, depth=20
+            )
+        except SerperError as exc:
+            # 未知的新限制也不能把整份报告直接打死。仅对这一条明确的请求级错误
+            # 降级一次；额度不足/无效 key 等错误仍交给 key 池和上层处理。
+            if "query pattern not allowed for free accounts" not in str(exc).lower():
+                raise
+            fallback = _conservative_query(phrase)
+            if not fallback:
+                raise
+            fallback_query = f"{fallback} discussion reddit"
+            # 只在供应商明确拒绝时记录实际发送的短查询，便于以后精确追查；不记 key、
+            # 用户账号或抓到的正文。
+            logger.warning("Serper 免费账户拒绝 query=%r，改用 fallback=%r 重试",
+                           request_query, fallback_query)
+            items = await self.serp.fetch_serp(
+                fallback_query, location_code, language_code, depth=20
+            )
         seen, out = set(), []
         for it in items:
             m = _THREAD_RE.search(it.url or "")
