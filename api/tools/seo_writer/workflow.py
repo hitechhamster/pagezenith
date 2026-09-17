@@ -250,10 +250,13 @@ def _voice_instructions(ctx: dict[str, Any], stage: str) -> str:
 
 
 class SEOWriter:
-    def __init__(self, settings: Settings, llm: LLM, search_provider: str = "tavily"):
+    def __init__(self, settings: Settings, llm: LLM, search_provider: str = "tavily",
+                 grounded_coverage: bool = False):
         self.s = settings
         self.llm = llm
         self.search_provider = search_provider
+        # 公开版必须保持既有编排；严格限制模型自行扩题的实验只给内部 BYOK 使用。
+        self.grounded_coverage = grounded_coverage
 
     # ------------------------------------------------------------ 字数判断
     async def infer_wordcount(self, main_keyword: str, secondary_keyword: str,
@@ -293,6 +296,45 @@ class SEOWriter:
         """
         if self.search_provider == "none":
             return ""
+        if not self.grounded_coverage:
+            # 线上原有流程：模型从竞品缺口提出少量可验证的角度，再各搜一层补素材。
+            full = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
+                                         ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
+            serp = density_audit.parse_serp(full)
+            angles: list[str] = []
+            try:
+                raw = await self.llm.complete(
+                    P.GAP_ANGLES_PROMPT.format(
+                        language=ctx.get("language") or "English",
+                        topic=ctx.get("topic", ""), main_keyword=ctx.get("main_keyword", ""),
+                        titles="\n".join(f"- {t}" for t in (serp.get("titles") or [])[:20]) or "- (none)",
+                        questions="\n".join(f"- {q}" for q in (serp.get("questions") or [])[:8]) or "- (none)"),
+                    task="classify", temperature=0.4)
+                angles = [re.sub(r"^[\s\-\d.)•]+", "", line).strip().strip('"')
+                          for line in (raw or "").splitlines()]
+                angles = [angle for angle in angles if 3 <= len(angle.split()) <= 12][:3]
+            except Exception:  # noqa: BLE001
+                logger.warning("竞品缺口角度生成失败（已跳过）", exc_info=True)
+            ctx["gap_angles"] = angles
+            try:
+                cjk = is_cjk_lang(ctx.get("language"))
+                text = await expand_queries(
+                    self.s, (serp.get("questions") or []) + (serp.get("related") or []),
+                    max_q=(2 if cjk else 5))
+                if angles:
+                    text += "\n" + await expand_queries(
+                        self.s, angles, per=1, max_q=(2 if cjk else 3))
+            except Exception:  # noqa: BLE001
+                logger.warning("子问题扩展搜索失败（已跳过）", exc_info=True)
+                return ""
+            known = set(re.findall(r"^URL:\s*(\S+)", full, re.M))
+            kept = []
+            for block in text.split("\n---"):
+                match = re.search(r"^URL:\s*(\S+)", block, re.M)
+                if block.strip() and (not match or match.group(1) not in known):
+                    kept.append(block.strip("\n"))
+            return "\n---\n".join(kept) + ("\n---" if kept else "")
+
         full = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
                                      ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
         serp = density_audit.parse_serp(full)
@@ -412,8 +454,7 @@ class SEOWriter:
         facts = re.sub(r"`([^`\n]+)`", r"\1", strip_sources((ctx.get("facts") or "").strip()))
         return P.FACTS_BLOCK.format(facts=facts) if facts else ""
 
-    @staticmethod
-    def gap_brief_block(ctx: dict[str, Any]) -> str:
+    def gap_brief_block(self, ctx: dict[str, Any]) -> str:
         """搜索页实况：竞品的信息基线 + PAA 子问题。确定性算，零成本。
 
         算一次两个关键词的搜索结果都算进去 —— 次关键词的 PAA 常常补出主关键词
@@ -430,9 +471,12 @@ class SEOWriter:
         novel = density_audit.novel_facts(ctx.get("facts") or "", full)
         if novel:
             brief += P.NOVEL_FACTS_BLOCK.format(items=re.sub(r"`([^`\n]+)`", r"\1", "\n".join(f"- {x}" for x in strip_sources("\n".join(novel)).splitlines())))
-        if ctx.get("coverage_queries"):
+        if self.grounded_coverage and ctx.get("coverage_queries"):
             brief += P.COVERAGE_QUERIES_BLOCK.format(
                 items="\n".join(f"- {q}" for q in ctx["coverage_queries"]))
+        elif not self.grounded_coverage and ctx.get("gap_angles"):
+            brief += P.GAP_ANGLES_BLOCK.format(
+                items="\n".join(f"- {a}" for a in ctx["gap_angles"]))
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
 
     # ------------------------------------------------------------ 主题分类
@@ -449,7 +493,8 @@ class SEOWriter:
 
     async def filter_serp_intents(self, search_text: str, main_keyword: str,
                                   secondary_keyword: str, topic: str,
-                                  prefixes: tuple[str, ...] = ("Q:", "Rel:")) -> tuple[str, list[str]]:
+                                  prefixes: tuple[str, ...] = ("Q:", "Rel:"),
+                                  prompt_template: str | None = None) -> tuple[str, list[str]]:
         """删掉搜索文本里意图不符的 PAA / 相关搜索，返回 (新文本, 被丢掉的条目)。
 
         为什么改的是**搜索文本本身**而不是各个下游：PAA 会被大纲、意图打分、
@@ -470,7 +515,7 @@ class SEOWriter:
             return search_text, []              # 0/1 个问题没有过滤的必要
         try:
             raw = await self.llm.complete(
-                P.QUESTION_FILTER_PROMPT.format(
+                (prompt_template or P.QUESTION_FILTER_PROMPT).format(
                     main_keyword=main_keyword, secondary_keyword=secondary_keyword,
                     topic=topic, questions="\n".join(f"- {value}" for value in values)),
                 task="classify", temperature=0.1)
@@ -494,9 +539,10 @@ class SEOWriter:
 
     async def filter_questions(self, search_text: str, main_keyword: str,
                                secondary_keyword: str, topic: str) -> tuple[str, list[str]]:
-        """兼容旧调用：只过滤 PAA；全流程改用 filter_serp_intents。"""
+        """公开版原有的 PAA 过滤；BYOK 另走 PAA + 相关搜索过滤。"""
         return await self.filter_serp_intents(
-            search_text, main_keyword, secondary_keyword, topic, prefixes=("Q:",))
+            search_text, main_keyword, secondary_keyword, topic, prefixes=("Q:",),
+            prompt_template=P.QUESTION_FILTER_PROMPT_LEGACY)
 
     # -------------------------------------------------------------- 大纲
     def outline_prompt(self, ctx: dict[str, Any]) -> str:  # noqa: D102
@@ -522,15 +568,20 @@ class SEOWriter:
             image_context = P.IMAGE_CONTEXT.format(
                 images_per_article=ctx.get("images_per_article", 2),
                 image_style_hint=P.get_type_profile(ctx["topic_type"])["image_style_hint"])
+        reddit_template = (P.REDDIT_CONTEXT_GROUNDED if self.grounded_coverage
+                           else P.REDDIT_CONTEXT_LEGACY)
+        originality_block = (P.OUTLINE_ORIGINALITY_GROUNDED if self.grounded_coverage
+                             else P.OUTLINE_ORIGINALITY_LEGACY)
         return _date_line() + P.OUTLINE_PROMPT.format(
             language=ctx["language"],
             specific=specific,
             gap_brief_block=self.gap_brief_block(ctx),
             product_context=product_block,
-            reddit_context=P.REDDIT_CONTEXT.format(reddit=reddit) if reddit else "",
+            reddit_context=reddit_template.format(reddit=reddit) if reddit else "",
             facts_block=self.facts_block(ctx),
             image_context=image_context,
             voice_outline=_voice_instructions(ctx, "outline"),
+            originality_block=originality_block,
             main_keyword=ctx["main_keyword"], secondary_keyword=ctx["secondary_keyword"],
             topic=ctx["topic"], wordcounts=writing_target(ctx["wordcounts"]),
             main_search_results=ctx.get("main_search", ""),

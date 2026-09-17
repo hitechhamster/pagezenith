@@ -55,8 +55,8 @@ router = APIRouter(prefix="/api/seo-writer", tags=["seo-writer"])
 _sema = asyncio.Semaphore(get_settings().writer_max_concurrent)
 
 
-def _quality_payload(report: dict[str, Any], coverage_queries: list[str] | None = None, keyword: str = "",
-                     text: str = "") -> dict[str, Any]:
+def _quality_payload(report: dict[str, Any], extra_queries: list[str] | None = None, keyword: str = "",
+                     text: str = "", grounded_coverage: bool = False) -> dict[str, Any]:
     """把打分结果压成前端能直接渲染的扁平结构。
 
     等级规则：意图否决 → bad（形态不对或子问题覆盖不到一半，后面四项再高也白搭）；
@@ -72,8 +72,9 @@ def _quality_payload(report: dict[str, Any], coverage_queries: list[str] | None 
     warnings = intent.get("warnings") or intent.get("reasons") or []
     # 总分不再对外（用户 2026-09-05：自己给自己打分太傻）。只给测量值：增益 / 问题覆盖 / 密度 / 可读性。
     level = "bad" if veto else ("warn" if warnings else "ok")
-    _coverage = density_audit.coverage_sections(text, coverage_queries or [], keyword=keyword)
-    return {
+    extra = (density_audit.coverage_sections(text, extra_queries or [], keyword=keyword)
+             if grounded_coverage else density_audit.angle_sections(text, extra_queries or [], keyword=keyword))
+    payload = {
         "level": level,
         "message": report.get("message_override") or (density_audit.format_report(report) if den else "文章太短，未打分"),
         "warnings": warnings,
@@ -82,9 +83,6 @@ def _quality_payload(report: dict[str, Any], coverage_queries: list[str] | None 
         "gain_note": None if gain.get("measurable") else gain.get("reason"),
         # 竞品没写的具体东西 —— 给用户看的不是 52% 这个数，是"52% 指的是这些"
         "gain_samples": (gain.get("samples") or [])[:8],
-        # 关联需求落点：真实 PAA / 相关搜索被写进的 H2 及其篇幅占比（不并入硬信息增益）
-        "coverage_sections": [x["head"] for x in _coverage.get("sections", [])],
-        "coverage_share": _coverage.get("share", 0.0),
         "intent_covered": len(intent.get("covered") or []),
         "intent_total": len(intent.get("questions") or []),
         "intent_questions": (intent.get("covered") or [])[:6],
@@ -102,6 +100,13 @@ def _quality_payload(report: dict[str, Any], coverage_queries: list[str] | None 
         "orphan_h2": (read.get("orphan_h2") or [])[:6],
         "todo": density_audit.to_prompt_block(report).splitlines() if den else [],
     }
+    if grounded_coverage:
+        payload["coverage_sections"] = [x["head"] for x in extra.get("sections", [])]
+        payload["coverage_share"] = extra.get("share", 0.0)
+    else:
+        payload["angle_sections"] = [x["head"] for x in extra.get("sections", [])]
+        payload["angle_share"] = extra.get("share", 0.0)
+    return payload
 
 
 def _settings_for(card: Card | None):
@@ -128,7 +133,8 @@ def _build(tier: str, usage_sink=None, card: Card | None = None) -> tuple[Any, S
             status_code=400 if cfg is not None else 500,
             detail=("你填的 Serper Key 是空的。" if cfg is not None
                     else "服务端未配置 SERPER_KEY，请联系站长。"))
-    return s, SEOWriter(s, LLM(target, s, usage_sink=usage_sink), "serper")
+    return s, SEOWriter(s, LLM(target, s, usage_sink=usage_sink), "serper",
+                        grounded_coverage=cfg is not None)
 
 
 def _precheck(card: Card, action: str, tier: str, credits: int | None = None) -> None:
@@ -223,19 +229,24 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 if all(x.startswith("（") and "搜索失败" in x for x in (_m, _s)):
                     logger.error("搜索服务不可用：%s", _m[:200])
                     raise RuntimeError("搜索服务暂时不可用（额度或故障），本次没有扣点，请稍后再试。")
-                # PAA / 相关搜索的意图过滤：词面相似不等于读者要解决同一件事。
-                # 放在扩展层之前 —— 跑题需求不该再去搜一层，更不该被写成「独特 H2」。
-                # 主、次关键词的两页一起过滤，避免次关键词页的相关搜索绕过这道护栏。
-                (_m, _dropped_m), (_s, _dropped_s) = await asyncio.gather(
-                    wf.filter_serp_intents(
-                        _m, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"]),
-                    wf.filter_serp_intents(
-                        _s, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"]),
-                )
-                _dropped = _dropped_m + _dropped_s
+                if card.byok is not None:
+                    # 内部 BYOK 试行：两页的 PAA / 相关搜索都先按意图过滤。
+                    (_m, _dropped_m), (_s, _dropped_s) = await asyncio.gather(
+                        wf.filter_serp_intents(
+                            _m, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"]),
+                        wf.filter_serp_intents(
+                            _s, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"]),
+                    )
+                    _dropped = _dropped_m + _dropped_s
+                    _drop_label = "搜索页关联需求"
+                else:
+                    # 公开版维持原来的行为：只过滤主关键词页的 PAA。
+                    _m, _dropped = await wf.filter_questions(
+                        _m, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"])
+                    _drop_label = "搜索页问题"
                 if _dropped:
                     job.emit({"type": "step", "key": "search",
-                              "message": (f"剔掉 {len(_dropped)} 个意图不符的搜索页关联需求："
+                              "message": (f"剔掉 {len(_dropped)} 个意图不符的{_drop_label}："
                                           + "；".join(q[:40] for q in _dropped[:3])
                                           + ("…" if len(_dropped) > 3 else ""))})
 
@@ -552,12 +563,17 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 if extract_h1(text) and extract_h1(text) != h1_at_seo:
                     seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])
                     job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
-                job.emit({"type": "quality", **_quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text)})
+                _extra = ctx.get("coverage_queries") if wf.grounded_coverage else ctx.get("gap_angles")
+                job.emit({"type": "quality", **_quality_payload(
+                    report, _extra, keyword=ctx.get("main_keyword", ""), text=text,
+                    grounded_coverage=wf.grounded_coverage)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "article",
-                    "quality": _quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text),
+                    "quality": _quality_payload(
+                        report, _extra, keyword=ctx.get("main_keyword", ""), text=text,
+                        grounded_coverage=wf.grounded_coverage),
                     "article": text,
                     "filename": sanitize_filename(ctx["main_keyword"]) + ".docx",
                     "seo_title": seo.get("seo_title", ""),
@@ -714,12 +730,17 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                     text, search_text=_serp,
                     topic_type=ctx.get("topic_type", ""), keyword=main_keyword,
                     language=language, material=ctx.get("facts", "") + "\n" + _serp + "\n" + (ctx.get("expansion") or ""))
-                job.emit({"type": "quality", **_quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text)})
+                _extra = ctx.get("coverage_queries") if wf.grounded_coverage else ctx.get("gap_angles")
+                job.emit({"type": "quality", **_quality_payload(
+                    report, _extra, keyword=ctx.get("main_keyword", ""), text=text,
+                    grounded_coverage=wf.grounded_coverage)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "polish",
-                    "quality": _quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text),
+                    "quality": _quality_payload(
+                        report, _extra, keyword=ctx.get("main_keyword", ""), text=text,
+                        grounded_coverage=wf.grounded_coverage),
                     "article": text,
                     "filename": sanitize_filename(main_keyword) + "-polished.docx",
                     "word_count": actual, "wordcount_level": level, "wordcount_message": wc_msg,

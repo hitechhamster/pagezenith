@@ -73,6 +73,7 @@ class FakeLLM:
 def writer(reply):
     w = SEOWriter.__new__(SEOWriter)          # 不跑 __init__，只测这一个方法
     w.llm = FakeLLM(reply)
+    w.grounded_coverage = True                # 严格关联需求模式仅供内部 BYOK
     return w
 
 
@@ -115,6 +116,32 @@ async def test_expansion_uses_only_verified_queries():
     ok("跑题的品牌词不会进入扩展搜索", REL_BRAND not in ctx["coverage_queries"], ctx["coverage_queries"])
 
 
+async def test_public_flow_keeps_legacy_expansion():
+    """回归：严格关联需求模式只能由内部 BYOK 打开，公开版保留缺口角度扩展。"""
+    w = writer("installation cost comparison")
+    w.grounded_coverage = False
+    w.s = object()
+    w.search_provider = "serper"
+    calls = []
+
+    async def fake_expand(_settings, queries, per=1, max_q=5):
+        calls.append((list(queries), per, max_q))
+        return "URL: https://example.com/expanded\nContent: material\n---"
+
+    original = workflow_mod.expand_queries
+    workflow_mod.expand_queries = fake_expand
+    try:
+        ctx = {"main_search_full": SEARCH, "sec_search_full": "", "language": "English",
+               "topic": "factory sourcing", "main_keyword": "headphone factory"}
+        await w.expand_context(ctx)
+    finally:
+        workflow_mod.expand_queries = original
+
+    ok("公开版仍由模型提出竞品缺口角度", w.llm.calls == 1 and ctx.get("gap_angles") == ["installation cost comparison"],
+       ctx.get("gap_angles"))
+    ok("公开版仍会补搜 PAA 和缺口角度", len(calls) == 2 and calls[1][0] == ctx.get("gap_angles"), calls)
+
+
 async def main_() -> int:
     print("\n[PAA 意图过滤]")
 
@@ -134,6 +161,7 @@ async def main_() -> int:
     ok("被剔除的相关搜索不会留在搜索文本", f"Rel: {REL_BRAND}" not in text_rel)
 
     await test_expansion_uses_only_verified_queries()
+    await test_public_flow_keeps_legacy_expansion()
 
     # 模型带编号 / 破折号前缀也认
     _, dropped2, _ = await run(f"- {Q_AUDIT}\n2. {Q_MOQ}")

@@ -370,6 +370,15 @@ def coverage_sections(text: str, queries: list[str], keyword: str = "") -> dict[
     return {"sections": hits, "words": words, "share": round(words / total, 2)}
 
 
+def angle_sections(text: str, angles: list[str], keyword: str = "") -> dict[str, Any]:
+    """公开版原有的「竞品缺口角度」小节统计。
+
+    BYOK 的严格模式用 coverage_sections；这个函数保留线上既有的成绩单口径，避免
+    同一篇文章在发布后被换成另一种展示和测量方式。
+    """
+    return coverage_sections(text, angles, keyword=keyword)
+
+
 def novel_facts(facts: str, corpus: str, limit: int = 15) -> list[str]:
     """事实清单里、竞品语料没出现过的条目。每行形如「`值` — 说明 — 来源」；看反引号里的值。"""
     pool = squash(corpus or "")
