@@ -339,15 +339,14 @@ def _content_words(s: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]{4,}", (s or "").lower()) if w not in _ANGLE_STOP}
 
 
-def angle_sections(text: str, angles: list[str], keyword: str = "") -> dict[str, Any]:
-    """哪些 H2 是从「竞品没覆盖的角度」起的，占全文多少字。
+def coverage_sections(text: str, queries: list[str], keyword: str = "") -> dict[str, Any]:
+    """哪些 H2 覆盖了已验证的关联搜索需求，占全文多少字。
 
-    硬信息增益只数带出处的数字和专名；模型按新角度写的判断、流程、取舍条件一个都不计分
-    （用户 2026-09-05："模型自己起扩展 H2 不就是新的信息增益吗"）。这里单独量出来并排显示，
-    不并进硬信息增益 —— 那条口径一松就又给编数字开门。
-    判据：H2 与某个角度的实词重合 ≥2 个，或覆盖该角度实词的一半以上。
+    这不是给模型「另起新角度」的奖励：候选必须来自 PAA / 相关搜索，且已补搜过素材。
+    硬信息增益仍只数带出处的数字和专名；这里单独量出关联需求被放进哪些章节，帮助
+    用户核对它们有没有挤占主线。判据：H2 与查询的实词重合 ≥2 个，或覆盖其一半以上。
     """
-    if not text or not angles:
+    if not text or not queries:
         return {"sections": [], "words": 0, "share": 0.0}
     # 去掉主关键词的实词再算重叠，否则 "temperature sensor calibration" 和
     # "Types of Temperature Sensors" 因为共享 temperature+sensor 就匹配了（2026-09-06）。
@@ -358,7 +357,7 @@ def angle_sections(text: str, angles: list[str], keyword: str = "") -> dict[str,
         if head == "(intro)":
             continue
         hw = _content_words(head) - kw_words
-        for a in angles:
+        for a in queries:
             aw = _content_words(a) - kw_words
             if not aw:
                 continue

@@ -285,35 +285,34 @@ class SEOWriter:
 
     # ------------------------------------------------- 顺着子问题再搜一层
     async def expand_context(self, ctx: dict[str, Any]) -> str:
-        """PAA + 相关搜索各搜一层，抓全文。竞品没看的页面才有增益。"""
+        """顺着已验证的关联需求各搜一层，抓全文补主线的信息增益。
+
+        不再让模型凭竞品标题另造「缺口角度」和新搜索词。可扩展的候选只能来自
+        PAA / 相关搜索；它们已在路由层过搜索意图过滤，因此每一条都有真实搜索
+        信号，也不会为追求差异把文章带到无关旁支。
+        """
         if self.search_provider == "none":
             return ""
         full = "\n".join(x for x in (ctx.get("main_search_full") or ctx.get("main_search"),
                                      ctx.get("sec_search_full") or ctx.get("sec_search")) if x)
         serp = density_audit.parse_serp(full)
-        # 竞品没覆盖的角度：模型想 3 个，各搜一层。起新 H2 的素材从这来（用户 2026-09-05）。
-        angles: list[str] = []
-        try:
-            raw = await self.llm.complete(
-                P.GAP_ANGLES_PROMPT.format(
-                    language=ctx.get("language") or "English",
-                    topic=ctx.get("topic", ""), main_keyword=ctx.get("main_keyword", ""),
-                    titles="\n".join(f"- {t}" for t in (serp.get("titles") or [])[:20]) or "- (none)",
-                    questions="\n".join(f"- {q}" for q in (serp.get("questions") or [])[:8]) or "- (none)"),
-                task="classify", temperature=0.4)
-            angles = [re.sub(r"^[\s\-\d.)•]+", "", l).strip().strip('"') for l in (raw or "").splitlines()]
-            angles = [a for a in angles if 3 <= len(a.split()) <= 12][:3]
-        except Exception:  # noqa: BLE001
-            logger.warning("竞品缺口角度生成失败（已跳过）", exc_info=True)
-        ctx["gap_angles"] = angles
+        # 两种真实需求信号交替取，避免 PAA 排在前面就挤掉所有相关搜索。
+        # 只保留即将逐条补搜的项目，提示词不会把没素材的词误当成可写任务。
+        questions = list(dict.fromkeys(serp.get("questions") or []))
+        related = list(dict.fromkeys(serp.get("related") or []))
+        candidates: list[str] = []
+        for i in range(max(len(questions), len(related))):
+            if i < len(questions):
+                candidates.append(questions[i])
+            if i < len(related):
+                candidates.append(related[i])
+        cjk = is_cjk_lang(ctx.get("language"))
+        max_q = 2 if cjk else 5
+        coverage_queries = candidates[:max_q]
+        ctx["coverage_queries"] = coverage_queries
         # 去掉和竞品语料重复的 URL 在 expand_queries 里做不了（它不知道竞品 URL），这里事后过滤
         try:
-            # 中日韩：测量层还测不准，扩展层抓回来的语料多半白烧 —— 减半（5→2、3→2）。用户 2026-09-08 定。
-            cjk = is_cjk_lang(ctx.get("language"))
-            text = await expand_queries(self.s, (serp.get("questions") or []) + (serp.get("related") or []),
-                                        max_q=(2 if cjk else 5))
-            if angles:
-                text += "\n" + await expand_queries(self.s, angles, per=1, max_q=(2 if cjk else 3))
+            text = await expand_queries(self.s, coverage_queries, max_q=max_q)
         except Exception:  # noqa: BLE001  扩展层抓不到不影响主流程
             logger.warning("子问题扩展搜索失败（已跳过）", exc_info=True)
             return ""
@@ -333,8 +332,8 @@ class SEOWriter:
         """抓 Reddit 上关于这个关键词的真实讨论（帖子 + 高赞评论）。
 
         为什么值得单独跑一路：全网搜索拿到的是**已经写好的竞品文章**，
-        它们彼此高度同质；Reddit 拿到的是**真人原话** —— 高频痛点、
-        被反复问却没人好好回答的问题，正是"独特价值点"的来源。
+        它们彼此高度同质；Reddit 拿到的是**真人原话** —— 可用来验证主线关联需求
+        是否真是高频痛点，而不是让模型另起一个旁支。
         成本极低（搜索侧不计费），失败也不阻断流程。
         """
         try:
@@ -431,8 +430,9 @@ class SEOWriter:
         novel = density_audit.novel_facts(ctx.get("facts") or "", full)
         if novel:
             brief += P.NOVEL_FACTS_BLOCK.format(items=re.sub(r"`([^`\n]+)`", r"\1", "\n".join(f"- {x}" for x in strip_sources("\n".join(novel)).splitlines())))
-        if ctx.get("gap_angles"):
-            brief += P.GAP_ANGLES_BLOCK.format(items="\n".join(f"- {a}" for a in ctx["gap_angles"]))
+        if ctx.get("coverage_queries"):
+            brief += P.COVERAGE_QUERIES_BLOCK.format(
+                items="\n".join(f"- {q}" for q in ctx["coverage_queries"]))
         return P.GAP_BRIEF_BLOCK.format(gap_brief=brief) if brief.strip() else ""
 
     # ------------------------------------------------------------ 主题分类
@@ -447,30 +447,32 @@ class SEOWriter:
                 return t
         return "conceptual"
 
-    async def filter_questions(self, search_text: str, main_keyword: str,
-                               secondary_keyword: str, topic: str) -> tuple[str, list[str]]:
-        """把搜索文本里意图不符的 `Q:`（PAA）行删掉，返回 (新文本, 被丢掉的问题)。
+    async def filter_serp_intents(self, search_text: str, main_keyword: str,
+                                  secondary_keyword: str, topic: str,
+                                  prefixes: tuple[str, ...] = ("Q:", "Rel:")) -> tuple[str, list[str]]:
+        """删掉搜索文本里意图不符的 PAA / 相关搜索，返回 (新文本, 被丢掉的条目)。
 
-        为什么改的是**搜索文本本身**而不是各个下游：`Q:` 行有三个消费方 ——
-        大纲 prompt（"这几个问题一个都不能漏"，会直接变成 H2）、意图打分、
-        交付前的 FAQ 补写。在源头删掉，三处一次性都干净，且不用改它们的签名。
+        为什么改的是**搜索文本本身**而不是各个下游：PAA 会被大纲、意图打分、
+        交付前 FAQ 消费；相关搜索会被扩展检索和大纲消费。在源头删掉，跑题内容
+        不会被补搜、进事实清单后再被提拔成 H2。
 
         护栏（这是一次 LLM 调用，不能让它把文章搞坏）：
           · 只认原样抄回来的问题，模型自己编的一律不算（防它改写或发明问题）
           · 一个都没留下 → 当成过滤失败，**全部保留**（fail-open）
           · 调用炸了 → 全部保留
-        宁可漏过一个跑题问题，也不能因为过滤器抽风把 PAA 整个清空 —— 那是本产品
-        少数几个"真实数据不是推测"的输入之一。
+        宁可漏过一个跑题条目，也不能因为过滤器抽风把真实搜索信号整个清空。
         """
         lines = search_text.split("\n")
-        qs = [l[2:].strip() for l in lines if l.startswith("Q:") and l[2:].strip()]
-        if len(qs) < 2:
+        items = [(prefix, l[len(prefix):].strip()) for l in lines for prefix in prefixes
+                 if l.startswith(prefix) and l[len(prefix):].strip()]
+        values = [value for _, value in items]
+        if len(values) < 2:
             return search_text, []              # 0/1 个问题没有过滤的必要
         try:
             raw = await self.llm.complete(
                 P.QUESTION_FILTER_PROMPT.format(
                     main_keyword=main_keyword, secondary_keyword=secondary_keyword,
-                    topic=topic, questions="\n".join(f"- {q}" for q in qs)),
+                    topic=topic, questions="\n".join(f"- {value}" for value in values)),
                 task="classify", temperature=0.1)
         except Exception:  # noqa: BLE001  过滤失败不该拖垮整篇
             logger.warning("PAA 意图过滤调用失败，保留全部问题", exc_info=True)
@@ -479,15 +481,22 @@ class SEOWriter:
         norm = lambda s: re.sub(r"[^a-z0-9一-鿿]+", "", (s or "").lower())
         kept_norm = {norm(l.strip().lstrip("-*0123456789. ").strip())
                      for l in (raw or "").split("\n") if l.strip()}
-        keep = [q for q in qs if norm(q) in kept_norm]
+        keep = [value for value in values if norm(value) in kept_norm]
         if not keep:
             return search_text, []              # 全被丢掉 = 过滤器不可信，全留
-        dropped = [q for q in qs if q not in keep]
+        dropped = [value for value in values if value not in keep]
         if not dropped:
             return search_text, []
         out = [l for l in lines
-               if not (l.startswith("Q:") and l[2:].strip() in dropped)]
+               if not any(l.startswith(prefix) and l[len(prefix):].strip() in dropped
+                          for prefix in prefixes)]
         return "\n".join(out), dropped
+
+    async def filter_questions(self, search_text: str, main_keyword: str,
+                               secondary_keyword: str, topic: str) -> tuple[str, list[str]]:
+        """兼容旧调用：只过滤 PAA；全流程改用 filter_serp_intents。"""
+        return await self.filter_serp_intents(
+            search_text, main_keyword, secondary_keyword, topic, prefixes=("Q:",))
 
     # -------------------------------------------------------------- 大纲
     def outline_prompt(self, ctx: dict[str, Any]) -> str:  # noqa: D102

@@ -55,6 +55,10 @@
   .costbox{padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--soft);font-size:14px;line-height:1.5}
   .costbox b{font-size:17px;color:var(--accent)}
   .costbox .dim{color:var(--muted);font-size:12px}
+  .credit-hint{margin:10px 0 0;padding:9px 10px;border:1px solid var(--amberline);border-radius:9px;
+    background:var(--amberbg);color:var(--text);font-size:12px;line-height:1.55}
+  .credit-hint.ok{border-color:var(--greenline);background:var(--greenbg)}
+  .credit-hint b{font-weight:650}
   #status{margin:12px 2px;color:var(--muted);font-size:13px;min-height:20px}
   #status.err{color:var(--red)}
   /* 进度流水 —— 长任务要跑三到五分钟，这块是用户唯一能看见"钱花在哪"的地方。
@@ -411,6 +415,7 @@
           <div class="f"><label>配图风格</label><select id="imageStyle" disabled></select></div>
         </div>
       </details>
+      <div class="credit-hint" id="creditHint" hidden></div>
       <div class="btns"><button id="btnOutline">开始：搜索 → 事实 → 大纲</button></div>
       <div class="hint" id="provHint"></div>
     </div>
@@ -504,16 +509,51 @@ function syncKeyBtn(){ /* 余额徽标由 keys.js 统一维护 */ }
 /* 档位只剩一档（pricing.TIERS 只有 pro），界面上的选择器已删，这里写死。 */
 function tier(){ return "pro"; }
 let VOICE="";            // 用户选的写手，空 = 通用文风
+function signupCredits(){
+  const n=Number(document.querySelector("[data-signup-credits]")?.textContent);
+  return Number.isFinite(n)&&n>0 ? n : 11;
+}
+function updateCreditHint(total, withoutImages, imageCount){
+  const hint=$("creditHint");
+  if(!hint) return;
+  // 内部 BYOK 不花站内点数，不能把公开版的充值提醒带进去。
+  if(typeof BYOK!=="undefined" && BYOK.on){ hint.hidden=true; return; }
+  if(!Number.isFinite(total)){ hint.hidden=true; return; }
+
+  const balance=window.CARD?.balance?.();
+  const remaining=Number(balance?.remaining);
+  hint.classList.remove("ok");
+  if(Number.isFinite(remaining)){
+    if(remaining>=total){
+      hint.classList.add("ok");
+      hint.textContent=`当前余额 ${remaining} 点；按现在的设置完整生成需要 ${total} 点。`;
+    }else if(imageCount>0 && remaining>=withoutImages){
+      hint.textContent=`当前余额 ${remaining} 点；按现在的设置完整生成需要 ${total} 点，还差 ${total-remaining} 点。关闭 AI 配图后只需 ${withoutImages} 点，可直接完整生成。`;
+    }else{
+      hint.textContent=`当前余额 ${remaining} 点；按现在的设置完整生成需要 ${total} 点，还差 ${total-remaining} 点。`;
+    }
+  }else if(imageCount>0){
+    const gift=signupCredits();
+    hint.textContent=`当前设置完整生成需要 ${total} 点。注册赠送 ${gift} 点足够完成无配图版本（${withoutImages} 点）；配图另需 ${total-withoutImages} 点。`;
+  }else{
+    hint.classList.add("ok");
+    hint.textContent=`完整生成共需 ${total} 点：已包含大纲、正文和自动润色。`;
+  }
+  hint.hidden=false;
+}
 function updateCost(){
   const t=tier(), p=PRICES||{};
   const n=$("enableImages").checked?parseInt($("imagesPer").value,10):0;
-  const outline=(p.outline||{})[t]??"?", article=(p.article||{})[t]??"?";
+  const outline=(p.outline||{})[t]??"?", article=(p.article||{})[t]??"?", polish=(p.polish||{})[t]??"?";
   const img=((p.image||{})[t]||0)*n;
-  const total=(typeof outline==="number"&&typeof article==="number")?(outline+article+img):"?";
-  $("costBox").innerHTML=`<b>${total}</b> 点 <span class="dim">= 大纲 ${outline} + 正文 ${article}`
+  const basic=typeof outline==="number"&&typeof article==="number"&&typeof polish==="number"
+    ? outline+article+polish : NaN;
+  const total=Number.isFinite(basic)?basic+img:"?";
+  $("costBox").innerHTML=`<b>${total}</b> 点 <span class="dim">= 大纲 ${outline} + 正文 ${article} + 润色 ${polish}`
     + (n?` + 配图 ${img}`:"") + `</span>`;
-  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；正文写完自动润色，另计 ${(p.polish||{})[t]??"?"} 点。选写手不额外扣点。`;
-  const pp=$("polishPts"); if(pp) pp.textContent=(p.polish||{})[t]??"?";
+  $("provHint").textContent=`前 ${REVISE_FREE} 次改大纲免费；自动润色已计入总价。选写手不额外扣点。`;
+  const pp=$("polishPts"); if(pp) pp.textContent=polish;
+  updateCreditHint(total,basic,n);
 }
 function syncImages(){
   const on=$("enableImages").checked;
@@ -552,7 +592,7 @@ function markRecommended(id){
 }
 $("imagesPer").onchange=updateCost;
 $("enableImages").onchange=syncImages;
-window.addEventListener("pz-card-updated",()=>{});
+window.addEventListener("pz-card-updated",updateCost);
 
 (async()=>{
   try{
@@ -1132,10 +1172,10 @@ function renderInfo(){
         r.querySelector(".v").append(c);
       }
       rows.append(r);
-      if((q.angle_sections||[]).length){
-        const r2=row("新角度小节", "ok", `${q.angle_sections.length} 节是排在前面的页面都没有的角度，占全文 ${Math.round((q.angle_share||0)*100)}%`,
-          "先让模型找出竞品都没覆盖的角度，再为它们单独搜素材、单独起 H2。这部分是 Google 意义上的信息增益，但不算进上面的硬信息数字。", false);
-        const c=E("div","chips"); q.angle_sections.slice(0,4).forEach(s=>c.append(E("span","chip",s)));
+      if((q.coverage_sections||[]).length){
+        const r2=row("关联需求覆盖", "ok", `${q.coverage_sections.length} 节覆盖了已验证的关联搜索需求，占全文 ${Math.round((q.coverage_share||0)*100)}%`,
+          "这些需求来自搜索页真实出现的 PAA 和相关搜索，先做意图过滤并补搜素材；优先融入主线章节，不是为了显得独特而另起话题。", false);
+        const c=E("div","chips"); q.coverage_sections.slice(0,4).forEach(s=>c.append(E("span","chip",s)));
         r2.querySelector(".v").append(c); rows.append(r2);
       }
     }
@@ -1205,7 +1245,7 @@ function verdictLine(q){
   if(q.veto) return "文章形态和搜索页不匹配，先看下面的说明。";
   if(q.gain!=null) parts.push(`比排在你前面的竞品多给了 ${Math.round(q.gain*100)}% 的具体信息`);
   if(q.intent_total) parts.push(q.intent_covered===q.intent_total ? `搜索者问的 ${q.intent_total} 个问题全答了` : `搜索者的问题答了 ${q.intent_covered}/${q.intent_total}`);
-  if((q.angle_sections||[]).length) parts.push(`另起了 ${q.angle_sections.length} 节竞品没有的角度`);
+  if((q.coverage_sections||[]).length) parts.push(`覆盖了 ${q.coverage_sections.length} 节关联搜索需求`);
   const said=parts.filter(Boolean);
   return said.length ? said.join("，")+"。" : "已完成体检。";
 }
@@ -1385,7 +1425,7 @@ $("btnRestart").onclick=()=>{
     if(q.gain!=null || q.intent_total || q.evidence!=null){
       const chip=(cls,html)=>{const s=E("span",cls); s.innerHTML=html; mini.append(s);};
       if(q.gain!=null) chip(q.gain>=0.35?"ok":(q.gain>=0.2?"warn":"bad"),`比竞品多给 <b>${Math.round(q.gain*100)}%</b>`);
-      if((q.angle_sections||[]).length) chip("ok",`新角度 <b>${q.angle_sections.length}</b> 节 · ${Math.round((q.angle_share||0)*100)}%`);
+      if((q.coverage_sections||[]).length) chip("ok",`关联需求 <b>${q.coverage_sections.length}</b> 节 · ${Math.round((q.coverage_share||0)*100)}%`);
       if(q.intent_total) chip(q.veto?"bad":(q.intent_covered/q.intent_total>=0.66?"ok":"warn"),`搜索者问题 <b>${q.intent_covered}/${q.intent_total}</b>`);
       if(q.evidence!=null) chip("ok",`密度 <b>${q.evidence}</b>`);
     }

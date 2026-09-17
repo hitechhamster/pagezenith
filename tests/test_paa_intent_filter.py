@@ -24,6 +24,7 @@ API = pathlib.Path(__file__).resolve().parents[1] / "api"
 sys.path.insert(0, str(API))
 
 from tools.seo_writer.workflow import SEOWriter  # noqa: E402
+from tools.seo_writer import workflow as workflow_mod  # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -36,6 +37,8 @@ def ok(name, cond, extra=""):
 Q_BRAND = "What is the best headphone brand in China?"
 Q_MOQ = "What is the minimum order quantity for OEM headphones?"
 Q_AUDIT = "How do you audit a headphone factory?"
+REL_BRAND = "best headphone brand in China"
+REL_OEM = "headphone OEM China"
 
 SEARCH = f"""Title: Best Headphone Factory in China
 URL: https://example.com/a
@@ -46,6 +49,10 @@ Q: {Q_AUDIT}
 Q: {Q_BRAND}
 Q: {Q_MOQ}
 Rel: headphone oem china"""
+
+SEARCH_WITH_RELATED = SEARCH + f"""
+Rel: {REL_BRAND}
+Rel: {REL_OEM}"""
 
 
 class FakeLLM:
@@ -76,6 +83,38 @@ async def run(reply):
     return text, dropped, w.llm
 
 
+async def run_all(reply):
+    w = writer(reply)
+    text, dropped = await w.filter_serp_intents(
+        SEARCH_WITH_RELATED, "best headphone factory in china", "headphone oem", "sourcing guide")
+    return text, dropped, w.llm
+
+
+async def test_expansion_uses_only_verified_queries():
+    """回归：扩展层不得再让 LLM 凭空造「竞品缺口」搜索词。"""
+    filtered, _, _ = await run_all(f"{Q_AUDIT}\n{Q_MOQ}\n{REL_OEM}")
+    w = writer("this reply must never be used")
+    w.s = object()
+    w.search_provider = "serper"
+    calls = []
+
+    async def fake_expand(_settings, queries, per=1, max_q=5):
+        calls.append((list(queries), per, max_q))
+        return "URL: https://example.com/expanded\nContent: verified material\n---"
+
+    original = workflow_mod.expand_queries
+    workflow_mod.expand_queries = fake_expand
+    try:
+        ctx = {"main_search_full": filtered, "sec_search_full": "", "language": "English"}
+        await w.expand_context(ctx)
+    finally:
+        workflow_mod.expand_queries = original
+
+    ok("扩展层没有调用 LLM 自造缺口词", w.llm.calls == 0, w.llm.calls)
+    ok("扩展词只来自已过滤的 PAA / 相关搜索", bool(calls) and calls[0][0] == ctx["coverage_queries"], calls)
+    ok("跑题的品牌词不会进入扩展搜索", REL_BRAND not in ctx["coverage_queries"], ctx["coverage_queries"])
+
+
 async def main_() -> int:
     print("\n[PAA 意图过滤]")
 
@@ -87,6 +126,14 @@ async def main_() -> int:
     ok("竞品正文和 Rel 行没被误伤",
        "Content: some competitor text" in text and "Rel: headphone oem china" in text)
     ok("主关键词进了 prompt", "best headphone factory in china" in llm.last_prompt)
+
+    # 相关搜索也会进入同一层过滤，不能绕开 PAA 的护栏污染扩展素材。
+    text_rel, dropped_rel, _ = await run_all(f"{Q_AUDIT}\n{Q_MOQ}\n{REL_OEM}")
+    ok("跑题的相关搜索也被剔掉", REL_BRAND in dropped_rel, dropped_rel)
+    ok("相关的 OEM 搜索保留", f"Rel: {REL_OEM}" in text_rel)
+    ok("被剔除的相关搜索不会留在搜索文本", f"Rel: {REL_BRAND}" not in text_rel)
+
+    await test_expansion_uses_only_verified_queries()
 
     # 模型带编号 / 破折号前缀也认
     _, dropped2, _ = await run(f"- {Q_AUDIT}\n2. {Q_MOQ}")

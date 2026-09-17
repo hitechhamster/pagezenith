@@ -55,7 +55,7 @@ router = APIRouter(prefix="/api/seo-writer", tags=["seo-writer"])
 _sema = asyncio.Semaphore(get_settings().writer_max_concurrent)
 
 
-def _quality_payload(report: dict[str, Any], angles: list[str] | None = None, keyword: str = "",
+def _quality_payload(report: dict[str, Any], coverage_queries: list[str] | None = None, keyword: str = "",
                      text: str = "") -> dict[str, Any]:
     """把打分结果压成前端能直接渲染的扁平结构。
 
@@ -72,7 +72,7 @@ def _quality_payload(report: dict[str, Any], angles: list[str] | None = None, ke
     warnings = intent.get("warnings") or intent.get("reasons") or []
     # 总分不再对外（用户 2026-09-05：自己给自己打分太傻）。只给测量值：增益 / 问题覆盖 / 密度 / 可读性。
     level = "bad" if veto else ("warn" if warnings else "ok")
-    _ang = density_audit.angle_sections(text, angles or [], keyword=keyword)
+    _coverage = density_audit.coverage_sections(text, coverage_queries or [], keyword=keyword)
     return {
         "level": level,
         "message": report.get("message_override") or (density_audit.format_report(report) if den else "文章太短，未打分"),
@@ -82,9 +82,9 @@ def _quality_payload(report: dict[str, Any], angles: list[str] | None = None, ke
         "gain_note": None if gain.get("measurable") else gain.get("reason"),
         # 竞品没写的具体东西 —— 给用户看的不是 52% 这个数，是"52% 指的是这些"
         "gain_samples": (gain.get("samples") or [])[:8],
-        # 新角度小节：从竞品缺口角度起的 H2 及其篇幅占比（与硬信息增益并排，不合并）
-        "angle_sections": [x["head"] for x in _ang.get("sections", [])],
-        "angle_share": _ang.get("share", 0.0),
+        # 关联需求落点：真实 PAA / 相关搜索被写进的 H2 及其篇幅占比（不并入硬信息增益）
+        "coverage_sections": [x["head"] for x in _coverage.get("sections", [])],
+        "coverage_share": _coverage.get("share", 0.0),
         "intent_covered": len(intent.get("covered") or []),
         "intent_total": len(intent.get("questions") or []),
         "intent_questions": (intent.get("covered") or [])[:6],
@@ -223,14 +223,19 @@ async def outline(req: OutlineRequest, card: Card = Depends(require_card)):
                 if all(x.startswith("（") and "搜索失败" in x for x in (_m, _s)):
                     logger.error("搜索服务不可用：%s", _m[:200])
                     raise RuntimeError("搜索服务暂时不可用（额度或故障），本次没有扣点，请稍后再试。")
-                # PAA 意图过滤：搜索页的子问题里混着"词面像、意图不同"的
-                # （实测：找代工厂的文章被塞进「哪个牌子最好」，还被提拔成 H2）。
-                # 放在扩展层之前 —— 跑题问题不该再去搜一层，那既费 Serper 额度又污染素材。
-                _m, _dropped = await wf.filter_questions(
-                    _m, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"])
+                # PAA / 相关搜索的意图过滤：词面相似不等于读者要解决同一件事。
+                # 放在扩展层之前 —— 跑题需求不该再去搜一层，更不该被写成「独特 H2」。
+                # 主、次关键词的两页一起过滤，避免次关键词页的相关搜索绕过这道护栏。
+                (_m, _dropped_m), (_s, _dropped_s) = await asyncio.gather(
+                    wf.filter_serp_intents(
+                        _m, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"]),
+                    wf.filter_serp_intents(
+                        _s, ctx["main_keyword"], ctx["secondary_keyword"], ctx["topic"]),
+                )
+                _dropped = _dropped_m + _dropped_s
                 if _dropped:
                     job.emit({"type": "step", "key": "search",
-                              "message": (f"剔掉 {len(_dropped)} 个意图不符的搜索页问题："
+                              "message": (f"剔掉 {len(_dropped)} 个意图不符的搜索页关联需求："
                                           + "；".join(q[:40] for q in _dropped[:3])
                                           + ("…" if len(_dropped) > 3 else ""))})
 
@@ -547,12 +552,12 @@ async def article(req: ArticleRequest, card: Card = Depends(require_card)):
                 if extract_h1(text) and extract_h1(text) != h1_at_seo:
                     seo = await wf.generate_seo(text, ctx["main_keyword"], ctx["language"])
                     job.emit({"type": "seo", **seo, "h1": extract_h1(text)})
-                job.emit({"type": "quality", **_quality_payload(report, ctx.get("gap_angles"), keyword=ctx.get("main_keyword", ""), text=text)})
+                job.emit({"type": "quality", **_quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "article",
-                    "quality": _quality_payload(report, ctx.get("gap_angles"), keyword=ctx.get("main_keyword", ""), text=text),
+                    "quality": _quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text),
                     "article": text,
                     "filename": sanitize_filename(ctx["main_keyword"]) + ".docx",
                     "seo_title": seo.get("seo_title", ""),
@@ -709,12 +714,12 @@ async def polish(req: PolishRequest, card: Card = Depends(require_card)):
                     text, search_text=_serp,
                     topic_type=ctx.get("topic_type", ""), keyword=main_keyword,
                     language=language, material=ctx.get("facts", "") + "\n" + _serp + "\n" + (ctx.get("expansion") or ""))
-                job.emit({"type": "quality", **_quality_payload(report, ctx.get("gap_angles"), keyword=ctx.get("main_keyword", ""), text=text)})
+                job.emit({"type": "quality", **_quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text)})
 
                 docx_bytes = build_docx(text, image_map)
                 payload = {
                     "kind": "polish",
-                    "quality": _quality_payload(report, ctx.get("gap_angles"), keyword=ctx.get("main_keyword", ""), text=text),
+                    "quality": _quality_payload(report, ctx.get("coverage_queries"), keyword=ctx.get("main_keyword", ""), text=text),
                     "article": text,
                     "filename": sanitize_filename(main_keyword) + "-polished.docx",
                     "word_count": actual, "wordcount_level": level, "wordcount_message": wc_msg,
